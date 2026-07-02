@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "IoHelper",
+  "version": "2.0",
+  "description": "Optimizing the Moderation Interface",
+  "permissions": [ "storage", "activeTab" ],
+  "icons": {
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [ "*://*.cybershoke.net/*" ],
+      "css": [ "content.css" ],
+      "js": [
+        "rules.js",
+        "modules/Utils.js",
+        "modules/BadgeService.js",
+        "modules/PanelService.js",
+        "modules/MessageService.js",
+        "modules/TicketRuleIcons.js",
+        "modules/TicketService.js",
+        "modules/ModeratorService.js",
+        "modules/App.js",
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ]
+}

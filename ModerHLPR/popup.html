@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IO HELPER · Настройки</title>
+    <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+<div class="glass-container" id="app">
+
+    <!-- Шапка -->
+    <header class="header">
+        <div class="logo-wrap">
+            <img class="icon" src="icons/icon128.png" alt="logo" />
+        </div>
+        <div class="header-text">
+            <span class="header-title">IO HELPER</span>
+            <span class="header-sub">Оптимизация модерации</span>
+        </div>
+        <span class="header-version">v2.2</span>
+    </header>
+
+    <!-- Переключатели функций -->
+    <div class="section-title">Функции</div>
+    <div class="toggle-grid" id="featureToggles">
+        <!-- Заполняется через JS -->
+    </div>
+
+    <!-- Порог часов для нового аккаунта -->
+    <div class="section-title">Обнаружение аккаунтов</div>
+    <div class="input-group">
+        <label for="newAccountHours">Порог нового аккаунта</label>
+        <input type="number" id="newAccountHours" min="1" max="168" value="7" />
+        <span class="unit">часов</span>
+    </div>
+
+    <!-- Список триггеров для жалоб -->
+    <div class="section-title">Триггеры жалоб</div>
+    <div class="triggers-area">
+        <div class="triggers-wrap" id="triggersContainer">
+            <!-- теги триггеров -->
+        </div>
+        <div class="triggers-input-row">
+            <input type="text" id="triggerInput" placeholder="Добавить триггер…" />
+            <button class="btn-add-trigger" id="addTriggerBtn">+ Добавить</button>
+        </div>
+    </div>
+
+    <!-- Кнопки действий -->
+    <div class="footer-actions">
+        <span class="toast" id="toastMsg">✓ Настройки сохранены</span>
+        <button class="btn-reset" id="resetDefaultsBtn">Сбросить</button>
+        <button class="btn-save" id="saveBtn">Сохранить</button>
+    </div>
+
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

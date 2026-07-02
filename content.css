@@ -1,0 +1,388 @@
+/* ==========================================================================
+   ModerHLPR iOS 16/17 Aesthetic Styles + Cybershoke Native Theme Integration
+   ========================================================================== */
+
+/* Панель с кнопками быстрых комментариев */
+.moderhlpr-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 82%, transparent);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
+    backdrop-filter: blur(18px) saturate(1.35);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+/* Кнопки панели комментариев — используем нативные переменные темы */
+.moderhlpr-panel-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 80%, transparent);
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 76%, var(--color-primary, #3b82f6) 24%);
+    color: var(--color-text, #f8fafc);
+    padding: 8px 12px 8px 4px;
+    cursor: pointer;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    min-height: 34px;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.16s ease;
+}
+
+.moderhlpr-panel-btn:hover {
+    border-color: color-mix(in srgb, var(--color-primary, #60a5fa) 58%, var(--color-border, rgba(255, 255, 255, 0.12)));
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 62%, var(--color-primary, #3b82f6) 38%);
+    transform: translateY(-1px) scale(1.05);
+    transition: 0.3s;
+}
+
+.moderhlpr-panel-btn:active {
+    transform: scale(0.98);
+}
+
+/* Информационные плашки результатов проверки триггеров */
+.moderhlpr-info-badge {
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 12px;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 500;
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 82%, transparent);
+    color: var(--color-text, #cbd5e1);
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2), inset 0 1px 0 color-mix(in srgb, var(--color-text, #ffffff) 10%, transparent);
+    white-space: normal;
+    word-break: break-word;
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.moderhlpr-info-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 20px 54px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--color-text, #ffffff) 14%, transparent);
+}
+
+/* Модификатор: Нарушений нет (Зеленая тема сайта) */
+.moderhlpr-info-badge--success {
+    border-color: var(--color-success, #10b981);
+    background: color-mix(in srgb, var(--color-success, #10b981) 12%, var(--color-bg-card, #1e293b));
+    color: var(--color-success, #10b981);
+}
+
+/* Модификатор: Нарушения найдены (Красная/Опасная тема сайта) */
+.moderhlpr-info-badge--accent {
+    border-color: var(--color-danger, #ef4444);
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, var(--color-bg-card, #1e293b));
+    color: var(--color-danger, #ef4444);
+}
+
+/* Модификатор: Предупреждение (Желтая/Варнинг тема сайта) */
+.moderhlpr-info-badge--warning {
+    border-color: var(--color-warning, #f59e0b);
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, var(--color-bg-card, #1e293b));
+    color: var(--color-warning, #f59e0b);
+}
+
+/* Модификатор: Приглушенный блок (Чат пуст, ошибки селекторов) */
+.moderhlpr-info-badge--muted {
+    border-color: var(--color-border, rgba(255, 255, 255, 0.1));
+    background: var(--color-bg-card, #1e293b);
+    color: var(--color-text-muted, #94a3b8);
+}
+
+/* Стилизация строк внутри плашки для выравнивания иконок и текста */
+.moderhlpr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: var(--color-text, #f8fafc);
+}
+
+.moderhlpr-row:last-child {
+    margin-bottom: 0;
+}
+
+.moderhlpr-badge-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-block;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.moderhlpr-analysis-grid {
+    display: grid;
+    overflow: visible;
+    position: relative;
+    border: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 82%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 70%, transparent);
+}
+
+.moderhlpr-analysis-row {
+    display: grid;
+    grid-template-columns: minmax(112px, 0.35fr) minmax(0, 1.8fr);
+    min-height: 46px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 70%, transparent);
+}
+
+.moderhlpr-analysis-row:last-child {
+    border-bottom: 0;
+}
+
+.moderhlpr-analysis-label,
+.moderhlpr-analysis-value {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding: 10px 12px;
+}
+
+.moderhlpr-analysis-label {
+    gap: 8px;
+    color: var(--color-text-muted, #94a3b8);
+    font-size: 13px;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--color-text, #ffffff) 4%, transparent);
+}
+
+.moderhlpr-analysis-row:first-child .moderhlpr-analysis-label {
+    border-top-left-radius: 12px;
+}
+
+.moderhlpr-analysis-row:last-child .moderhlpr-analysis-label {
+    border-bottom-left-radius: 12px;
+}
+
+.moderhlpr-analysis-label .moderhlpr-badge-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.moderhlpr-analysis-value {
+    flex-wrap: wrap;
+    gap: 6px;
+    color: var(--color-text, #f8fafc);
+    overflow-wrap: anywhere;
+}
+
+.moderhlpr-analysis-value--muted {
+    color: var(--color-text-muted, #94a3b8);
+}
+
+.moderhlpr-analysis-triggers {
+    align-items: baseline;
+}
+
+.moderhlpr-analysis-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    margin-top: 2px;
+}
+
+.moderhlpr-analysis-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+    background: color-mix(in srgb, currentColor 9%, transparent);
+    color: var(--color-text, #f8fafc);
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.moderhlpr-analysis-chip b {
+    display: inline-grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 12px;
+    background: color-mix(in srgb, currentColor 15%, transparent);
+    font-size: 11px;
+}
+
+.moderhlpr-trigger-separator {
+    color: var(--color-text-muted, #94a3b8);
+}
+
+/* Внутренний текст активности/частоты триггеров (выводится строго в строку с причиной) */
+.moderhlpr-activity-text {
+    display: inline;
+    margin-left: 6px;
+    font-size: 12px;
+    opacity: 0.8;
+    font-weight: 400;
+    white-space: nowrap;
+    color: var(--color-text-muted, #94a3b8);
+}
+
+/* Подсвеченные триггеры внутри строки результатов */
+.moderhlpr-trigger-tooltip {
+    color: var(--color-danger, #ef4444);
+    border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 28%, transparent);
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 13%, transparent);
+    cursor: help;
+    position: relative;
+    font-weight: 600;
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 8px;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.moderhlpr-trigger-tooltip:hover {
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 20%, transparent);
+    border-color: color-mix(in srgb, var(--color-danger, #ef4444) 55%, transparent);
+    transform: translateY(-1px);
+}
+
+/* Всплывающий тултип при наведении на слово-триггер */
+.moderhlpr-trigger-tooltip::after {
+    content: attr(data-full-msg);
+    position: absolute;
+    bottom: 140%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 280px;
+    white-space: normal;
+    word-wrap: break-word;
+    background: color-mix(in srgb, var(--color-bg-card, rgba(15, 23, 42, 0.95)) 90%, transparent);
+    backdrop-filter: blur(20px) saturate(1.35);
+    -webkit-backdrop-filter: blur(20px) saturate(1.35);
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--color-text, #f8fafc);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+/* Отображение тултипа при наведении */
+.moderhlpr-trigger-tooltip:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Стрелочка (треугольник) под тултипом */
+.moderhlpr-trigger-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: var(--color-bg-card, rgba(15, 23, 42, 0.95)) transparent transparent transparent;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.moderhlpr-trigger-tooltip:hover::before {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Подсветка триггеров в самой таблице чата (Логи) */
+.moderhlpr-chat-highlight {
+    background-color: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+    font-weight: bold;
+    padding: 2px 4px;
+    border-radius: 12px;
+    border: 1px dashed rgba(239, 68, 68, 0.3);
+}
+
+/* Подсветка подозрительных строк в таблице жалоб */
+.moderhlpr-row-danger {
+    background-color: rgba(239, 68, 68, 0.04) !important;
+}
+
+.moderhlpr-row-warning {
+    background-color: rgba(245, 158, 11, 0.03) !important;
+}
+
+/* Класс для подсветки триггеров жалоб */
+.moderhlpr-complaint-trigger {
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
+    color: var(--color-danger, #ef4444) !important;
+    padding: 2px 4px !important;
+    border-radius: 4px !important;
+    font-weight: bold !important;
+    display: inline-block !important;
+}
+
+@media (max-width: 640px) {
+    .moderhlpr-analysis-row {
+        grid-template-columns: 1fr;
+    }
+
+    .moderhlpr-analysis-label {
+        border-right: 0;
+        border-bottom: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 70%, transparent);
+        padding-bottom: 7px;
+    }
+
+    .moderhlpr-analysis-value {
+        padding-top: 8px;
+    }
+}
+
+/* Класс для подсветки малого количества часов (до 7ч) */
+.moderhlpr-new-account-hours {
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
+    color: var(--color-danger, #ef4444) !important;
+    padding: 2px 4px !important;
+    border-radius: 4px !important;
+    font-weight: bold !important;
+    display: inline-block;
+}
+
+/* Стили для строки подсвеченного модератора */
+/* Подсветка строки модератора золотым цветом */
+tr.moderhlpr-highlighted-moderator {
+    background-color: rgb(65 52 0) !important;
+    border: 1px solid #facc15 !important;
+    border-top: 1.5px solid #facc15 !important;
+}
+
+/* На всякий случай фиксируем выравнивание иконки */
+img.moderhlpr-admin-icon {
+    display: inline-block !important;
+    width: 14px !important;
+    height: 14px !important;
+    margin-left: 6px !important;
+    vertical-align: middle !important;
+    position: relative !important;
+    flex-shrink: 0 !important;
+    top: 1px !important;
+    right: 5px !important;
+}

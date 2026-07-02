@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IO HELPER · Настройки</title>
+    <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+<main class="popup-shell" id="app">
+    <header class="header">
+        <div class="brand">
+            <div class="logo-wrap">
+                <img class="icon" src="icons/icon128.png" alt="" />
+            </div>
+            <div class="header-text">
+                <span class="header-title">IO HELPER</span>
+                <span class="header-sub">Настройки модерации</span>
+            </div>
+        </div>
+        <span class="header-version">v2.0</span>
+    </header>
+
+    <section class="hero-panel" aria-label="Статус расширения">
+        <div>
+            <span class="eyebrow">DEVELOPED BY KANTIK</span>
+            <h1>Настройка функций</h1>
+        </div>
+        <div class="status-pill">
+            <span class="status-dot"></span>
+            <span>Active</span>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <div class="section-title">Функции</div>
+        <div class="toggle-grid" id="featureToggles"></div>
+    </section>
+
+    <section class="settings-section">
+        <div class="section-title">Обнаружение аккаунтов</div>
+        <label class="number-card" for="newAccountHours">
+            <span>
+                <strong>Порог нового аккаунта</strong>
+                <small>Аккаунты младше этого значения будут подсвечены</small>
+            </span>
+            <span class="number-control">
+                <input type="number" id="newAccountHours" min="1" max="168" value="7" />
+                <span class="unit">ч</span>
+            </span>
+        </label>
+    </section>
+
+    <section class="settings-section">
+        <div class="section-title">Триггеры жалоб</div>
+        <div class="triggers-area">
+            <div class="triggers-wrap" id="triggersContainer"></div>
+            <div class="triggers-input-row">
+                <input type="text" id="triggerInput" placeholder="Новый триггер" autocomplete="off" />
+                <button class="icon-btn btn-add-trigger" id="addTriggerBtn" title="Добавить триггер" aria-label="Добавить триггер">+</button>
+            </div>
+        </div>
+    </section>
+
+    <div class="footer-actions">
+        <span class="toast" id="toastMsg">Настройки сохранены</span>
+        <button class="btn-reset" id="resetDefaultsBtn">Сбросить</button>
+        <button class="btn-save" id="saveBtn">Сохранить</button>
+    </div>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>
