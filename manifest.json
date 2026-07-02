@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "IoHelper",
+  "name": "IO HELPER",
   "version": "2.0",
   "description": "Optimizing the Moderation Interface",
   "permissions": [ "storage", "activeTab" ],
