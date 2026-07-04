@@ -9,7 +9,7 @@ class ModeratorService {
             return;
         }
 
-        console.log("[ModerHelper Debug] Метод scanSchedulePage ЗАПУЩЕН.");
+        console.log("[IO HELPER] Метод ScanPage ЗАПУЩЕН.");
         const rows = this.document.querySelectorAll('tr');
         let moderators = {};
 
@@ -30,18 +30,28 @@ class ModeratorService {
 
         const parsedCount = Object.keys(moderators).length;
         if (parsedCount === 0) {
-            console.log("[ModerHelper Debug] Модераторы на странице не найдены. Остановка.");
+            console.log("[IO HELPER] Модераторы на странице не найдены. Остановка.");
             return;
         }
 
-        this.chrome.storage.local.set({ savedModerators: moderators }, () => {
-            console.log("[ModerHelper Debug] Успешно сохранено модераторов:", parsedCount);
+        this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
+            console.log("[IO HELPER] Успешно сохранено модераторов:", parsedCount);
+
+            if (!helperConfig) return;
+
+            helperConfig.moderators = moderators;
+
+            this.chrome.storage.local.set({
+                helperConfig
+            });
+
+
         });
     }
 
     highlightSavedModerators() {
-        this.chrome.storage.local.get(['savedModerators'], (result) => {
-            const moderators = result.savedModerators || {};
+        this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
+            const moderators = helperConfig?.moderators || {};
             if (Object.keys(moderators).length === 0) return;
 
             const links = this.document.querySelectorAll('a[href*="cybershoke.net/"]');

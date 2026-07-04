@@ -1,8 +1,9 @@
 class TicketService {
-    constructor({ document, utils, badgeService, rules }) {
+    constructor({ document, utils, badgeService, settings, rules }) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
+        this.settings = settings;
         this.rules = rules;
     }
 
@@ -304,8 +305,7 @@ class TicketService {
         let bestRule = null;
         let bestScore = -1;
 
-        if (typeof CYBERSHOKE_MUT_RULES === 'undefined') return null;
-
+        if (!Array.isArray(this.rules) || this.rules.length === 0) {return null;}
         this.rules.forEach(rule => {
             const count = ruleCounters[rule.name] || 0;
             if (count > 0) {

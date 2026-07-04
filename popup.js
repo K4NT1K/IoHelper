@@ -1,27 +1,3 @@
-// ============================================================
-//  popup.js — управление настройками расширения
-// ============================================================
-
-// ---------- ДЕФОЛТНЫЕ ЗНАЧЕНИЯ ----------
-const DEFAULTS = {
-    features: {
-        scanSchedulePage: true,
-        highlightComplaintTriggers: true,
-        highlightNewAccounts: true,
-        highlightDuplicateServers: true,
-        processTicketRules: true,
-        manageEmptyBlocks: true,
-        translateText: true
-    },
-    newAccountHours: 7,
-    serverRefreshInterval: 30,
-    complaintTriggers: [
-        "крутилка", "крутилкой", "крутится", "krutilka", "krutilkoy",
-        "hvh", "hwh", "хвх", "rage", "рейдж"
-    ]
-};
-
-// ---------- ЭЛЕМЕНТЫ DOM ----------
 const featureTogglesEl = document.getElementById('featureToggles');
 const hoursInput = document.getElementById('newAccountHours');
 const refreshIntervalInput = document.getElementById('serverRefreshInterval');
@@ -31,8 +7,8 @@ const addBtn = document.getElementById('addTriggerBtn');
 const resetBtn = document.getElementById('resetDefaultsBtn');
 const toast = document.getElementById('toastMsg');
 
-// ---------- СОСТОЯНИЕ ----------
 let currentSettings = {};
+let defaultSettings = {};
 
 const storage = {
     get(keys, callback) {
@@ -61,7 +37,6 @@ const storage = {
     }
 };
 
-// ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
 function showToast(message, duration = 2000) {
     toast.textContent = message || 'Настройки сохранены';
     toast.classList.add('show');
@@ -69,16 +44,9 @@ function showToast(message, duration = 2000) {
     toast._timer = setTimeout(() => toast.classList.remove('show'), duration);
 }
 
-// ---------- ОТРИСОВКА UI ----------
 function renderToggles(features) {
     featureTogglesEl.innerHTML = '';
     const entries = [
-        {
-            key: 'scanSchedulePage',
-            label: 'Сканировать расписание',
-            desc: 'scanSchedulePage',
-            help: 'Сохраняет модераторов при открытии страницы "Таймлайн" для подсветки в тикетах.'
-        },
         {
             key: 'highlightComplaintTriggers',
             label: 'Подсветка триггеров жалоб',
@@ -89,13 +57,13 @@ function renderToggles(features) {
             key: 'highlightNewAccounts',
             label: 'Подсветка новых аккаунтов',
             desc: 'highlightNewAccounts',
-            help: 'Выделяет часы CYBERSHOKE меньше указанного порога.'
+            help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
         },
         {
             key: 'highlightDuplicateServers',
             label: 'Дубликаты серверов',
             desc: 'highlightDuplicateServers',
-            help: 'Подсвечивает жалобы, пришедшие с одного сервера.'
+            help: 'Выделяет жалобы, пришедшие с одного сервера.'
         },
         {
             key: 'processTicketRules',
@@ -107,13 +75,19 @@ function renderToggles(features) {
             key: 'manageEmptyBlocks',
             label: 'Скрывать пустые блоки',
             desc: 'manageEmptyBlocks',
-            help: 'Скрывает пустые блоки истории тикетов, банов, мутов и чата.'
+            help: 'Скрывает пустые блоки истории тикетов, банов, мутов.'
         },
         {
             key: 'translateText',
             label: 'Перевод сообщений',
             desc: 'translateText',
             help: 'Добавляет перевод нерусских сообщений в истории чата при наведении на них курсором.'
+        },
+        {
+            key: 'scanSchedulePage',
+            label: 'Сканировать расписание',
+            desc: 'scanSchedulePage',
+            help: 'Обновляет базу модераторов при открытии страницы "Таймлайн" для подсветки в тикетах.'
         }
     ];
 
@@ -175,8 +149,8 @@ function renderTriggers(triggers) {
         removeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const idx = parseInt(removeBtn.dataset.index, 10);
-            currentSettings.complaintTriggers.splice(idx, 1);
-            renderTriggers(currentSettings.complaintTriggers);
+            currentSettings.reasonTriggers.splice(idx, 1);
+            renderTriggers(currentSettings.reasonTriggers);
             saveCurrentSettings();
         });
         tag.appendChild(removeBtn);
@@ -185,52 +159,49 @@ function renderTriggers(triggers) {
 }
 
 function loadSettingsToUI(settings) {
-    // Обновляем переключатели
     const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"]');
+
     checkboxes.forEach(cb => {
-        const feature = cb.dataset.feature;
-        if (settings.features && settings.features[feature] !== undefined) {
-            cb.checked = settings.features[feature];
-        } else {
-            cb.checked = DEFAULTS.features[feature] !== undefined ? DEFAULTS.features[feature] : true;
-        }
+        cb.checked = settings.features[cb.dataset.feature];
     });
 
-    hoursInput.value = settings.newAccountHours || DEFAULTS.newAccountHours;
+    hoursInput.value = settings.newAccountHours;
+    refreshIntervalInput.value = settings.serverRefreshInterval;
+    currentSettings.reasonTriggers = [...settings.reasonTriggers];
 
-    refreshIntervalInput.value =
-        settings.serverRefreshInterval ?? DEFAULTS.serverRefreshInterval;
-
-    const triggers = settings.complaintTriggers || DEFAULTS.complaintTriggers;
-    currentSettings.complaintTriggers = triggers.slice();
-    renderTriggers(currentSettings.complaintTriggers);
+    renderTriggers(currentSettings.reasonTriggers);
 }
 
-// ---------- СБОР ДАННЫХ ИЗ UI ----------
 function collectSettingsFromUI() {
+
     const features = {};
-    const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"]');
-    checkboxes.forEach(cb => {
-        features[cb.dataset.feature] = cb.checked;
-    });
 
-    const hoursValue = parseInt(hoursInput.value, 10);
-    const hours = Number.isNaN(hoursValue) ? DEFAULTS.newAccountHours : Math.min(Math.max(hoursValue, 1), 1000);
-
-    const refreshValue = parseInt(refreshIntervalInput.value, 10);
-    const refreshInterval = Number.isNaN(refreshValue) ? DEFAULTS.serverRefreshInterval : Math.min(Math.max(refreshValue, 0), 600);
-
-    const triggers = currentSettings.complaintTriggers || [];
+    featureTogglesEl
+        .querySelectorAll('input[type="checkbox"]')
+        .forEach(cb => {
+            features[cb.dataset.feature] = cb.checked;
+        });
 
     return {
-        features: features,
-        newAccountHours: hours,
-        serverRefreshInterval: refreshInterval,
-        complaintTriggers: triggers
+
+        features,
+
+        newAccountHours: Math.max(
+            parseInt(hoursInput.value, 10) || 1,
+            1
+        ),
+
+        serverRefreshInterval: Math.max(
+            parseInt(refreshIntervalInput.value, 10) || 0,
+            0
+        ),
+
+        reasonTriggers: [...currentSettings.reasonTriggers]
+
     };
+
 }
 
-// ---------- СОХРАНЕНИЕ В CHROME.STORAGE ----------
 function saveSettings(settings) {
     storage.set({ helperSettings: settings }, () => {
         showToast('Сохранено', 1000);
@@ -243,47 +214,46 @@ function saveCurrentSettings() {
     saveSettings(currentSettings);
 }
 
-// ---------- ЗАГРУЗКА ИЗ ХРАНИЛИЩА ----------
-function loadSettings() {
-    renderToggles(DEFAULTS.features);
+async function loadSettings() {
+    const config = await ConfigService.load(chrome);
 
-    storage.get(['helperSettings'], (result) => {
-        const stored = result.helperSettings;
-        if (stored) {
-            // Мержим с дефолтами на случай отсутствия полей
-            const merged = {
-                features: { ...DEFAULTS.features, ...(stored.features || {}) },
-                newAccountHours: stored.newAccountHours ?? DEFAULTS.newAccountHours,
-                serverRefreshInterval:
-                    stored.serverRefreshInterval ?? DEFAULTS.serverRefreshInterval,
-                complaintTriggers: stored.complaintTriggers ? stored.complaintTriggers.slice() : DEFAULTS.complaintTriggers.slice()
-            };
-            currentSettings = merged;
-            loadSettingsToUI(merged);
-        } else {
-            // Если нет сохранений — используем дефолты
+    defaultSettings = structuredClone(config.settings);
+    console.log(config.settings);
+    console.log(config.settings.features);
+    renderToggles(defaultSettings.features);
+
+    storage.get(["helperSettings"], ({ helperSettings }) => {
+        currentSettings = structuredClone(defaultSettings);
+
+        if (helperSettings) {
             currentSettings = {
-                features: { ...DEFAULTS.features },
-                newAccountHours: DEFAULTS.newAccountHours,
-                serverRefreshInterval: DEFAULTS.serverRefreshInterval,
-                complaintTriggers: DEFAULTS.complaintTriggers.slice()
+                ...currentSettings,
+                ...helperSettings
             };
-            loadSettingsToUI(currentSettings);
+            currentSettings.features = {
+                ...defaultSettings.features,
+                ...(helperSettings.features || {})
+            };
+            currentSettings.reasonTriggers =
+                helperSettings.reasonTriggers ??
+                currentSettings.reasonTriggers;
         }
+
+        loadSettingsToUI(currentSettings);
     });
+
 }
 
-// ---------- ОБРАБОТЧИКИ СОБЫТИЙ ----------
 // Добавление триггера
 addBtn.addEventListener('click', () => {
     const text = triggerInput.value.trim();
     if (!text) return;
-    if (currentSettings.complaintTriggers.includes(text)) {
+    if (currentSettings.reasonTriggers.includes(text)) {
         showToast('Такой триггер уже есть', 1500);
         return;
     }
-    currentSettings.complaintTriggers.push(text);
-    renderTriggers(currentSettings.complaintTriggers);
+    currentSettings.reasonTriggers.push(text);
+    renderTriggers(currentSettings.reasonTriggers);
     saveCurrentSettings();
     triggerInput.value = '';
     triggerInput.focus();
@@ -301,19 +271,18 @@ hoursInput.addEventListener('input', saveCurrentSettings);
 refreshIntervalInput.addEventListener('input', saveCurrentSettings);
 
 // Сброс к дефолтам
-resetBtn.addEventListener('click', () => {
-    if (confirm('Сбросить все настройки?')) {
-        currentSettings = {
-            features: { ...DEFAULTS.features },
-            newAccountHours: DEFAULTS.newAccountHours,
-            serverRefreshInterval: DEFAULTS.serverRefreshInterval,
-            complaintTriggers: DEFAULTS.complaintTriggers.slice()
-        };
-        loadSettingsToUI(currentSettings);
-        // Сохраняем сброшенные
-        saveSettings(currentSettings);
-        showToast('Сброшено к стандартным', 1500);
-    }
+resetBtn.addEventListener("click", () => {
+    if (!confirm("Сбросить все настройки?"))
+        return;
+
+    currentSettings = structuredClone(defaultSettings);
+    loadSettingsToUI(currentSettings);
+
+    storage.set({
+        helperSettings: {}
+    });
+
+    showToast("Настройки сброшены");
 });
 
 // ---------- ИНИЦИАЛИЗАЦИЯ ----------

@@ -11,13 +11,16 @@
     "default_popup": "popup.html",
     "default_icon": "icons/icon128.png"
   },
+  "host_permissions": [
+    "https://raw.githubusercontent.com/K4NT1K/*"
+  ],
   "content_scripts": [
     {
       "matches": [ "*://*.cybershoke.net/*" ],
       "css": [ "content.css" ],
       "js": [
-        "rules.js",
         "modules/Utils.js",
+        "modules/ConfigService.js",
         "modules/BadgeService.js",
         "modules/PanelService.js",
         "modules/MessageService.js",

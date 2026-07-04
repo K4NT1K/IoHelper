@@ -1,13 +1,13 @@
 class App {
-    constructor({window, document, chrome, rules, templates, complaintTriggers, settings}) {
+    constructor({window, document, chrome, config}) {
         this.window = window;
         this.document = document;
         this.chrome = chrome;
-        this.rules = rules || [];
-        this.templates = templates || {};
-        this.settings = this.normalizeSettings(settings, complaintTriggers);
+        this.rules = config.muteRules || [];
+        this.templates = config.templates || {};
+        this.settings = config.settings;
         this.features = this.settings.features;
-        this.complaintTriggers = this.settings.complaintTriggers;
+        this.reasonTriggers = this.settings.reasonTriggers;
         this.observer = null;
 
         this.utils = new Utils({document});
@@ -17,53 +17,26 @@ class App {
             document,
             utils: this.utils,
             badgeService: this.badgeService,
-            complaintTriggers: this.complaintTriggers,
-            newAccountHours: this.settings.newAccountHours
+            settings: this.settings
         });
         this.ticketService = new TicketService({
             document,
             utils: this.utils,
             badgeService: this.badgeService,
+            settings: this.settings,
             rules: this.rules
         });
         this.moderatorService = new ModeratorService({document, chrome});
     }
 
-    normalizeSettings(settings, complaintTriggers) {
-        const defaults = {
-            features: {
-                scanSchedulePage: true,
-                highlightComplaintTriggers: true,
-                highlightNewAccounts: true,
-                highlightDuplicateServers: true,
-                processTicketRules: true,
-                manageEmptyBlocks: true,
-                translateText: true
-            },
-            newAccountHours: 7,
-            serverRefreshInterval: 30,
-            complaintTriggers: complaintTriggers || []
-        };
-
-        const hours = Number(settings?.newAccountHours);
-        const refreshInterval = Number(settings?.serverRefreshInterval);
-
-        return {
-            features: {...defaults.features, ...(settings?.features || {})},
-            newAccountHours: Number.isFinite(hours) ? Math.min(Math.max(hours, 1), 1000) : defaults.newAccountHours,
-            serverRefreshInterval: Number.isFinite(refreshInterval) ? Math.max(refreshInterval, 0) : defaults.serverRefreshInterval,
-            complaintTriggers: Array.isArray(settings?.complaintTriggers) ? settings.complaintTriggers : defaults.complaintTriggers
-        };
-    }
-
     updateSettings(settings) {
         const previousSettings = this.settings;
-        this.settings = this.normalizeSettings(settings, this.complaintTriggers);
         this.features = this.settings.features;
-        this.complaintTriggers = this.settings.complaintTriggers;
-        this.messageService.complaintTriggers = this.complaintTriggers;
-        this.messageService.newAccountHours = this.settings.newAccountHours;
+        this.reasonTriggers = this.settings.reasonTriggers;
+        this.messageService.settings = this.settings;
         this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
+        this.ticketService.rules = this.rules;
+        this.ticketService.settings = this.settings;
 
         if (this.observer) this.observer.disconnect();
         this.cleanupChangedSettings(previousSettings, this.settings);
@@ -73,7 +46,7 @@ class App {
     cleanupChangedSettings(previousSettings, nextSettings) {
         const previousFeatures = previousSettings?.features || {};
         const nextFeatures = nextSettings.features;
-        const triggersChanged = JSON.stringify(previousSettings?.complaintTriggers || []) !== JSON.stringify(nextSettings.complaintTriggers);
+        const triggersChanged = JSON.stringify(previousSettings?.reasonTriggers || []) !== JSON.stringify(nextSettings.reasonTriggers);
         const newAccountHoursChanged = previousSettings?.newAccountHours !== nextSettings.newAccountHours;
 
         if (!nextFeatures.highlightComplaintTriggers || triggersChanged) {
@@ -105,7 +78,7 @@ class App {
 
     start() {
         this.chrome.storage.local.get(null, (result) => {
-            console.log("[ModerHelper Debug] Данные в хранилище при старте страницы:", result);
+            console.log("[IO HELPER] Данные в хранилище при старте страницы:", result);
         });
 
         if (this.chrome.storage?.onChanged) {

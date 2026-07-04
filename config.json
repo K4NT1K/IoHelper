@@ -1,4 +1,29 @@
 {
+  "settings": {
+    "features": {
+      "highlightComplaintTriggers": true,
+      "highlightNewAccounts": true,
+      "highlightDuplicateServers": true,
+      "processTicketRules": true,
+      "manageEmptyBlocks": true,
+      "translateText": true,
+      "scanSchedulePage": false
+    },
+    "newAccountHours": 7,
+    "serverRefreshInterval": 30,
+    "reasonTriggers": [
+      "крутилка",
+      "крутилкой",
+      "крутится",
+      "krutilka",
+      "krutilkoy",
+      "hvh",
+      "hwh",
+      "хвх",
+      "rage",
+      "рейдж"
+    ]
+  },
   "templates": {
     "ticket": {
       "Оск": "Выдан пред за оскорбление",
@@ -20,19 +45,7 @@
       "Спам": "Пожалуйста, не спамьте."
     }
   },
-  "reasonTriggers": [
-    "крутилка",
-    "крутилкой",
-    "крутится",
-    "krutilka",
-    "krutilkoy",
-    "hvh",
-    "hwh",
-    "хвх",
-    "rage",
-    "рейдж"
-  ],
-  "muteTriggers": [
+  "muteRules": [
     {
       "name": "Расизм / дискриминация",
       "keywords": [
@@ -69,7 +82,11 @@
         "pendos",
         "холоп",
         "holop",
-        "xolop"
+        "xolop",
+        "ukrain",
+        "украин",
+        "ruski",
+        "russian"
       ],
       "duration": 4320,
       "severity": 9

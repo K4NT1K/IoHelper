@@ -1,10 +1,9 @@
 class MessageService {
-    constructor({ document, utils, badgeService, complaintTriggers, newAccountHours }) {
+    constructor({ document, utils, badgeService, settings }) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
-        this.complaintTriggers = complaintTriggers;
-        this.newAccountHours = newAccountHours || 7;
+        this.settings = settings;
     }
 
     decorateMessageCell(messageCell) {
@@ -80,7 +79,7 @@ class MessageService {
                 let html = reportCell.innerHTML;
                 let changed = false;
 
-                this.complaintTriggers.forEach(trigger => {
+                this.settings.reasonTriggers.forEach(trigger => {
                     if (!trigger) return;
                     const escapedTrigger = trigger.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
                     const regex = new RegExp(`(${escapedTrigger})`, 'gi');
@@ -115,7 +114,7 @@ class MessageService {
         if (match) {
             const hours = parseInt(match[1], 10);
 
-            if (hours < this.newAccountHours) {
+            if (hours < this.settings.newAccountHours) {
                 const allDivs = row.querySelectorAll('div');
                 allDivs.forEach(div => {
                     if (div.innerText.includes('CYBERSHOKE:') && !div.querySelector('.cs-hours-span')) {

@@ -121,9 +121,9 @@
     display: grid;
     overflow: visible;
     position: relative;
-    border: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 82%, transparent);
+    /*border: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 82%, transparent);*/
     border-radius: 12px;
-    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 70%, transparent);
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 30%, transparent);
 }
 
 .moderhlpr-analysis-row {
