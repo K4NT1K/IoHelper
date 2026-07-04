@@ -1,0 +1,77 @@
+Privacy Policy
+
+Effective date: July 2026
+
+IO HELPER Privacy Policy
+
+IO HELPER is an extension developed exclusively for moderators of the CYBERSHOKE project.
+
+We respect your privacy and are committed to being transparent about how the extension works.
+
+Data Collection
+
+IO HELPER does not collect, store, transmit, sell, or share any personal information.
+
+The extension does not collect:
+
+Personal information
+Email addresses
+Passwords
+Cookies
+Browsing history
+Financial information
+Location data
+Analytics or tracking data
+Data Processing
+
+The extension processes information available on the CYBERSHOKE moderation website locally within your browser to provide its functionality, including:
+
+Analyzing chat history for moderation assistance.
+Highlighting complaint triggers.
+Translating chat messages.
+Displaying moderator information.
+Automatically filling moderation templates.
+Managing interface elements.
+Detecting duplicate server reports.
+
+This processing happens entirely on the user's device.
+
+Local Storage
+
+IO HELPER stores only extension settings and cached configuration data using the browser's local storage.
+
+Examples include:
+
+User preferences.
+Feature settings.
+Cached moderation configuration downloaded from the official GitHub repository.
+
+This data never leaves your browser.
+
+Network Requests
+
+The extension may connect to:
+
+The official CYBERSHOKE moderation website.
+The official GitHub repository to download the latest configuration file.
+Translation services when the translation feature is enabled.
+
+These requests are required solely for the extension's functionality.
+
+Third-Party Services
+
+When the translation feature is enabled, translated text may be processed by a third-party translation service.
+
+No additional personal information is intentionally transmitted.
+
+Data Sharing
+
+IO HELPER does not sell, rent, or share user data with third parties.
+
+Changes
+
+This Privacy Policy may be updated when new features are added.
+
+Contact
+
+If you have any questions regarding this Privacy Policy, please contact the extension developer through the official CYBERSHOKE project or the project's GitHub repository.
