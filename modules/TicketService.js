@@ -370,6 +370,9 @@ class TicketService {
                 finalDuration = 0;
                 finalDurationStr = "Предупреждение";
             }
+        } else if (rule.name === "Расизм / дискриминация" && count < 2) {
+            finalDuration = 0;
+            finalDurationStr = "Предупреждение";
         }
 
         return { finalName, finalDuration, finalDurationStr };
