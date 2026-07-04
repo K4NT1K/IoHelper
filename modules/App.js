@@ -1,5 +1,5 @@
 class App {
-    constructor({ window, document, chrome, rules, templates, complaintTriggers, settings }) {
+    constructor({window, document, chrome, rules, templates, complaintTriggers, settings}) {
         this.window = window;
         this.document = document;
         this.chrome = chrome;
@@ -10,9 +10,9 @@ class App {
         this.complaintTriggers = this.settings.complaintTriggers;
         this.observer = null;
 
-        this.utils = new Utils({ document });
-        this.badgeService = new BadgeService({ document });
-        this.panelService = new PanelService({ document });
+        this.utils = new Utils({document});
+        this.badgeService = new BadgeService({document});
+        this.panelService = new PanelService({document});
         this.messageService = new MessageService({
             document,
             utils: this.utils,
@@ -26,7 +26,7 @@ class App {
             badgeService: this.badgeService,
             rules: this.rules
         });
-        this.moderatorService = new ModeratorService({ document, chrome });
+        this.moderatorService = new ModeratorService({document, chrome});
     }
 
     normalizeSettings(settings, complaintTriggers) {
@@ -35,22 +35,24 @@ class App {
                 scanSchedulePage: true,
                 highlightComplaintTriggers: true,
                 highlightNewAccounts: true,
+                highlightDuplicateServers: true,
                 processTicketRules: true,
                 manageEmptyBlocks: true,
                 translateText: true
             },
             newAccountHours: 7,
+            serverRefreshInterval: 30,
             complaintTriggers: complaintTriggers || []
         };
 
         const hours = Number(settings?.newAccountHours);
+        const refreshInterval = Number(settings?.serverRefreshInterval);
 
         return {
-            features: { ...defaults.features, ...(settings?.features || {}) },
-            newAccountHours: Number.isFinite(hours) ? Math.min(Math.max(hours, 1), 168) : defaults.newAccountHours,
-            complaintTriggers: Array.isArray(settings?.complaintTriggers)
-                ? settings.complaintTriggers
-                : defaults.complaintTriggers
+            features: {...defaults.features, ...(settings?.features || {})},
+            newAccountHours: Number.isFinite(hours) ? Math.min(Math.max(hours, 1), 1000) : defaults.newAccountHours,
+            serverRefreshInterval: Number.isFinite(refreshInterval) ? Math.max(refreshInterval, 0) : defaults.serverRefreshInterval,
+            complaintTriggers: Array.isArray(settings?.complaintTriggers) ? settings.complaintTriggers : defaults.complaintTriggers
         };
     }
 
@@ -61,6 +63,7 @@ class App {
         this.complaintTriggers = this.settings.complaintTriggers;
         this.messageService.complaintTriggers = this.complaintTriggers;
         this.messageService.newAccountHours = this.settings.newAccountHours;
+        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
 
         if (this.observer) this.observer.disconnect();
         this.cleanupChangedSettings(previousSettings, this.settings);
@@ -79,6 +82,12 @@ class App {
 
         if (!nextFeatures.highlightNewAccounts || newAccountHoursChanged) {
             this.messageService.clearNewAccountHighlights();
+        }
+
+        if (
+            !nextFeatures.highlightDuplicateServers && previousFeatures.highlightDuplicateServers !== false
+        ) {
+            this.messageService.clearDuplicateServerHighlights();
         }
 
         if (!nextFeatures.processTicketRules && previousFeatures.processTicketRules !== false) {
@@ -108,8 +117,9 @@ class App {
         }
 
         this.observer = new MutationObserver(() => this.runDOMUpdates());
-        this.observer.observe(this.document.documentElement, { childList: true, subtree: true });
+        this.observer.observe(this.document.documentElement, {childList: true, subtree: true});
         this.runDOMUpdates();
+        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
     }
 
     runDOMUpdates() {
@@ -129,7 +139,7 @@ class App {
             let parent = textarea.parentElement;
             let isNotificationModal = false;
             while (parent && parent !== this.document.body) {
-                if (parent.innerText && (parent.innerText.includes('Отправить уведомление') || parent.innerText.includes('Уведомление игрока'))) {
+                if (parent.innerText && (parent.innerText.includes('Отправить уведомление'))) {
                     isNotificationModal = true;
                     break;
                 }
@@ -140,20 +150,21 @@ class App {
                 if (!this.document.getElementById('mod-notif-panel') && typeof this.templates.notif !== 'undefined') {
                     textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.notif, textarea, 'mod-notif-panel'), textarea);
                 }
-            } else if (textarea.placeholder && (textarea.placeholder.includes('детали') || textarea.closest('form'))) {
+            } else if (textarea.placeholder && (textarea.placeholder.includes('Опишите детали закрытия'))) {
                 if (!this.document.getElementById('mod-ticket-panel') && typeof this.templates.ticket !== 'undefined') {
                     textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.ticket, textarea, 'mod-ticket-panel'), textarea);
                 }
                 if (this.features.processTicketRules) {
                     this.ticketService.processTicketRules(textarea);
                 }
-                if (this.features.manageEmptyBlocks) {
-                    this.ticketService.manageEmptyBlocks();
-                }
             }
         });
 
-        if (this.observer) this.observer.observe(this.document.documentElement, { childList: true, subtree: true });
+        if (this.features.manageEmptyBlocks) {
+            this.ticketService.manageEmptyBlocks();
+        }
+
+        if (this.observer) this.observer.observe(this.document.documentElement, {childList: true, subtree: true});
 
         const rows = this.document.querySelectorAll('tr');
         rows.forEach(row => {
@@ -164,10 +175,12 @@ class App {
                 this.messageService.highlightNewAccounts(row);
             }
         });
+
+        if (this.features.highlightDuplicateServers) {
+            this.messageService.highlightDuplicateServerIps();
+        }
     }
 }
 
 window.App = App;
-
-
 

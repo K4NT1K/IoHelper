@@ -87,7 +87,6 @@ class TicketService {
 
         return latestMute;
     }
-
     hasActiveMute(muteHistoryBlock) {
         if (!muteHistoryBlock) return false;
 
@@ -135,7 +134,6 @@ class TicketService {
 
         return false;
     }
-
     getMuteHistoryForPlayer(steamId) {
         const muteHeader = Array.from(this.document.querySelectorAll('h3')).find(h3 => h3.textContent.includes('История Мутов'));
         let rows = [];
@@ -247,7 +245,6 @@ class TicketService {
             }
         });
     }
-
     restoreManagedEmptyBlocks() {
         this.document.querySelectorAll('[data-moderhlpr-managed-hidden="true"]').forEach(card => {
             card.style.display = 'block';
@@ -255,6 +252,35 @@ class TicketService {
         });
     }
 
+    setCurrentServerRefreshInterval(seconds) {
+        clearInterval(this.currentServerRefreshInterval);
+
+        if (!seconds || seconds <= 0) {
+            this.currentServerRefreshInterval = null;
+            return;
+        }
+
+        this.currentServerRefreshInterval = setInterval(() => {
+            const headers = [...this.document.querySelectorAll("h3")];
+
+            const header = headers.find(h =>
+                h.textContent.trim() === "Текущий сервер"
+            );
+
+            if (!header) return;
+
+            const container = header.closest("div");
+            if (!container) return;
+
+            const refreshButton = [...container.querySelectorAll("button")]
+                .find(btn => btn.textContent.includes("Обновить"));
+
+            if (!refreshButton || refreshButton.disabled) return;
+
+            refreshButton.click();
+
+        }, seconds * 1000);
+    }
     clearTicketRuleBadge() {
         this.document.getElementById('helper-suggest-badge')?.remove();
     }
@@ -296,7 +322,6 @@ class TicketService {
 
         return bestRule;
     }
-
     calculateFinalPunishment(rule, count, ruleCounters = {}) {
         let finalName = rule.name;
         let finalDuration = rule.duration;
@@ -357,24 +382,45 @@ class TicketService {
         const SVG_PUNISHMENT = icons.PUNISHMENT || '';
         const SVG_CHAT_ERROR = icons.CHAT_ERROR || '';
         const SVG_SHIELD = icons.SHIELD || '';
-        const SVG_SPARK = icons.SPARK || '';
 
         const muteHistoryBlock = this.getMuteHistoryBlock();
         const chatHistoryBlock = this.getBlockByHeader('История Чата');
 
-        // if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
-        //     this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Внимание:</b> У игрока уже есть активный мут! Проверка триггеров приостановлена.</span></div>`, textarea);
-        //     return;
-        // }
+        if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Внимание:</b> У игрока уже есть активный мут! Проверка триггеров приостановлена.</span></div>`, textarea);
+            return;
+        }
 
         if (!chatHistoryBlock || chatHistoryBlock.style.display === 'none' || chatHistoryBlock.innerText.includes('Чат пуст') || chatHistoryBlock.innerText.includes('Не найдено')) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст или недоступен.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             return;
+        }
+
+        let lastMuteDate = null;
+
+        if (muteHistoryBlock) {
+            const now = Date.now();
+
+            muteHistoryBlock.querySelectorAll('tbody tr').forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length < 6) return;
+
+                const muteDate = this.parseDateCell(cells[1]);
+                if (!muteDate) return;
+
+                const hoursDiff = (now - muteDate.getTime()) / (1000 * 60 * 60);
+
+                if (hoursDiff <= 24) {
+                    if (!lastMuteDate || muteDate > lastMuteDate) {
+                        lastMuteDate = muteDate;
+                    }
+                }
+            });
         }
 
         const rows = Array.from(chatHistoryBlock.querySelectorAll('tbody tr, tr')).filter(row => row.querySelector('td'));
         if (rows.length === 0) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст или недоступен.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             return;
         }
 
@@ -389,6 +435,18 @@ class TicketService {
 
             const chatRow = this.getChatRowData(row);
             if (!chatRow || !chatRow.messageText) continue;
+
+            if (!this.utils.isMessageWithin24Hours(chatRow.timeText)) {
+                continue;
+            }
+
+            if (lastMuteDate) {
+                const messageDate = this.utils.parseTimeToMs(chatRow.timeText);
+
+                if (messageDate && messageDate <= lastMuteDate.getTime()) {
+                    continue;
+                }
+            }
 
             const { authorText, messageText } = chatRow;
             const textLower = messageText.toLowerCase().trim();
@@ -464,31 +522,16 @@ class TicketService {
             .join(' | ');
 
         const activityHTML = activeStatsSummary ? ` <span class="moderhlpr-activity-text">(${this.utils.escapeHtml(activeStatsSummary)})</span>` : '';
-        const activityChipsHTML = activeStats
-            .map(([name, count]) => `<span class="moderhlpr-analysis-chip">${this.utils.escapeHtml(name)}<b>${count}</b></span>`)
-            .join('');
+        const activityChipsHTML = activeStats.length > 1
+            ? activeStats
+                .map(([name, count]) =>
+                    `<span class="moderhlpr-analysis-chip">${this.utils.escapeHtml(name)}<b>${count}</b></span>`
+                )
+                .join('')
+            : '';
 
         if (allViolations.length === 0) {
-            const clearResponse = `
-                <div class="moderhlpr-analysis-card">
-                    <div class="moderhlpr-analysis-title">${SVG_SHIELD}<span>Анализ чата</span></div>
-                    <div class="moderhlpr-analysis-grid">
-                        <div class="moderhlpr-analysis-row">
-                            <div class="moderhlpr-analysis-label">${SVG_TRIGGERS}<span>Триггеры</span></div>
-                            <div class="moderhlpr-analysis-value moderhlpr-analysis-value--muted">Не найдены</div>
-                        </div>
-                        <div class="moderhlpr-analysis-row">
-                            <div class="moderhlpr-analysis-label">${SVG_REASON}<span>Причина</span></div>
-                            <div class="moderhlpr-analysis-value">Нарушений не обнаружено${activityHTML}</div>
-                        </div>
-                        <div class="moderhlpr-analysis-row moderhlpr-analysis-row--verdict">
-                            <div class="moderhlpr-analysis-label">${SVG_PUNISHMENT}<span>Вердикт</span></div>
-                            <div class="moderhlpr-analysis-value"><strong>Наказание не требуется</strong></div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', clearResponse, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="moderhlpr-row">${SVG_SHIELD}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
             return;
         }
 
@@ -543,5 +586,4 @@ class TicketService {
 }
 
 window.TicketService = TicketService;
-
 

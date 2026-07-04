@@ -8,11 +8,13 @@ const DEFAULTS = {
         scanSchedulePage: true,
         highlightComplaintTriggers: true,
         highlightNewAccounts: true,
+        highlightDuplicateServers: true,
         processTicketRules: true,
         manageEmptyBlocks: true,
         translateText: true
     },
     newAccountHours: 7,
+    serverRefreshInterval: 30,
     complaintTriggers: [
         "крутилка", "крутилкой", "крутится", "krutilka", "krutilkoy",
         "hvh", "hwh", "хвх", "rage", "рейдж"
@@ -22,10 +24,10 @@ const DEFAULTS = {
 // ---------- ЭЛЕМЕНТЫ DOM ----------
 const featureTogglesEl = document.getElementById('featureToggles');
 const hoursInput = document.getElementById('newAccountHours');
+const refreshIntervalInput = document.getElementById('serverRefreshInterval');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const addBtn = document.getElementById('addTriggerBtn');
-const saveBtn = document.getElementById('saveBtn');
 const resetBtn = document.getElementById('resetDefaultsBtn');
 const toast = document.getElementById('toastMsg');
 
@@ -90,6 +92,12 @@ function renderToggles(features) {
             help: 'Выделяет часы CYBERSHOKE меньше указанного порога.'
         },
         {
+            key: 'highlightDuplicateServers',
+            label: 'Дубликаты серверов',
+            desc: 'highlightDuplicateServers',
+            help: 'Подсвечивает жалобы, пришедшие с одного сервера.'
+        },
+        {
             key: 'processTicketRules',
             label: 'Анализ тикетов',
             desc: 'processTicketRules',
@@ -138,6 +146,7 @@ function renderToggles(features) {
         switchLabel.className = 'switch-ios';
         const input = document.createElement('input');
         input.type = 'checkbox';
+        input.addEventListener('change', saveCurrentSettings);
         input.checked = features[key] !== undefined ? features[key] : true;
         input.dataset.feature = key;
         const slider = document.createElement('span');
@@ -168,6 +177,7 @@ function renderTriggers(triggers) {
             const idx = parseInt(removeBtn.dataset.index, 10);
             currentSettings.complaintTriggers.splice(idx, 1);
             renderTriggers(currentSettings.complaintTriggers);
+            saveCurrentSettings();
         });
         tag.appendChild(removeBtn);
         triggersContainer.appendChild(tag);
@@ -186,12 +196,13 @@ function loadSettingsToUI(settings) {
         }
     });
 
-    // Часы
     hoursInput.value = settings.newAccountHours || DEFAULTS.newAccountHours;
 
-    // Триггеры
+    refreshIntervalInput.value =
+        settings.serverRefreshInterval ?? DEFAULTS.serverRefreshInterval;
+
     const triggers = settings.complaintTriggers || DEFAULTS.complaintTriggers;
-    currentSettings.complaintTriggers = triggers.slice(); // копия
+    currentSettings.complaintTriggers = triggers.slice();
     renderTriggers(currentSettings.complaintTriggers);
 }
 
@@ -204,17 +215,17 @@ function collectSettingsFromUI() {
     });
 
     const hoursValue = parseInt(hoursInput.value, 10);
-    const hours = Number.isNaN(hoursValue)
-        ? DEFAULTS.newAccountHours
-        : Math.min(Math.max(hoursValue, 1), 168);
+    const hours = Number.isNaN(hoursValue) ? DEFAULTS.newAccountHours : Math.min(Math.max(hoursValue, 1), 1000);
 
-    // Триггеры уже лежат в currentSettings.complaintTriggers, но мы их берем из рендера
-    // Они обновляются при добавлении/удалении
+    const refreshValue = parseInt(refreshIntervalInput.value, 10);
+    const refreshInterval = Number.isNaN(refreshValue) ? DEFAULTS.serverRefreshInterval : Math.min(Math.max(refreshValue, 0), 600);
+
     const triggers = currentSettings.complaintTriggers || [];
 
     return {
         features: features,
         newAccountHours: hours,
+        serverRefreshInterval: refreshInterval,
         complaintTriggers: triggers
     };
 }
@@ -222,9 +233,14 @@ function collectSettingsFromUI() {
 // ---------- СОХРАНЕНИЕ В CHROME.STORAGE ----------
 function saveSettings(settings) {
     storage.set({ helperSettings: settings }, () => {
-        showToast('Настройки сохранены');
+        showToast('Сохранено', 1000);
         console.log('[Popup] Settings saved:', settings);
     });
+}
+
+function saveCurrentSettings() {
+    currentSettings = collectSettingsFromUI();
+    saveSettings(currentSettings);
 }
 
 // ---------- ЗАГРУЗКА ИЗ ХРАНИЛИЩА ----------
@@ -238,6 +254,8 @@ function loadSettings() {
             const merged = {
                 features: { ...DEFAULTS.features, ...(stored.features || {}) },
                 newAccountHours: stored.newAccountHours ?? DEFAULTS.newAccountHours,
+                serverRefreshInterval:
+                    stored.serverRefreshInterval ?? DEFAULTS.serverRefreshInterval,
                 complaintTriggers: stored.complaintTriggers ? stored.complaintTriggers.slice() : DEFAULTS.complaintTriggers.slice()
             };
             currentSettings = merged;
@@ -247,6 +265,7 @@ function loadSettings() {
             currentSettings = {
                 features: { ...DEFAULTS.features },
                 newAccountHours: DEFAULTS.newAccountHours,
+                serverRefreshInterval: DEFAULTS.serverRefreshInterval,
                 complaintTriggers: DEFAULTS.complaintTriggers.slice()
             };
             loadSettingsToUI(currentSettings);
@@ -265,6 +284,7 @@ addBtn.addEventListener('click', () => {
     }
     currentSettings.complaintTriggers.push(text);
     renderTriggers(currentSettings.complaintTriggers);
+    saveCurrentSettings();
     triggerInput.value = '';
     triggerInput.focus();
 });
@@ -277,13 +297,8 @@ triggerInput.addEventListener('keydown', (e) => {
     }
 });
 
-// Сохранение
-saveBtn.addEventListener('click', () => {
-    const settings = collectSettingsFromUI();
-    // Обновляем currentSettings перед сохранением
-    currentSettings = settings;
-    saveSettings(settings);
-});
+hoursInput.addEventListener('input', saveCurrentSettings);
+refreshIntervalInput.addEventListener('input', saveCurrentSettings);
 
 // Сброс к дефолтам
 resetBtn.addEventListener('click', () => {
@@ -291,6 +306,7 @@ resetBtn.addEventListener('click', () => {
         currentSettings = {
             features: { ...DEFAULTS.features },
             newAccountHours: DEFAULTS.newAccountHours,
+            serverRefreshInterval: DEFAULTS.serverRefreshInterval,
             complaintTriggers: DEFAULTS.complaintTriggers.slice()
         };
         loadSettingsToUI(currentSettings);

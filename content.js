@@ -11,6 +11,7 @@
             translateText: true
         },
         newAccountHours: 7,
+        serverRefreshInterval: 30,
         complaintTriggers: typeof COMPLAINT_TRIGGERS !== 'undefined' ? COMPLAINT_TRIGGERS : []
     };
 
@@ -21,9 +22,8 @@
                 ...((storedSettings && storedSettings.features) || {})
             },
             newAccountHours: storedSettings?.newAccountHours ?? DEFAULT_HELPER_SETTINGS.newAccountHours,
-            complaintTriggers: Array.isArray(storedSettings?.complaintTriggers)
-                ? storedSettings.complaintTriggers
-                : DEFAULT_HELPER_SETTINGS.complaintTriggers
+            serverRefreshInterval: storedSettings?.serverRefreshInterval ?? DEFAULT_HELPER_SETTINGS.serverRefreshInterval,
+            complaintTriggers: Array.isArray(storedSettings?.complaintTriggers) ? storedSettings.complaintTriggers : DEFAULT_HELPER_SETTINGS.complaintTriggers
         };
     }
 

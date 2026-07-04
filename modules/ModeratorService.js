@@ -85,5 +85,4 @@ class ModeratorService {
 }
 
 window.ModeratorService = ModeratorService;
-window.ModerHLPRModeratorService = ModeratorService;
 

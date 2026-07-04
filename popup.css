@@ -30,11 +30,17 @@
     padding: 0;
 }
 
+html,
 body {
-    width: 420px;
-    min-height: 620px;
-    margin: 0;
+    width: 520px;
+    min-width: 520px;
+    max-width: 520px;
+}
+
+body {
+    min-height: 580px;
     padding: 14px;
+    margin: 0;
     font-family: var(--font);
     color: var(--text);
     background:
@@ -153,7 +159,7 @@ button {
     gap: 12px;
     min-height: 94px;
     margin-bottom: 17px;
-    padding: 16px;
+    padding:16px;
     border: 1px solid var(--stroke);
     border-radius: var(--radius-lg);
     background:
@@ -164,16 +170,16 @@ button {
 
 .eyebrow {
     display: block;
-    margin-bottom: 7px;
+    margin: 10px 0 -6px 0;
     color: var(--blue-2);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 720;
     text-transform: uppercase;
 }
 
 h1 {
     max-width: 230px;
-    font-size: 24px;
+    font-size: 26px;
     line-height: 1.04;
     font-weight: 780;
 }

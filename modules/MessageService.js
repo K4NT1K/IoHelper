@@ -134,6 +134,66 @@ class MessageService {
         });
     }
 
+    highlightDuplicateServerIps(targetRow) {
+        const rows = targetRow
+            ? [targetRow]
+            : Array.from(this.document.querySelectorAll('tr'));
+
+        const serverMap = new Map();
+
+        this.document.querySelectorAll('tr').forEach(row => {
+            const serverLink = row.querySelector('a[href^="steam://connect/"]');
+            if (!serverLink) return;
+
+            const serverIp = serverLink.textContent.trim();
+
+            if (!serverMap.has(serverIp)) {
+                serverMap.set(serverIp, []);
+            }
+
+            serverMap.get(serverIp).push(row);
+        });
+
+        rows.forEach(row => {
+            if (row.querySelector('th') || row.dataset.duplicateServerChecked) {
+                return;
+            }
+
+            const serverLink = row.querySelector('a[href^="steam://connect/"]');
+
+            if (serverLink) {
+                const serverIp = serverLink.textContent.trim();
+                const duplicates = serverMap.get(serverIp);
+
+                if (duplicates && duplicates.length > 1) {
+                    duplicates.forEach(duplicateRow => {
+                        duplicateRow.classList.add(
+                            'moderhlpr-duplicate-server'
+                        );
+
+                        duplicateRow.dataset.duplicateServerChecked = 'true';
+                    });
+                } else {
+                    row.dataset.duplicateServerChecked = 'true';
+                }
+            }
+        });
+    }
+
+    clearDuplicateServerHighlights() {
+        this.document
+            .querySelectorAll('.moderhlpr-duplicate-server')
+            .forEach(row => {
+                row.classList.remove('moderhlpr-duplicate-server');
+            });
+
+        this.document
+            .querySelectorAll('tr[data-duplicate-server-checked]')
+            .forEach(row => {
+                delete row.dataset.duplicateServerChecked;
+            });
+    }
+
     clearTranslationDecorations() {
         this.document.querySelectorAll('.moderhlpr-chat-message').forEach(messageCell => {
             const textNode = this.utils.extractMainTextNode(messageCell);

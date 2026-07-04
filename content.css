@@ -39,7 +39,7 @@
 
 .moderhlpr-panel-btn:hover {
     border-color: color-mix(in srgb, var(--color-primary, #60a5fa) 58%, var(--color-border, rgba(255, 255, 255, 0.12)));
-    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 62%, var(--color-primary, #3b82f6) 38%);
+    background: color-mix(in srgb, var(--color-primary, #1e293b) 62%, var(--color-primary, #3b82f6) 38%);
     transform: translateY(-1px) scale(1.05);
     transition: 0.3s;
 }
@@ -66,11 +66,6 @@
     backdrop-filter: blur(20px) saturate(1.4);
     -webkit-backdrop-filter: blur(20px) saturate(1.4);
     transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-}
-
-.moderhlpr-info-badge:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 20px 54px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--color-text, #ffffff) 14%, transparent);
 }
 
 /* Модификатор: Нарушений нет (Зеленая тема сайта) */
@@ -265,7 +260,7 @@
     max-width: 280px;
     white-space: normal;
     word-wrap: break-word;
-    background: color-mix(in srgb, var(--color-bg-card, rgba(15, 23, 42, 0.95)) 90%, transparent);
+    background: var(--color-bg-card, #1e293b);
     backdrop-filter: blur(20px) saturate(1.35);
     -webkit-backdrop-filter: blur(20px) saturate(1.35);
     padding: 10px 14px;
@@ -371,7 +366,7 @@
 tr.moderhlpr-highlighted-moderator {
     background-color: rgb(65 52 0) !important;
     border: 1px solid #facc15 !important;
-    border-top: 1.5px solid #facc15 !important;
+    border-top: 2px solid #facc15 !important;
 }
 
 /* На всякий случай фиксируем выравнивание иконки */
@@ -385,4 +380,31 @@ img.moderhlpr-admin-icon {
     flex-shrink: 0 !important;
     top: 1px !important;
     right: 5px !important;
+}
+
+.moderhlpr-duplicate-server {
+
+    border-left: 3px solid var(--color-warning);
+    position: relative;
+
+    /*Если захочется градиентно ячейку выделить, но это глаз мозолит*/
+    /*background:*/
+    /*        linear-gradient(*/
+    /*                90deg,*/
+    /*                color-mix(in srgb, var(--color-warning) 20%, transparent) 0%,*/
+
+    /*                color-mix(in srgb, var(--color-warning) 10%, transparent) 8%,*/
+
+    /*                color-mix(in srgb, var(--color-warning) 4%, transparent) 14%,*/
+
+    /*                transparent 60%*/
+    /*        ) !important;*/
+    /*box-shadow:*/
+    /*        inset 1px 0 0 color-mix(*/
+    /*                in srgb,*/
+    /*                var(--color-warning) 50%,*/
+    /*                transparent*/
+    /*        );*/
+    /*transition:*/
+    /*        background .2s ease;*/
 }
