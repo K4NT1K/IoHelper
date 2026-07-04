@@ -20,7 +20,11 @@ const storage = {
         const result = {};
         keys.forEach(key => {
             const value = localStorage.getItem(key);
-            result[key] = value ? JSON.parse(value) : undefined;
+            try {
+                result[key] = JSON.parse(value);
+            } catch {
+                result[key] = undefined;
+            }
         });
         callback(result);
     },
@@ -162,7 +166,8 @@ function loadSettingsToUI(settings) {
     const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"]');
 
     checkboxes.forEach(cb => {
-        cb.checked = settings.features[cb.dataset.feature];
+        cb.checked = settings.features[cb.dataset.feature] ??
+            defaultSettings.features[cb.dataset.feature];
     });
 
     hoursInput.value = settings.newAccountHours;
@@ -218,8 +223,6 @@ async function loadSettings() {
     const config = await ConfigService.load(chrome);
 
     defaultSettings = structuredClone(config.settings);
-    console.log(config.settings);
-    console.log(config.settings.features);
     renderToggles(defaultSettings.features);
 
     storage.get(["helperSettings"], ({ helperSettings }) => {
@@ -267,8 +270,8 @@ triggerInput.addEventListener('keydown', (e) => {
     }
 });
 
-hoursInput.addEventListener('input', saveCurrentSettings);
-refreshIntervalInput.addEventListener('input', saveCurrentSettings);
+hoursInput.addEventListener('change', saveCurrentSettings);
+refreshIntervalInput.addEventListener('change', saveCurrentSettings);
 
 // Сброс к дефолтам
 resetBtn.addEventListener("click", () => {

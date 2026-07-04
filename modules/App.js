@@ -30,15 +30,27 @@ class App {
     }
 
     updateSettings(settings) {
-        const previousSettings = this.settings;
+        const previousSettings = structuredClone(this.settings);
+
+        this.settings = {
+            ...this.settings,
+            ...settings,
+            features: {
+                ...this.settings.features,
+                ...(settings.features || {})
+            }
+        };
+
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
+
         this.messageService.settings = this.settings;
-        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
-        this.ticketService.rules = this.rules;
         this.ticketService.settings = this.settings;
+        this.ticketService.rules = this.rules;
+        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
 
         if (this.observer) this.observer.disconnect();
+
         this.cleanupChangedSettings(previousSettings, this.settings);
         this.runDOMUpdates();
     }
@@ -81,13 +93,15 @@ class App {
             console.log("[IO HELPER] Данные в хранилище при старте страницы:", result);
         });
 
-        if (this.chrome.storage?.onChanged) {
-            this.chrome.storage.onChanged.addListener((changes, areaName) => {
-                if (areaName === 'local' && changes.helperSettings) {
-                    this.updateSettings(changes.helperSettings.newValue);
-                }
-            });
-        }
+        this.chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== "local" || !changes.helperSettings) {
+                return;
+            }
+
+            const settings = changes.helperSettings.newValue || {};
+
+            this.updateSettings(settings);
+        });
 
         this.observer = new MutationObserver(() => this.runDOMUpdates());
         this.observer.observe(this.document.documentElement, {childList: true, subtree: true});
