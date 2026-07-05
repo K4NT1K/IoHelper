@@ -63,50 +63,6 @@
     margin-bottom: 0;
 }
 
-.moderhlpr-badge-icon {
-    width: 18px;
-    height: 18px;
-    display: inline-block;
-    object-fit: contain;
-    flex-shrink: 0;
-}
-
-.moderhlpr-analysis-grid {
-    display: grid;
-    overflow: visible;
-    position: relative;
-    /*border: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 82%, transparent);*/
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 30%, transparent);
-}
-
-.moderhlpr-analysis-row {
-    display: grid;
-    grid-template-columns: minmax(112px, 0.35fr) minmax(0, 1.8fr);
-    min-height: 46px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 70%, transparent);
-}
-
-.moderhlpr-analysis-row:last-child {
-    border-bottom: 0;
-}
-
-.moderhlpr-analysis-label {
-    gap: 10px;
-    color: var(--color-text-muted, #94a3b8);
-    font-size: 13px;
-    font-weight: 700;
-    background: color-mix(in srgb, var(--color-text, #ffffff) 4%, transparent);
-}
-
-.moderhlpr-analysis-row:first-child .moderhlpr-analysis-label {
-    border-top-left-radius: 12px;
-}
-
-.moderhlpr-analysis-row:last-child .moderhlpr-analysis-label {
-    border-bottom-left-radius: 12px;
-}
-
 .moderhlpr-analysis-label .moderhlpr-badge-icon {
     width: 16px;
     height: 16px;
@@ -140,20 +96,20 @@
     align-items: center;
     gap: 6px;
     max-width: 100%;
-    padding: 2px 8px;
+    padding: 2px 6px;
     border-radius: 8px;
     border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
     background: color-mix(in srgb, currentColor 9%, transparent);
     color: var(--color-text, #f8fafc);
-    font-size: 10px;
+    font-size: 9px;
     line-height: 1.2;
 }
 
 .moderhlpr-analysis-chip b {
     display: inline-grid;
     place-items: center;
-    min-width: 18px;
-    height: 18px;
+    min-width: 16px;
+    height: 16px;
     padding: 0 5px;
     border-radius: 12px;
     background: color-mix(in srgb, currentColor 15%, transparent);
@@ -180,17 +136,10 @@
     grid-template-columns: 1fr;
 }
 
-.moderhlpr-analysis-label {
-    border-right: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 70%, transparent);
-    padding-bottom: 7px;
-}
-
 .moderhlpr-analysis-value {
     padding-top: 8px;
 }
 
-/* Класс для подсветки малого количества часов (до 7ч) */
 .moderhlpr-analysis-grid {
     display: flex;
     flex-direction: column;
@@ -201,6 +150,7 @@
 
 .moderhlpr-analysis-row {
     display: flex;
+    align-items: center;
     gap: 20px;
 
     padding: 10px 12px;
@@ -215,9 +165,11 @@
 }
 
 .moderhlpr-analysis-label {
-    padding: 0;
+    border-right: 0;
+    color: var(--color-text-muted, #94a3b8);
+    padding-bottom: 7px;
     background: none;
-    font-size: 12px;
+    font-size: 10px;
     text-transform: uppercase;
     letter-spacing: .08em;
 }
@@ -227,12 +179,9 @@
     font-size: 14px;
 }
 
-.moderhlpr-analysis-label .moderhlpr-badge-icon {
-    width: 16px;
-    height: 16px;
+.moderhlpr-badge-icon {
     margin-right: 4px;
     position: relative;
-    top: 4px;
 
     flex-shrink: 0;
 }

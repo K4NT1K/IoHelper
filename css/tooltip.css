@@ -18,7 +18,7 @@
 .moderhlpr-trigger-tooltip:hover {
     background: color-mix(in srgb, var(--color-danger, #ef4444) 20%, transparent);
     border-color: color-mix(in srgb, var(--color-danger, #ef4444) 55%, transparent);
-    transform: translateY(-1px);
+    transform: translateY(-0.5px);
 }
 
 /* Всплывающий тултип при наведении на слово-триггер */
