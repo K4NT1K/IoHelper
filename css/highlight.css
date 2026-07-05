@@ -1,0 +1,88 @@
+/* ==========================================================================
+   IO HELPER Styles
+   ========================================================================== */
+
+.moderhlpr-chat-highlight {
+    background-color: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+    font-weight: bold;
+    padding: 2px 4px;
+    border-radius: 12px;
+    border: 1px dashed rgba(239, 68, 68, 0.3);
+}
+
+/* Подсветка подозрительных строк в таблице жалоб */
+.moderhlpr-row-danger {
+    background-color: rgba(239, 68, 68, 0.04) !important;
+}
+
+.moderhlpr-row-warning {
+    background-color: rgba(245, 158, 11, 0.03) !important;
+}
+
+/* Класс для подсветки триггеров жалоб */
+.moderhlpr-complaint-trigger {
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
+    color: var(--color-danger, #ef4444) !important;
+    padding: 2px 4px !important;
+    border-radius: 4px !important;
+    font-weight: bold !important;
+    display: inline-block !important;
+}
+
+.moderhlpr-new-account-hours {
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
+    color: var(--color-danger, #ef4444) !important;
+    padding: 2px 4px !important;
+    border-radius: 4px !important;
+    font-weight: bold !important;
+    display: inline-block;
+}
+
+/* Стили для строки подсвеченного модератора */
+/* Подсветка строки модератора золотым цветом */
+tr.moderhlpr-highlighted-moderator {
+    background-color: rgb(65 52 0) !important;
+    border: 1px solid #facc15 !important;
+    border-top: 2px solid #facc15 !important;
+}
+
+/* На всякий случай фиксируем выравнивание иконки */
+img.moderhlpr-admin-icon {
+    display: inline-block !important;
+    width: 14px !important;
+    height: 14px !important;
+    margin-left: 6px !important;
+    vertical-align: middle !important;
+    position: relative !important;
+    flex-shrink: 0 !important;
+    top: 1px !important;
+    right: 5px !important;
+}
+
+.moderhlpr-duplicate-server {
+
+    border-left: 3px solid var(--color-warning);
+    position: relative;
+
+    /*Если захочется градиентно ячейку выделить, но это глаз мозолит*/
+    /*background:*/
+    /*        linear-gradient(*/
+    /*                90deg,*/
+    /*                color-mix(in srgb, var(--color-warning) 20%, transparent) 0%,*/
+
+    /*                color-mix(in srgb, var(--color-warning) 10%, transparent) 8%,*/
+
+    /*                color-mix(in srgb, var(--color-warning) 4%, transparent) 14%,*/
+
+    /*                transparent 60%*/
+    /*        ) !important;*/
+    /*box-shadow:*/
+    /*        inset 1px 0 0 color-mix(*/
+    /*                in srgb,*/
+    /*                var(--color-warning) 50%,*/
+    /*                transparent*/
+    /*        );*/
+    /*transition:*/
+    /*        background .2s ease;*/
+}

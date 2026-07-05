@@ -1,0 +1,81 @@
+/* ==========================================================================
+   IO HELPER Styles
+   ========================================================================== */
+
+.moderhlpr-trigger-tooltip {
+    color: var(--color-danger, #ef4444);
+    border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 28%, transparent);
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 13%, transparent);
+    cursor: help;
+    position: relative;
+    font-weight: 600;
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 8px;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.moderhlpr-trigger-tooltip:hover {
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 20%, transparent);
+    border-color: color-mix(in srgb, var(--color-danger, #ef4444) 55%, transparent);
+    transform: translateY(-1px);
+}
+
+/* Всплывающий тултип при наведении на слово-триггер */
+.moderhlpr-trigger-tooltip::after {
+    content: attr(data-full-msg);
+    position: absolute;
+    bottom: 140%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 280px;
+    white-space: normal;
+    word-wrap: break-word;
+    background: var(--color-bg-card, #1e293b);
+    backdrop-filter: blur(20px) saturate(1.35);
+    -webkit-backdrop-filter: blur(20px) saturate(1.35);
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--color-text, #f8fafc);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+/* Отображение тултипа при наведении */
+.moderhlpr-trigger-tooltip:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Стрелочка (треугольник) под тултипом */
+.moderhlpr-trigger-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: var(--color-bg-card, rgba(15, 23, 42, 0.95)) transparent transparent transparent;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.moderhlpr-trigger-tooltip:hover::before {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Подсветка триггеров в самой таблице чата (Логи) */

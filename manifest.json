@@ -3,7 +3,10 @@
   "name": "IO HELPER",
   "version": "2.2.1",
   "description": "Улучшает функционал IO сайта",
-  "permissions": [ "storage", "activeTab" ],
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
   "icons": {
     "128": "icons/icon128.png"
   },
@@ -16,8 +19,16 @@
   ],
   "content_scripts": [
     {
-      "matches": [ "*://*.cybershoke.net/*" ],
-      "css": [ "content.css" ],
+      "matches": [
+        "*://*.cybershoke.net/*"
+      ],
+      "css": [
+        "css/panel.css",
+        "css/analysis.css",
+        "css/tooltip.css",
+        "css/highlight.css",
+        "css/misc.css"
+      ],
       "js": [
         "modules/Utils.js",
         "modules/ConfigService.js",

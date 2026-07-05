@@ -1,0 +1,49 @@
+/* ==========================================================================
+   IO HELPER Styles
+   ========================================================================== */
+
+/* Панель с кнопками быстрых комментариев */
+.moderhlpr-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 82%, transparent);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
+    backdrop-filter: blur(18px) saturate(1.35);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+/* Кнопки панели комментариев — используем нативные переменные темы */
+.moderhlpr-panel-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-border, rgba(255, 255, 255, 0.1)) 80%, transparent);
+    background: color-mix(in srgb, var(--color-bg-card, #1e293b) 76%, var(--color-primary, #3b82f6) 24%);
+    color: var(--color-text, #f8fafc);
+    padding: 8px 12px 8px 4px;
+    cursor: pointer;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    min-height: 34px;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.16s ease;
+}
+
+.moderhlpr-panel-btn:hover {
+    border-color: color-mix(in srgb, var(--color-primary, #60a5fa) 58%, var(--color-border, rgba(255, 255, 255, 0.12)));
+    background: color-mix(in srgb, var(--color-primary, #1e293b) 62%, var(--color-primary, #3b82f6) 38%);
+    transform: translateY(-1px) scale(1.05);
+    transition: 0.3s;
+}
+
+.moderhlpr-panel-btn:active {
+    transform: scale(0.98);
+}
