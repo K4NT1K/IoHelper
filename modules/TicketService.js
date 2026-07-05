@@ -1,10 +1,34 @@
 class TicketService {
-    constructor({ document, utils, badgeService, settings, rules }) {
+    constructor({document, utils, badgeService, settings, rules}) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
         this.settings = settings;
         this.rules = rules;
+
+        this.triggerRows = new Map();
+        this.handleTriggerClick = this.handleTriggerClick.bind(this);
+    }
+
+    handleTriggerClick(e) {
+        const trigger = e.target.closest(".moderhlpr-trigger-link");
+        if (!trigger) return;
+
+        const target = this.triggerRows.get(trigger.dataset.triggerId);
+        if (!target) return;
+
+        const rows = Array.isArray(target) ? target : [target];
+
+        rows[0].scrollIntoView({
+            behavior: "smooth",
+            block: "center"
+        });
+
+        rows.forEach(row => row.classList.add("moderhlpr-chat-highlight"));
+
+        setTimeout(() => {
+            rows.forEach(row => row.classList.remove("moderhlpr-chat-highlight"));
+        }, 1000);
     }
 
     getRuleSeverity(rule) {
@@ -82,12 +106,13 @@ class TicketService {
             if (duration <= 0) return;
 
             if (!latestMute || rowDate > latestMute.date) {
-                latestMute = { date: rowDate, duration };
+                latestMute = {date: rowDate, duration};
             }
         });
 
         return latestMute;
     }
+
     hasActiveMute(muteHistoryBlock) {
         if (!muteHistoryBlock) return false;
 
@@ -135,6 +160,7 @@ class TicketService {
 
         return false;
     }
+
     getMuteHistoryForPlayer(steamId) {
         const muteHeader = Array.from(this.document.querySelectorAll('h3')).find(h3 => h3.textContent.includes('История Мутов'));
         let rows = [];
@@ -246,6 +272,7 @@ class TicketService {
             }
         });
     }
+
     restoreManagedEmptyBlocks() {
         this.document.querySelectorAll('[data-moderhlpr-managed-hidden="true"]').forEach(card => {
             card.style.display = 'block';
@@ -282,6 +309,7 @@ class TicketService {
 
         }, seconds * 1000);
     }
+
     clearTicketRuleBadge() {
         this.document.getElementById('helper-suggest-badge')?.remove();
     }
@@ -305,7 +333,9 @@ class TicketService {
         let bestRule = null;
         let bestScore = -1;
 
-        if (!Array.isArray(this.rules) || this.rules.length === 0) {return null;}
+        if (!Array.isArray(this.rules) || this.rules.length === 0) {
+            return null;
+        }
         this.rules.forEach(rule => {
             const count = ruleCounters[rule.name] || 0;
             if (count > 0) {
@@ -315,13 +345,14 @@ class TicketService {
                 }
                 if (score > bestScore) {
                     bestScore = score;
-                    bestRule = { rule, count };
+                    bestRule = {rule, count};
                 }
             }
         });
 
         return bestRule;
     }
+
     calculateFinalPunishment(rule, count, ruleCounters = {}) {
         let finalName = rule.name;
         let finalDuration = rule.duration;
@@ -334,21 +365,21 @@ class TicketService {
             finalName = "Токсичность";
             finalDuration = this.rules.find(r => r.name === "Токсичность")?.duration ?? 720;
             finalDurationStr = this.utils.formatDuration(finalDuration);
-            return { finalName, finalDuration, finalDurationStr };
+            return {finalName, finalDuration, finalDurationStr};
         }
 
         if (insultCount > 1 && trollingCount > 1) {
             finalName = "Оскорбление";
             finalDuration = this.rules.find(r => r.name === "Оскорбление")?.duration ?? 360;
             finalDurationStr = this.utils.formatDuration(finalDuration);
-            return { finalName, finalDuration, finalDurationStr };
+            return {finalName, finalDuration, finalDurationStr};
         }
 
         if (insultCount > 0 && trollingCount > 2) {
             finalName = "Троллинг/провокация";
             finalDuration = this.rules.find(r => r.name === "Троллинг/провокация")?.duration ?? 360;
             finalDurationStr = this.utils.formatDuration(finalDuration);
-            return { finalName, finalDuration, finalDurationStr };
+            return {finalName, finalDuration, finalDurationStr};
         }
 
         if (rule.name === "Оскорбление") {
@@ -375,7 +406,7 @@ class TicketService {
             finalDurationStr = "Предупреждение";
         }
 
-        return { finalName, finalDuration, finalDurationStr };
+        return {finalName, finalDuration, finalDurationStr};
     }
 
     async processTicketRules(textarea) {
@@ -429,7 +460,9 @@ class TicketService {
 
         const allViolations = [];
         const ruleCounters = {};
-        this.rules.forEach(rule => { ruleCounters[rule.name] = 0; });
+        this.rules.forEach(rule => {
+            ruleCounters[rule.name] = 0;
+        });
         const playerChatLog = {};
 
         for (const row of rows) {
@@ -451,13 +484,13 @@ class TicketService {
                 }
             }
 
-            const { authorText, messageText } = chatRow;
+            const {authorText, messageText} = chatRow;
             const textLower = messageText.toLowerCase().trim();
             const msgTimeMs = this.utils.parseTimeToMs(chatRow.timeText);
 
             if (msgTimeMs && textLower.length > 0) {
                 if (!playerChatLog[authorText]) playerChatLog[authorText] = [];
-                playerChatLog[authorText].push({ time: msgTimeMs, text: textLower, raw: messageText });
+                playerChatLog[authorText].push({time: msgTimeMs, text: textLower, raw: messageText, row});
             }
 
             const matchedRules = [];
@@ -480,7 +513,11 @@ class TicketService {
             const strongestMatch = matchedRules[0];
 
             ruleCounters[strongestMatch.rule.name] += 1;
+
+            const triggerId = crypto.randomUUID();
+            this.triggerRows.set(triggerId, row);
             allViolations.push({
+                id: triggerId,
                 ruleName: strongestMatch.rule.name,
                 keyword: strongestMatch.keyword,
                 fullMessage: messageText,
@@ -504,7 +541,19 @@ class TicketService {
 
                 if (dupes > 4) {
                     const spamRule = this.rules.find(r => r.name === "Спам в микрофон/чат");
+                    const spamRows = [];
+
+                    for (let k = i; k < msgs.length; k++) {
+                        if ((msgs[k].time - msgs[i].time) / 1000 > 5) break;
+
+                        if (msgs[k].text === msgs[i].text) {
+                            spamRows.push(msgs[k].row);
+                        }
+                    }
+                    const triggerId = crypto.randomUUID();
+                    this.triggerRows.set(triggerId, spamRows);
                     allViolations.push({
+                        id: triggerId,
                         ruleName: "Спам в микрофон/чат",
                         keyword: `${msgs[i].raw} (x${dupes})`,
                         fullMessage: msgs[i].raw,
@@ -541,12 +590,22 @@ class TicketService {
         const mostSevere = this.findMostSeverePunishment(ruleCounters);
         if (!mostSevere) return;
 
-        const { finalName, finalDuration, finalDurationStr } = this.calculateFinalPunishment(mostSevere.rule, mostSevere.count, ruleCounters);
+        const {
+            finalName,
+            finalDuration,
+            finalDurationStr
+        } = this.calculateFinalPunishment(mostSevere.rule, mostSevere.count, ruleCounters);
 
         const sortedTriggers = allViolations
             .sort((a, b) => b.severity - a.severity || b.duration - a.duration || a.keyword.localeCompare(b.keyword));
 
-        const topTriggers = sortedTriggers.map(t => `<span class="moderhlpr-trigger-tooltip" data-full-msg="${this.utils.escapeHtml(t.fullMessage)}">${this.utils.escapeHtml(t.keyword)}</span>`);
+        const topTriggers = sortedTriggers.map(t => `
+    <span
+        class="moderhlpr-trigger-tooltip moderhlpr-trigger-link"
+        data-trigger-id="${t.id}"
+        data-full-msg="${this.utils.escapeHtml(t.fullMessage)}">
+        ${this.utils.escapeHtml(t.keyword)}
+    </span>`);
         const topTriggersHTML = topTriggers.join('<span class="moderhlpr-trigger-separator">,</span> ');
 
         let finalDurationForDisplay = finalDurationStr;
@@ -585,6 +644,12 @@ class TicketService {
 
         const badgeVariant = isWarning ? 'warning' : 'accent';
         this.badgeService.updateInfoBadge('helper-suggest-badge', badgeVariant, htmlResponse, textarea);
+
+        const badge = this.document.getElementById("helper-suggest-badge");
+        if (badge) {
+            badge.removeEventListener("click", this.handleTriggerClick);
+            badge.addEventListener("click", this.handleTriggerClick);
+        }
     }
 }
 
