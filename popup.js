@@ -288,5 +288,23 @@ resetBtn.addEventListener("click", () => {
     showToast("Настройки сброшены");
 });
 
-// ---------- ИНИЦИАЛИЗАЦИЯ ----------
-document.addEventListener('DOMContentLoaded', loadSettings);
+
+document.addEventListener("DOMContentLoaded", async() => {
+
+    await loadSettings();
+
+    const icons = await (
+        await fetch(chrome.runtime.getURL("icons/icons.json"))
+    ).json();
+
+    document.querySelector(".telegram-icon").innerHTML = icons.telegram;
+
+    document
+        .getElementById("telegramBtn")
+        .addEventListener("click", () => {
+            chrome.tabs.create({
+                url: "https://t.me/K4NT1K?text=Привет!%20Есть%20идея%20для%20IO%20HELPER.%20Суть:%20"
+            });
+        });
+
+});

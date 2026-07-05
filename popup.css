@@ -685,6 +685,7 @@ h1 {
 
 .popup-shell::-webkit-scrollbar {
     width: 6px;
+    display: none
 }
 
 .popup-shell::-webkit-scrollbar-track {
@@ -694,6 +695,92 @@ h1 {
 .popup-shell::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.18);
     border-radius: 999px;
+}
+
+.feedback-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px;
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-md);
+    background: var(--glass-soft);
+    transition: var(--spring);
+}
+
+.feedback-card:hover {
+    background: var(--glass-hover);
+    border-color: var(--stroke-strong);
+}
+
+.feedback-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.feedback-text strong {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.feedback-text small {
+    color: var(--muted);
+    line-height: 1.35;
+    font-size: 11px;
+}
+
+.telegram-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+
+    padding: 10px 16px;
+
+    border-radius: 999px;
+
+    color: white;
+
+    cursor: pointer;
+
+    background: linear-gradient(135deg, var(--blue), var(--blue-2));
+
+    box-shadow:
+            0 12px 24px var(--blue-glow),
+            inset 0 1px 0 rgba(255,255,255,.25);
+
+    transition: var(--spring);
+}
+
+.telegram-btn:hover {
+    transform: scale(1.05);
+    transition: 0.3s;
+    box-shadow:
+            0 18px 30px var(--blue-glow),
+            inset 0 1px 0 rgba(255,255,255,.3);
+}
+
+.telegram-btn:active {
+    transform: scale(.97);
+}
+
+.telegram-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.telegram-btn span {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.telegram-icon svg {
+    width: 24px;
+    height: 24px;
+    display: block;
+    color: white;
 }
 
 @media (max-width: 420px) {
