@@ -288,17 +288,15 @@ resetBtn.addEventListener("click", () => {
     showToast("Настройки сброшены");
 });
 
-
 document.addEventListener("DOMContentLoaded", async() => {
 
     await loadSettings();
 
-    const icons = await (
-        await fetch(chrome.runtime.getURL("icons/icons.json"))
-    ).json();
+    const version = await (await fetch(chrome.runtime.getURL("manifest.json"))).json();
+    document.querySelector(".header-version").textContent = `v${version.version}`;
 
+    const icons = await (await fetch(chrome.runtime.getURL("icons/icons.json"))).json();
     document.querySelector(".telegram-icon").innerHTML = icons.telegram;
-
     document
         .getElementById("telegramBtn")
         .addEventListener("click", () => {
