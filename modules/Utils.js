@@ -96,6 +96,24 @@ class Utils {
         }
         return null;
     }
+
+    containsTrigger(text, trigger, exceptions = []) {
+
+        const escaped = trigger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+        const triggerRegex = new RegExp(escaped, "iu");
+
+        if (!triggerRegex.test(text))
+            return false;
+
+        return !exceptions.some(exception => {
+
+            const escapedException = exception.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+            return new RegExp(escapedException, "iu").test(text);
+
+        });
+    }
 }
 
 window.Utils = Utils;

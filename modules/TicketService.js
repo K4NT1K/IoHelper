@@ -31,6 +31,23 @@ class TicketService {
         }, 1000);
     }
 
+    connectToCurrentServer() {
+
+        if (!this.settings.features.autoConnectServer)
+            return;
+
+        const hasTimer = this.document.querySelector(
+            'button[disabled] use[href="#lc-clock"]'
+        );
+
+        if (!hasTimer)
+            return;
+
+        this.document
+            .querySelector('a[href^="steam://connect/"]')
+            ?.click();
+    }
+
     getRuleSeverity(rule) {
         return rule?.severity ?? rule?.duration ?? 0;
     }
@@ -392,12 +409,12 @@ class TicketService {
                 finalDurationStr = "Предупреждение";
             }
         } else if (rule.name === "Троллинг/провокация") {
-            if (count < 3) {
+            if (count === 2) {
                 finalDuration = 0;
                 finalDurationStr = "Предупреждение";
             }
         } else if (rule.name === "Спам в микрофон/чат") {
-            if (count < 3) {
+            if (count < 4) {
                 finalDuration = 0;
                 finalDurationStr = "Предупреждение";
             }

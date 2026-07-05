@@ -138,8 +138,8 @@ class App {
             }
 
             if (isNotificationModal) {
-                if (!this.document.getElementById('mod-notif-panel') && typeof this.templates.notif !== 'undefined') {
-                    textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.notif, textarea, 'mod-notif-panel'), textarea);
+                if (!textarea.parentElement.querySelector(".moderhlpr-panel") && typeof this.templates.notification !== 'undefined') {
+                    textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.notification, textarea, 'mod-notif-panel'), textarea);
                 }
             } else if (textarea.placeholder && (textarea.placeholder.includes('Опишите детали закрытия'))) {
                 if (!this.document.getElementById('mod-ticket-panel') && typeof this.templates.ticket !== 'undefined') {

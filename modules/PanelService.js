@@ -1,14 +1,6 @@
 class PanelService {
     constructor({ document }) {
         this.document = document;
-        this.templateIcons = {
-            'Оск': '',
-            'Провокация': '',
-            'Обход': '',
-            'Препятствие': '',
-            'Ник': '',
-            'Спам': ''
-        };
     }
 
     getCommentText(name, clickCount, defaultText) {
@@ -42,7 +34,6 @@ class PanelService {
             const icon = this.document.createElement('span');
             icon.className = 'moderhlpr-panel-btn-icon';
             icon.setAttribute('aria-hidden', 'true');
-            icon.innerText = this.templateIcons[name] || '';
 
             const label = this.document.createElement('span');
             label.innerText = name;
