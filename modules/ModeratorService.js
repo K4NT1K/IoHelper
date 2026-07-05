@@ -69,10 +69,11 @@ class ModeratorService {
                         }
 
                         if (!link.dataset.hasModerBadge) {
-                            const badge = this.document.createElement('img');
-                            badge.src = '//cloud.cybershoke.net/img/icons/profile/admin.svg';
-                            badge.loading = 'lazy';
-                            badge.className = 'moderhlpr-admin-icon';
+                            const template = document.createElement("template");
+                            template.innerHTML = Icons.admin.trim();
+
+                            const badge = template.content.firstElementChild;
+                            badge.classList.add("moderhlpr-admin-icon");
 
                             const idContainer = link.closest('div');
                             const parentContainer = idContainer ? idContainer.parentElement : null;

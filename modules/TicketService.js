@@ -410,12 +410,11 @@ class TicketService {
     }
 
     async processTicketRules(textarea) {
-        const icons = typeof TicketRuleIcons !== 'undefined' ? TicketRuleIcons : {};
-        const SVG_TRIGGERS = icons.TRIGGERS || '';
-        const SVG_REASON = icons.REASON || '';
-        const SVG_PUNISHMENT = icons.PUNISHMENT || '';
-        const SVG_CHAT_ERROR = icons.CHAT_ERROR || '';
-        const SVG_SHIELD = icons.SHIELD || '';
+        const SVG_TRIGGERS = Icons.loupe;
+        const SVG_REASON = Icons.bell;
+        const SVG_PUNISHMENT = Icons.clock;
+        const SVG_CHAT_ERROR = Icons.chat;
+        const SVG_SHIELD = Icons.shield;
 
         const muteHistoryBlock = this.getMuteHistoryBlock();
         const chatHistoryBlock = this.getBlockByHeader('История Чата');

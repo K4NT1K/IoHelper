@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Улучшает функционал IO сайта",
   "permissions": [
     "storage",
@@ -16,6 +16,16 @@
   },
   "host_permissions": [
     "https://raw.githubusercontent.com/K4NT1K/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/icons.json"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
   ],
   "content_scripts": [
     {
@@ -35,7 +45,6 @@
         "modules/BadgeService.js",
         "modules/PanelService.js",
         "modules/MessageService.js",
-        "modules/TicketRuleIcons.js",
         "modules/TicketService.js",
         "modules/ModeratorService.js",
         "modules/App.js",

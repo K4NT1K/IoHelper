@@ -89,9 +89,13 @@ class App {
     }
 
     start() {
-        this.chrome.storage.local.get(null, (result) => {
-            console.log("[IO HELPER] Данные в хранилище при старте страницы:", result);
-        });
+        this.chrome.storage.local.get(null, (result) => {});
+
+        fetch(chrome.runtime.getURL("icons/icons.json"))
+            .then(r => r.json())
+            .then(data => {
+                window.Icons = data;
+            });
 
         this.chrome.storage.onChanged.addListener((changes, areaName) => {
             if (areaName !== "local" || !changes.helperSettings) {
