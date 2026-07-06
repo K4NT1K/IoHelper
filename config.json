@@ -8,7 +8,7 @@
       "manageEmptyBlocks": true,
       "translateText": true,
       "trackOffenderServer": true,
-      "autoConnectServer": true,
+      "autoConnectServer": false,
       "scanSchedulePage": false
     },
     "newAccountHours": 7,
@@ -439,6 +439,7 @@
     "76561199229782563": "lifestyle",
     "76561199293481000": "PaRLeNTo",
     "76561199639266375": "Requi3em",
-    "76561199711377203": "Smurfik"
+    "76561199711377203": "Smurfik",
+    "76561198864321543": "4heezy_"
   }
 }
