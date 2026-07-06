@@ -14,13 +14,14 @@
     "newAccountHours": 7,
     "serverRefreshInterval": 30,
     "trackOffenderInterval": 4,
-    "ticketAgeLimit": 10,
+    "ticketAgeLimit": 0,
     "reasonTriggers": [
       "крутилка",
       "крутилкой",
       "крутится",
       "krutilka",
       "krutilkoy",
+      "spin",
       "hvh",
       "hwh",
       "хвх",
@@ -358,6 +359,13 @@
       "песо",
       "песн",
       "песоч"
+    ],
+    "жир": [
+      "жирно"
+    ],
+    "ебал": [
+      "проебал",
+      "еба"
     ]
   },
   "moderators": {
