@@ -7,6 +7,8 @@
       "processTicketRules": true,
       "manageEmptyBlocks": true,
       "translateText": true,
+      "trackOffenderServer": true,
+      "autoConnectServer": true,
       "scanSchedulePage": false
     },
     "newAccountHours": 7,
@@ -122,6 +124,7 @@
         "мамк",
         "маме",
         "маму",
+        "мамы",
         "mom",
         "mother",
         "mam",
@@ -141,7 +144,8 @@
         "sin",
         "syn",
         "son of",
-        "родословн"
+        "родословн",
+        "matka"
       ],
       "duration": 720,
       "severity": 7
@@ -191,6 +195,8 @@
         "idiot",
         "гандон",
         "гондон",
+        "gondon",
+        "gandon",
         "шлюх",
         "шалав",
         "шавк",
@@ -240,7 +246,8 @@
         "подонок",
         "подонки",
         "podonok",
-        "podonki"
+        "podonki",
+        "kurwa"
       ],
       "duration": 360,
       "severity": 5
@@ -330,7 +337,10 @@
     }
   ],
   "muteExceptions": {
-    "лох": []
+    "матери": ["матер", "матерись", "материться", "материю"],
+    "лох": ["плох", "глох", "блох"],
+    "даун": ["даунвольт", "даунтаун"],
+    "пес": ["песо", "песн", "песоч"]
   },
   "moderators": {
     "76561198001615105": "sn1keone",
