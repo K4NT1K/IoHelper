@@ -13,8 +13,8 @@
     },
     "newAccountHours": 7,
     "serverRefreshInterval": 30,
-    "trackOffenderInterval": 3,
-    "ticketAgeLimit": 20,
+    "trackOffenderInterval": 4,
+    "ticketAgeLimit": 10,
     "reasonTriggers": [
       "крутилка",
       "крутилкой",
