@@ -31,23 +31,6 @@ class TicketService {
         }, 1000);
     }
 
-    connectToCurrentServer() {
-
-        if (!this.settings.features.autoConnectServer)
-            return;
-
-        const hasTimer = this.document.querySelector(
-            'button[disabled] use[href="#lc-clock"]'
-        );
-
-        if (!hasTimer)
-            return;
-
-        this.document
-            .querySelector('a[href^="steam://connect/"]')
-            ?.click();
-    }
-
     getRuleSeverity(rule) {
         return rule?.severity ?? rule?.duration ?? 0;
     }
@@ -176,53 +159,6 @@ class TicketService {
         }
 
         return false;
-    }
-
-    getMuteHistoryForPlayer(steamId) {
-        const muteHeader = Array.from(this.document.querySelectorAll('h3')).find(h3 => h3.textContent.includes('История Мутов'));
-        let rows = [];
-
-        if (muteHeader) {
-            let parent = muteHeader.parentElement;
-            while (parent && parent !== this.document.body) {
-                if (parent.children.length >= 2 && parent.tagName === 'DIV') {
-                    rows = parent.querySelectorAll('tbody tr');
-                    break;
-                }
-                parent = parent.parentElement;
-            }
-        }
-
-        const now = new Date();
-        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-        let muteHistory = [];
-
-        rows.forEach(row => {
-            const dateCells = row.querySelectorAll('td');
-            if (dateCells.length < 6) return;
-
-            const dateSpans = dateCells[1]?.querySelectorAll('span');
-            const dateText = dateSpans && dateSpans[0] ? dateSpans[0].innerText : null;
-
-            const playerLink = dateCells[4]?.querySelector('a[href*="cybershoke.net/"]');
-            const playerSteamId = playerLink?.href?.match(/cybershoke\.net\/(\d+)/)?.[1];
-            const reason = dateCells[3]?.innerText?.trim();
-
-            if (dateText && playerSteamId === steamId && reason) {
-                const [d, m, y] = dateText.split('.').map(Number);
-                const rowDate = new Date(y, m - 1, d);
-
-                if (rowDate >= thirtyDaysAgo) {
-                    muteHistory.push({
-                        date: rowDate,
-                        reason: reason,
-                        durationText: dateCells[5]?.innerText?.trim() || 'Неизвестно',
-                    });
-                }
-            }
-        });
-
-        return muteHistory;
     }
 
     manageEmptyBlocks() {
@@ -426,12 +362,114 @@ class TicketService {
         return {finalName, finalDuration, finalDurationStr};
     }
 
+    connectToCurrentServer() {
+        console.log("[Helper] Проверка авто-подключения. Актуальные фичи:", this.settings?.features);
+
+        if (!this.settings?.features?.autoConnectServer) {
+            console.log("[Helper] Авто-подключение отменено: фича выключена в настройках.");
+            return;
+        }
+
+        // Поиск спана со статусом "В работе"
+        const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
+            span => span.textContent.trim() === "В работе"
+        );
+
+        if (!statusSpan) {
+            console.log("[Helper] Авто-подключение отменено: статус 'В работе' не найден.");
+            return;
+        }
+
+        // Защита от множественных кликов через флаг на уровне сессии документа
+        if (this.document.body.dataset.autoConnected === "true") {
+            console.log("[Helper] Авто-подключение уже выполнялось для этого тикета.");
+            return;
+        }
+
+        const connectLink = this.document.querySelector('a[href^="steam://connect/"]');
+        if (connectLink) {
+            console.log("[Helper] Ссылка на коннект найдена:", connectLink.href, "Выполняю клик...");
+            this.document.body.dataset.autoConnected = "true";
+            connectLink.click();
+        } else {
+            console.log("[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.");
+        }
+    }
+
+    async checkOffendersServers() {
+        console.log("[Helper Трекер] Запуск проверки серверов нарушителей...");
+        if (!this.settings?.features?.trackOffenderServer) {
+            console.log("[Helper Трекер] Функция выключена в настройках.");
+            return;
+        }
+
+        const rows = this.document.querySelectorAll('table tbody tr');
+        console.log(`[Helper Трекер] Найдено строк в таблице: ${rows.length}`);
+        const now = Date.now();
+
+        for (const [index, row] of rows) {
+            const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
+            if (now - lastCheck < 60000) {
+                // Логируем пропуск только для отладки
+                console.log(`[Helper Трекер] Строка #${index + 1}: пропуск (прошло меньше минуты).`);
+                continue;
+            }
+            row.dataset.lastIpCheck = now.toString();
+
+            const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
+            const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+
+            if (!offenderLink || !serverIpLink) {
+                console.log(`[Helper Трекер] Строка #${index + 1}: Не найден линк нарушителя или IP сервера.`);
+                continue;
+            }
+
+            const ticketIp = serverIpLink.href.replace('steam://connect/', '').trim();
+            const profileUrl = offenderLink.href;
+            console.log(`[Helper Трекер] Строка #${index + 1}: Нарушитель: ${profileUrl}, IP в тикете: ${ticketIp}`);
+
+            try {
+                console.log(`[Helper Трекер] Отправка запроса на ${profileUrl}...`);
+                const response = await fetch(profileUrl);
+                const html = await response.text();
+
+                const ipMatch = html.match(/IP\s+(\d{1,3}(?:\.\d{1,3}){3}:\d+)/);
+
+                if (!ipMatch) {
+                    console.log(`[Helper Трекер] Строка #${index + 1}: Игрок не на сервере (IP в коде отсутствует). Красим в КРАСНЫЙ.`);
+                    serverIpLink.style.color = '#ff4c4c';
+                    serverIpLink.style.fontWeight = 'bold';
+                    serverIpLink.title = "Игрок вышел с сервера";
+                } else {
+                    const currentIp = ipMatch[1].trim();
+                    console.log(`[Helper Трекер] Строка #${index + 1}: Текущий IP игрока из профиля: ${currentIp}`);
+
+                    if (currentIp === ticketIp) {
+                        console.log(`[Helper Трекер] Строка #${index + 1}: IP совпадает. Красим в ЗЕЛЕНЫЙ.`);
+                        serverIpLink.style.color = '#4caf50';
+                        serverIpLink.style.fontWeight = 'bold';
+                        serverIpLink.title = "Игрок на месте";
+                    } else {
+                        console.log(`[Helper Трекер] Строка #${index + 1}: IP РАЗНЫЕ (Перешел). Красим в ЖЕЛТЫЙ.`);
+                        serverIpLink.style.color = '#ffeb3b';
+                        serverIpLink.style.fontWeight = 'bold';
+                        serverIpLink.title = `Перешел на другой сервер: ${currentIp}`;
+                    }
+                }
+            } catch (e) {
+                console.error(`[Helper Трекер] Ошибка при проверке строки #${index + 1}:`, e);
+            }
+        }
+    }
+
     async processTicketRules(textarea) {
         const SVG_TRIGGERS = Icons.loupe;
         const SVG_REASON = Icons.bell;
         const SVG_PUNISHMENT = Icons.clock;
         const SVG_CHAT_ERROR = Icons.chat;
         const SVG_SHIELD = Icons.shield;
+
+        this.connectToCurrentServer();
 
         const muteHistoryBlock = this.getMuteHistoryBlock();
         const chatHistoryBlock = this.getBlockByHeader('История Чата');

@@ -170,6 +170,15 @@ class App {
         if (this.features.highlightDuplicateServers) {
             this.messageService.highlightDuplicateServerIps();
         }
+
+        if (this.features.trackOffenderServer) {
+            if (!this.ipTrackInterval) {
+                this.ipTrackInterval = setInterval(() => this.ticketService.checkOffendersServers(), 5000);
+            }
+        } else if (this.ipTrackInterval) {
+            clearInterval(this.ipTrackInterval);
+            this.ipTrackInterval = null;
+        }
     }
 }
 

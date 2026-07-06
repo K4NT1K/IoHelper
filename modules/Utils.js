@@ -98,21 +98,17 @@ class Utils {
     }
 
     containsTrigger(text, trigger, exceptions = []) {
+        let sanitizedText = text;
 
-        const escaped = trigger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-        const triggerRegex = new RegExp(escaped, "iu");
-
-        if (!triggerRegex.test(text))
-            return false;
-
-        return !exceptions.some(exception => {
-
-            const escapedException = exception.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-            return new RegExp(escapedException, "iu").test(text);
-
+        // Сначала удаляем все исключения из проверяемого текста
+        exceptions.forEach(ex => {
+            const escapedEx = ex.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            sanitizedText = sanitizedText.replace(new RegExp(escapedEx, 'giu'), '');
         });
+
+        // Теперь ищем триггер в очищенном тексте
+        const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(escapedTrigger, "iu").test(sanitizedText);
     }
 }
 
