@@ -415,8 +415,8 @@ class TicketService {
         const rows = this.document.querySelectorAll('table tbody tr');
         const now = Date.now();
 
-        const CACHE_INTERVAL = 7000; // сек кэша на проверенную строку
-        const TICKET_AGE_LIMIT = 20000; // 20 секунд — не проверяем свежие тикеты, чтобы не спамить API
+        const CACHE_INTERVAL = 5000; // мс кэша на проверенную строку
+        const TICKET_AGE_LIMIT = (this.settings?.ticketAgeLimit ?? 20) * 1000; // 20 секунд — не проверяем свежие тикеты, чтобы не спамить API
 
         try {
             for (let i = 0; i < rows.length; i++) {
@@ -448,7 +448,7 @@ class TicketService {
                 row.dataset.lastIpCheck = now.toString();
 
                 // Делаем паузу между КАЖДЫМ запросом внутри этого единственного цикла
-                await this.sleep(300);
+                await this.sleep(250);
 
                 const response = await fetch('https://cybershoke.net/api/user/data', {
                     method: 'POST',
@@ -478,18 +478,20 @@ class TicketService {
                     currentIp = `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
                 }
 
-                // Покраска интерфейса
+                serverIpLink.classList.remove(
+                    "moderhlpr-server-online",
+                    "moderhlpr-server-offline",
+                    "moderhlpr-server-other"
+                );
                 if (!currentIp) {
-                    serverIpLink.style.setProperty('color', '#cf0505', 'important');
+                    serverIpLink.classList.add("moderhlpr-server-offline");
                     serverIpLink.title = "Игрок оффлайн";
+                } else if (currentIp === ticketIp) {
+                    serverIpLink.classList.add("moderhlpr-server-online");
+                    serverIpLink.title = "Игрок на сервере тикета";
                 } else {
-                    if (currentIp === ticketIp) {
-                        serverIpLink.style.setProperty('color', '#07bf0c', 'important');
-                        serverIpLink.title = "Игрок на сервере тикета";
-                    } else {
-                        serverIpLink.style.setProperty('color', '#ffeb3b', 'important');
-                        serverIpLink.title = `Игрок на другом сервере: ${currentIp}`;
-                    }
+                    serverIpLink.classList.add("moderhlpr-server-other");
+                    serverIpLink.title = `Игрок на другом сервере: ${currentIp}`;
                 }
             }
         } catch (e) {
@@ -499,12 +501,15 @@ class TicketService {
             this.isCheckingServer = false;
         }
     }
+
     async processTicketRules(textarea) {
         const SVG_TRIGGERS = Icons.loupe;
         const SVG_REASON = Icons.bell;
         const SVG_PUNISHMENT = Icons.clock;
         const SVG_CHAT_ERROR = Icons.chat;
         const SVG_SHIELD = Icons.shield;
+
+        this.triggerRows.clear()
 
         this.connectToCurrentServer();
 
