@@ -87,6 +87,32 @@
     </section>
 
     <section class="settings-section">
+        <div class="section-title">Трекер серверов</div>
+
+        <label class="number-card" for="trackOffenderInterval">
+            <span>
+                <strong>Интервал проверки</strong>
+                <small>Как часто запускать проверку IP серверов нарушителей.</small>
+            </span>
+            <span class="number-control">
+                <input type="number" id="trackOffenderInterval" min="1" max="60" value="5"/>
+                <span class="unit">сек</span>
+            </span>
+        </label>
+
+        <label class="number-card" for="ticketAgeLimit">
+            <span>
+                <strong>Игнор свежих тикетов</strong>
+                <small>Не проверять тикеты меньше этого времени.</small>
+            </span>
+            <span class="number-control">
+                <input type="number" id="ticketAgeLimit" min="0" max="120" value="20"/>
+                <span class="unit">сек</span>
+            </span>
+        </label>
+    </section>
+
+    <section class="settings-section">
         <div class="section-title">Обратная связь</div>
 
         <div class="feedback-card">

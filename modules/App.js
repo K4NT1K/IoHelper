@@ -86,6 +86,13 @@ class App {
         if (!nextFeatures.translateText && previousFeatures.translateText !== false) {
             this.messageService.clearTranslationDecorations();
         }
+
+        const intervalChanged = previousSettings?.trackOffenderInterval !== nextSettings.trackOffenderInterval;
+
+        if ((!nextFeatures.trackOffenderServer || intervalChanged) && this.ipTrackInterval) {
+            clearInterval(this.ipTrackInterval);
+            this.ipTrackInterval = null;
+        }
     }
 
     start() {
@@ -173,7 +180,8 @@ class App {
 
         if (this.features.trackOffenderServer) {
             if (!this.ipTrackInterval) {
-                this.ipTrackInterval = setInterval(() => this.ticketService.checkOffendersServers(), 1000);
+                const intervalMs = (this.settings.trackOffenderInterval) * 1000;
+                this.ipTrackInterval = setInterval(() => this.ticketService.checkOffendersServers(), intervalMs);
             }
         } else if (this.ipTrackInterval) {
             clearInterval(this.ipTrackInterval);

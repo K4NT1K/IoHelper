@@ -5,13 +5,17 @@ class ModeratorService {
     }
 
     scanSchedulePage() {
-        if (!window.location.href.includes('/worktime') ) {
+        if (!window.location.href.includes('/worktime')) {
             return;
         }
 
         console.log("[IO HELPER] Метод ScanPage ЗАПУЩЕН.");
+
+        const dayInfoEl = this.document.querySelector('.day-info');
+        const currentDayKey = dayInfoEl ? dayInfoEl.textContent.replace(/\s+/g, ' ').trim() : 'default';
+
         const rows = this.document.querySelectorAll('tr');
-        let moderators = {};
+        let currentDayModerators = {};
 
         rows.forEach((row) => {
             const profileLinks = row.querySelectorAll('a[href*="/moderator/profile/"]');
@@ -22,30 +26,40 @@ class ModeratorService {
                     const name = link.innerText.trim();
 
                     if (name && name.length > 1 && !name.includes('ID:') && isNaN(name)) {
-                        moderators[steamId] = name;
+                        currentDayModerators[steamId] = name;
                     }
                 }
             });
         });
 
-        const parsedCount = Object.keys(moderators).length;
+        const parsedCount = Object.keys(currentDayModerators).length;
         if (parsedCount === 0) {
             console.log("[IO HELPER] Модераторы на странице не найдены. Остановка.");
             return;
         }
 
         this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
-            console.log("[IO HELPER] Успешно сохранено модераторов:", parsedCount);
-
             if (!helperConfig) return;
 
-            helperConfig.moderators = moderators;
+            if (!helperConfig.weeklySchedule) {
+                helperConfig.weeklySchedule = {};
+            }
 
-            this.chrome.storage.local.set({
-                helperConfig
+            helperConfig.weeklySchedule[currentDayKey] = currentDayModerators;
+
+            let allActualModerators = {};
+            for (const day in helperConfig.weeklySchedule) {
+                allActualModerators = {
+                    ...allActualModerators,
+                    ...helperConfig.weeklySchedule[day]
+                };
+            }
+
+            helperConfig.moderators = allActualModerators;
+
+            this.chrome.storage.local.set({ helperConfig }, () => {
+                console.log("[IO HELPER] Успешно сохранено модераторов:", parsedCount);
             });
-
-
         });
     }
 

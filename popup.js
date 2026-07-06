@@ -3,6 +3,8 @@ const hoursInput = document.getElementById('newAccountHours');
 const refreshIntervalInput = document.getElementById('serverRefreshInterval');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
+const trackIntervalInput = document.getElementById('trackOffenderInterval');
+const ticketAgeInput = document.getElementById('ticketAgeLimit');
 const addBtn = document.getElementById('addTriggerBtn');
 const resetBtn = document.getElementById('resetDefaultsBtn');
 const toast = document.getElementById('toastMsg');
@@ -88,6 +90,18 @@ function renderToggles(features) {
             help: 'Добавляет перевод нерусских сообщений в истории чата при наведении на них курсором.'
         },
         {
+            key: 'autoConnectServer',
+            label: 'Авто-подключение к серверу',
+            desc: 'autoConnectServer',
+            help: 'Автоматически нажимает на ссылку подключения при открытии тикета "В работе".'
+        },
+        {
+            key: 'trackOffenderServer',
+            label: 'Трекер серверов нарушителей',
+            desc: 'trackOffenderServer',
+            help: 'Включает отслеживание текущего сервера игрока.'
+        },
+        {
             key: 'scanSchedulePage',
             label: 'Сканировать расписание',
             desc: 'scanSchedulePage',
@@ -95,7 +109,7 @@ function renderToggles(features) {
         }
     ];
 
-    entries.forEach(({ key, label, desc, help }) => {
+    entries.forEach(({key, label, desc, help}) => {
         const item = document.createElement('div');
         item.className = 'toggle-item';
 
@@ -173,6 +187,8 @@ function loadSettingsToUI(settings) {
     hoursInput.value = settings.newAccountHours;
     refreshIntervalInput.value = settings.serverRefreshInterval;
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
+    trackIntervalInput.value = settings.trackOffenderInterval;
+    ticketAgeInput.value = settings.ticketAgeLimit;
 
     renderTriggers(currentSettings.reasonTriggers);
 }
@@ -195,11 +211,12 @@ function collectSettingsFromUI() {
             parseInt(hoursInput.value, 10) || 1,
             1
         ),
-
         serverRefreshInterval: Math.max(
             parseInt(refreshIntervalInput.value, 10) || 0,
             0
         ),
+        trackOffenderInterval: Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1),
+        ticketAgeLimit: Math.max(parseInt(ticketAgeInput.value, 10) || 0, 0),
 
         reasonTriggers: [...currentSettings.reasonTriggers]
 
@@ -208,7 +225,7 @@ function collectSettingsFromUI() {
 }
 
 function saveSettings(settings) {
-    storage.set({ helperSettings: settings }, () => {
+    storage.set({helperSettings: settings}, () => {
         showToast('Сохранено', 1000);
         console.log('[Popup] Settings saved:', settings);
     });
@@ -225,7 +242,7 @@ async function loadSettings() {
     defaultSettings = structuredClone(config.settings);
     renderToggles(defaultSettings.features);
 
-    storage.get(["helperSettings"], ({ helperSettings }) => {
+    storage.get(["helperSettings"], ({helperSettings}) => {
         currentSettings = structuredClone(defaultSettings);
 
         if (helperSettings) {
@@ -272,6 +289,8 @@ triggerInput.addEventListener('keydown', (e) => {
 
 hoursInput.addEventListener('change', saveCurrentSettings);
 refreshIntervalInput.addEventListener('change', saveCurrentSettings);
+trackIntervalInput.addEventListener('change', saveCurrentSettings);
+ticketAgeInput.addEventListener('change', saveCurrentSettings);
 
 // Сброс к дефолтам
 resetBtn.addEventListener("click", () => {
@@ -288,7 +307,7 @@ resetBtn.addEventListener("click", () => {
     showToast("Настройки сброшены");
 });
 
-document.addEventListener("DOMContentLoaded", async() => {
+document.addEventListener("DOMContentLoaded", async () => {
 
     await loadSettings();
 
