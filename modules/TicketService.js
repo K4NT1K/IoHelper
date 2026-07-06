@@ -396,72 +396,109 @@ class TicketService {
         }
     }
 
+    async sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     async checkOffendersServers() {
-        console.log("[Helper Трекер] Запуск проверки серверов нарушителей...");
-        if (!this.settings?.features?.trackOffenderServer) {
-            console.log("[Helper Трекер] Функция выключена в настройках.");
+        if (this.isCheckingServer) return;
+
+        if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
+            const timeLeft = Math.round((this.globalServerCooldown - Date.now()) / 1000);
             return;
         }
 
+        if (!this.settings?.features?.trackOffenderServer) return;
+
+        this.isCheckingServer = true;
+
         const rows = this.document.querySelectorAll('table tbody tr');
-        console.log(`[Helper Трекер] Найдено строк в таблице: ${rows.length}`);
         const now = Date.now();
 
-        for (const [index, row] of rows) {
-            const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
-            if (now - lastCheck < 60000) {
-                // Логируем пропуск только для отладки
-                console.log(`[Helper Трекер] Строка #${index + 1}: пропуск (прошло меньше минуты).`);
-                continue;
-            }
-            row.dataset.lastIpCheck = now.toString();
+        const CACHE_INTERVAL = 7000; // сек кэша на проверенную строку
+        const TICKET_AGE_LIMIT = 20000; // 20 секунд — не проверяем свежие тикеты, чтобы не спамить API
 
-            const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
-            const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+        try {
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
 
-            if (!offenderLink || !serverIpLink) {
-                console.log(`[Helper Трекер] Строка #${index + 1}: Не найден линк нарушителя или IP сервера.`);
-                continue;
-            }
+                // Проверяем возраст тикета
+                const timeCell = row.querySelector('td:nth-child(1)');
+                if (!timeCell) continue;
 
-            const ticketIp = serverIpLink.href.replace('steam://connect/', '').trim();
-            const profileUrl = offenderLink.href;
-            console.log(`[Helper Трекер] Строка #${index + 1}: Нарушитель: ${profileUrl}, IP в тикете: ${ticketIp}`);
+                const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText);
+                if (ticketTimeMs) {
+                    const ticketAge = now - ticketTimeMs;
+                    if (ticketAge < TICKET_AGE_LIMIT) continue; // Пропускаем свежие
+                }
 
-            try {
-                console.log(`[Helper Трекер] Отправка запроса на ${profileUrl}...`);
-                const response = await fetch(profileUrl);
-                const html = await response.text();
+                const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
+                if (now - lastCheck < CACHE_INTERVAL) continue;
 
-                const ipMatch = html.match(/IP\s+(\d{1,3}(?:\.\d{1,3}){3}:\d+)/);
+                const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
+                const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
 
-                if (!ipMatch) {
-                    console.log(`[Helper Трекер] Строка #${index + 1}: Игрок не на сервере (IP в коде отсутствует). Красим в КРАСНЫЙ.`);
-                    serverIpLink.style.color = '#ff4c4c';
-                    serverIpLink.style.fontWeight = 'bold';
-                    serverIpLink.title = "Игрок вышел с сервера";
+                if (!offenderLink || !serverIpLink) continue;
+
+                const ticketIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
+                const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
+                if (!steamIdMatch) continue;
+                const steamId = steamIdMatch[0];
+
+                row.dataset.lastIpCheck = now.toString();
+
+                // Делаем паузу между КАЖДЫМ запросом внутри этого единственного цикла
+                await this.sleep(300);
+
+                const response = await fetch('https://cybershoke.net/api/user/data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json, text/plain, */*',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    // КРИТИЧНО: Передает куки (сессию, токены админа)
+                    credentials: 'include',
+                    body: new URLSearchParams({ steamid64: steamId }).toString()
+                });
+
+                // Если поймали жесткий лимит — уходим в глубокую спячку на 3 минуты
+                if (response.status === 429) {
+                    console.error(`[Helper Трекер] Поймали 429! Включаем блокировку запросов на 3 минуты.`);
+                    this.globalServerCooldown = Date.now() + 180000; // 3 минут в мс
+                    break; // Выходим из цикла обработки строк
+                }
+
+                if (!response.ok) throw new Error(`Ошибка сети API: ${response.status}`);
+
+                const result = await response.json();
+                let currentIp = null;
+
+                if (result?.server?.server_ip && result?.server?.server_port) {
+                    currentIp = `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
+                }
+
+                // Покраска интерфейса
+                if (!currentIp) {
+                    serverIpLink.style.setProperty('color', '#cf0505', 'important');
+                    serverIpLink.title = "Игрок оффлайн";
                 } else {
-                    const currentIp = ipMatch[1].trim();
-                    console.log(`[Helper Трекер] Строка #${index + 1}: Текущий IP игрока из профиля: ${currentIp}`);
-
                     if (currentIp === ticketIp) {
-                        console.log(`[Helper Трекер] Строка #${index + 1}: IP совпадает. Красим в ЗЕЛЕНЫЙ.`);
-                        serverIpLink.style.color = '#4caf50';
-                        serverIpLink.style.fontWeight = 'bold';
-                        serverIpLink.title = "Игрок на месте";
+                        serverIpLink.style.setProperty('color', '#07bf0c', 'important');
+                        serverIpLink.title = "Игрок на сервере тикета";
                     } else {
-                        console.log(`[Helper Трекер] Строка #${index + 1}: IP РАЗНЫЕ (Перешел). Красим в ЖЕЛТЫЙ.`);
-                        serverIpLink.style.color = '#ffeb3b';
-                        serverIpLink.style.fontWeight = 'bold';
-                        serverIpLink.title = `Перешел на другой сервер: ${currentIp}`;
+                        serverIpLink.style.setProperty('color', '#ffeb3b', 'important');
+                        serverIpLink.title = `Игрок на другом сервере: ${currentIp}`;
                     }
                 }
-            } catch (e) {
-                console.error(`[Helper Трекер] Ошибка при проверке строки #${index + 1}:`, e);
             }
+        } catch (e) {
+            console.error(`[Helper Трекер] Ошибка:`, e);
+        } finally {
+            // Обязательно снимаем замок в конце, чтобы через 5 секунд следующий интервал мог запуститься
+            this.isCheckingServer = false;
         }
     }
-
     async processTicketRules(textarea) {
         const SVG_TRIGGERS = Icons.loupe;
         const SVG_REASON = Icons.bell;

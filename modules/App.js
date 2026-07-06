@@ -173,7 +173,7 @@ class App {
 
         if (this.features.trackOffenderServer) {
             if (!this.ipTrackInterval) {
-                this.ipTrackInterval = setInterval(() => this.ticketService.checkOffendersServers(), 5000);
+                this.ipTrackInterval = setInterval(() => this.ticketService.checkOffendersServers(), 1000);
             }
         } else if (this.ipTrackInterval) {
             clearInterval(this.ipTrackInterval);
