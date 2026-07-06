@@ -7,12 +7,14 @@
       "processTicketRules": true,
       "manageEmptyBlocks": true,
       "translateText": true,
-      "trackOffenderServer": true,
+      "trackOffenderServer": false,
       "autoConnectServer": false,
       "scanSchedulePage": false
     },
     "newAccountHours": 7,
     "serverRefreshInterval": 30,
+    "trackOffenderInterval": 5,
+    "ticketAgeLimit": 20,
     "reasonTriggers": [
       "крутилка",
       "крутилкой",
