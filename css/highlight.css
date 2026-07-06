@@ -61,43 +61,88 @@ svg.moderhlpr-admin-icon {
 }
 
 .moderhlpr-duplicate-server {
-
-    border-left: 3px solid var(--color-warning);
     position: relative;
+    border-left: 3px solid var(--color-warning);
+
 
     /*Если захочется градиентно ячейку выделить, но это глаз мозолит*/
-    /*background:*/
-    /*        linear-gradient(*/
-    /*                90deg,*/
-    /*                color-mix(in srgb, var(--color-warning) 20%, transparent) 0%,*/
+    background:
+            linear-gradient(
+                    90deg,
+                    color-mix(in srgb, var(--color-warning) 12%, transparent) 0%,
 
-    /*                color-mix(in srgb, var(--color-warning) 10%, transparent) 8%,*/
+                    color-mix(in srgb, var(--color-warning) 9%, transparent) 4%,
 
-    /*                color-mix(in srgb, var(--color-warning) 4%, transparent) 14%,*/
+                    color-mix(in srgb, var(--color-warning) 4%, transparent) 7%,
 
-    /*                transparent 60%*/
-    /*        ) !important;*/
-    /*box-shadow:*/
-    /*        inset 1px 0 0 color-mix(*/
-    /*                in srgb,*/
-    /*                var(--color-warning) 50%,*/
-    /*                transparent*/
-    /*        );*/
-    /*transition:*/
-    /*        background .2s ease;*/
+                    transparent 9%
+            ) !important;
+    box-shadow:
+            inset 3px 0 0 color-mix(
+                    in srgb,
+                    var(--color-warning) 50%,
+                    transparent
+            );
+    transition:
+            background 0.5s ease;
 }
+
+/*.moderhlpr-server-online,*/
+/*.moderhlpr-server-other,*/
+/*.moderhlpr-server-offline {*/
+/*    display: inline-flex;*/
+/*    align-items: center;*/
+/*    padding: 1px 8px;*/
+/*    border-radius: 6px;*/
+/*    font-weight: 600;*/
+/*    transition: .5s;*/
+/*}*/
+
+/*.moderhlpr-server-online {*/
+/*    color: var(--color-success-real) !important;*/
+/*    background: color-mix(in srgb, var(--color-success-real) 12%, transparent);*/
+/*    box-shadow:*/
+/*            0 0 8px color-mix(in srgb, var(--color-success-real) 18%, transparent);*/
+/*}*/
+
+/*.moderhlpr-server-other {*/
+/*    color: var(--color-warning) !important;*/
+/*    background: color-mix(in srgb, var(--color-warning) 12%, transparent);*/
+/*    box-shadow:*/
+/*            0 0 8px color-mix(in srgb, var(--color-warning) 18%, transparent);*/
+/*}*/
+
+/*.moderhlpr-server-offline {*/
+/*    color: var(--color-danger) !important;*/
+/*    background: color-mix(in srgb, var(--color-danger) 12%, transparent);*/
+/*    box-shadow:*/
+/*            0 0 8px color-mix(in srgb, var(--color-danger) 18%, transparent);*/
+/*}*/
 
 .moderhlpr-server-online,
 .moderhlpr-server-other,
 .moderhlpr-server-offline {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
+
     padding: 1px 8px;
     border-radius: 6px;
     font-weight: 600;
-    transition: .5s;
+    transition: .3s;
 }
 
+.moderhlpr-server-online::before,
+.moderhlpr-server-other::before,
+.moderhlpr-server-offline::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+
+    animation: moderhlpr-status-pulse 1.5s infinite ease-in-out;
+}
 .moderhlpr-server-online {
     color: var(--color-success-real) !important;
     background: color-mix(in srgb, var(--color-success-real) 12%, transparent);
@@ -105,6 +150,12 @@ svg.moderhlpr-admin-icon {
             0 0 8px color-mix(in srgb, var(--color-success-real) 18%, transparent);
 }
 
+.moderhlpr-server-online::before {
+    background: var(--color-success-real);
+    box-shadow:
+            0 0 6px var(--color-success-real),
+            0 0 12px color-mix(in srgb, var(--color-success-real) 45%, transparent);
+}
 .moderhlpr-server-other {
     color: var(--color-warning) !important;
     background: color-mix(in srgb, var(--color-warning) 12%, transparent);
@@ -112,9 +163,41 @@ svg.moderhlpr-admin-icon {
             0 0 8px color-mix(in srgb, var(--color-warning) 18%, transparent);
 }
 
+.moderhlpr-server-other::before {
+    background: var(--color-warning);
+    box-shadow:
+            0 0 6px var(--color-warning),
+            0 0 12px color-mix(in srgb, var(--color-warning) 45%, transparent);
+}
 .moderhlpr-server-offline {
     color: var(--color-danger) !important;
     background: color-mix(in srgb, var(--color-danger) 12%, transparent);
     box-shadow:
             0 0 8px color-mix(in srgb, var(--color-danger) 18%, transparent);
+}
+
+.moderhlpr-server-offline::before {
+    background: var(--color-danger);
+    box-shadow:
+            0 0 6px var(--color-danger),
+            0 0 12px color-mix(in srgb, var(--color-danger) 45%, transparent);
+}
+@keyframes moderhlpr-status-pulse {
+    0%, 100% {
+        box-shadow:
+                0 0 4px currentColor,
+                0 0 10px currentColor;
+        transform: scale(1);
+        opacity: 1;
+        filter: brightness(1);
+    }
+
+    50% {
+        box-shadow:
+                0 0 10px currentColor,
+                0 0 20px currentColor;
+        transform: scale(1.2);
+        opacity: .75;
+        filter: brightness(1.2);
+    }
 }

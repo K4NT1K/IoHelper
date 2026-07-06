@@ -8,6 +8,7 @@ class TicketService {
 
         this.triggerRows = new Map();
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
+        this.isCheckingServer = false;
     }
 
     handleTriggerClick(e) {
@@ -34,32 +35,30 @@ class TicketService {
     getRuleSeverity(rule) {
         return rule?.severity ?? rule?.duration ?? 0;
     }
-
     getMuteHistoryBlock() {
         return this.getBlockByHeader('История Мутов');
     }
+    getBlockByHeader(textMatch) {
+        const headers = Array.from(this.document.querySelectorAll('h3'));
+        const targetHeader = headers.find(h3 => h3.textContent.includes(textMatch));
+        if (!targetHeader) return null;
 
-    normalizeReason(reason) {
+        let parent = targetHeader.parentElement;
+        while (parent && parent !== this.document.body) {
+            if (parent.querySelector('table')) {
+                return parent;
+            }
+            parent = parent.parentElement;
+        }
+        return null;
+    }
+    getNormalizeReason(reason) {
         return String(reason || '')
             .replace(/\s*\([^)]*\)\s*/g, ' ')
             .replace(/\s+/g, ' ')
             .trim()
             .toLowerCase();
     }
-
-    parseDateCell(dateCell) {
-        const spans = dateCell?.querySelectorAll('span');
-        const dateText = spans && spans[0] ? spans[0].innerText?.trim() : null;
-        const timeText = spans && spans[1] ? spans[1].innerText?.trim() : '00:00';
-        if (!dateText) return null;
-
-        const [d, m, y] = dateText.split('.').map(Number);
-        const [hh = 0, mm = 0, ss = 0] = timeText.split(':').map(Number);
-        if ([d, m, y, hh, mm, ss].some(Number.isNaN)) return null;
-
-        return new Date(y, m - 1, d, hh, mm, ss);
-    }
-
     getColumnIndex(row, names, fallbackIndex) {
         const table = row.closest('table');
         const headers = Array.from(table?.querySelectorAll('thead th') || [])
@@ -67,7 +66,6 @@ class TicketService {
         const index = headers.findIndex(header => names.some(name => header.includes(name)));
         return index >= 0 ? index : fallbackIndex;
     }
-
     getChatRowData(row) {
         const cells = row.querySelectorAll('td');
         if (cells.length < 2) return null;
@@ -87,10 +85,23 @@ class TicketService {
         };
     }
 
+    parseDateCell(dateCell) {
+        const spans = dateCell?.querySelectorAll('span');
+        const dateText = spans && spans[0] ? spans[0].innerText?.trim() : null;
+        const timeText = spans && spans[1] ? spans[1].innerText?.trim() : '00:00';
+        if (!dateText) return null;
+
+        const [d, m, y] = dateText.split('.').map(Number);
+        const [hh = 0, mm = 0, ss = 0] = timeText.split(':').map(Number);
+        if ([d, m, y, hh, mm, ss].some(Number.isNaN)) return null;
+
+        return new Date(y, m - 1, d, hh, mm, ss);
+    }
+
     findRecentMuteForReasons(muteHistoryBlock, reasonNames) {
         if (!muteHistoryBlock) return null;
 
-        const acceptedReasons = reasonNames.map(reason => this.normalizeReason(reason)).filter(Boolean);
+        const acceptedReasons = reasonNames.map(reason => this.getNormalizeReason(reason)).filter(Boolean);
         const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
         let latestMute = null;
 
@@ -99,7 +110,7 @@ class TicketService {
             if (cells.length < 6) return;
 
             const rowDate = this.parseDateCell(cells[1]);
-            const reason = this.normalizeReason(cells[3]?.innerText);
+            const reason = this.getNormalizeReason(cells[3]?.innerText);
             if (!rowDate || rowDate < thirtyDaysAgo || !acceptedReasons.includes(reason)) return;
 
             const duration = this.utils.parseDurationToMinutes(cells[5]?.innerText?.trim());
@@ -112,7 +123,6 @@ class TicketService {
 
         return latestMute;
     }
-
     hasActiveMute(muteHistoryBlock) {
         if (!muteHistoryBlock) return false;
 
@@ -225,7 +235,6 @@ class TicketService {
             }
         });
     }
-
     restoreManagedEmptyBlocks() {
         this.document.querySelectorAll('[data-moderhlpr-managed-hidden="true"]').forEach(card => {
             card.style.display = 'block';
@@ -233,6 +242,39 @@ class TicketService {
         });
     }
 
+    connectToCurrentServer() {
+        console.log("[Helper] Проверка авто-подключения. Актуальные фичи:", this.settings?.features);
+
+        if (!this.settings?.features?.autoConnectServer) {
+            console.log("[Helper] Авто-подключение отменено: фича выключена в настройках.");
+            return;
+        }
+
+        // Поиск спана со статусом "В работе"
+        const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
+            span => span.textContent.trim() === "В работе"
+        );
+
+        if (!statusSpan) {
+            console.log("[Helper] Авто-подключение отменено: статус 'В работе' не найден.");
+            return;
+        }
+
+        // Защита от множественных кликов через флаг на уровне сессии документа
+        if (this.document.body.dataset.autoConnected === "true") {
+            console.log("[Helper] Авто-подключение уже выполнялось для этого тикета.");
+            return;
+        }
+
+        const connectLink = this.document.querySelector('a[href^="steam://connect/"]');
+        if (connectLink) {
+            console.log("[Helper] Ссылка на коннект найдена:", connectLink.href, "Выполняю клик...");
+            this.document.body.dataset.autoConnected = "true";
+            connectLink.click();
+        } else {
+            console.log("[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.");
+        }
+    }
     setCurrentServerRefreshInterval(seconds) {
         clearInterval(this.currentServerRefreshInterval);
 
@@ -267,21 +309,101 @@ class TicketService {
         this.document.getElementById('helper-suggest-badge')?.remove();
     }
 
-    getBlockByHeader(textMatch) {
-        const headers = Array.from(this.document.querySelectorAll('h3'));
-        const targetHeader = headers.find(h3 => h3.textContent.includes(textMatch));
-        if (!targetHeader) return null;
-
-        let parent = targetHeader.parentElement;
-        while (parent && parent !== this.document.body) {
-            if (parent.querySelector('table')) {
-                return parent;
-            }
-            parent = parent.parentElement;
+    async checkOffendersServers() {
+        if (!window.location.href.includes('/support/reports') &&
+            !window.location.href.includes('/support/tickets')) {
+            return;
         }
-        return null;
-    }
 
+        if (this.isCheckingServer) return;
+
+        if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
+            return;
+        }
+
+        const rows = this.document.querySelectorAll('table tbody tr');
+        if (!rows.length) return;
+
+        this.isCheckingServer = true;
+        const now = Date.now();
+        const CACHE_INTERVAL = 5000;
+        const TICKET_AGE_LIMIT = (this.settings?.ticketAgeLimit ?? 20) * 1000;
+
+        try {
+            for (let i = rows.length - 1; i >= 0; i--) {
+                if (!this.settings.features.trackOffenderServer) break;
+
+                const row = rows[i];
+
+                const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
+                if (timeCell) {
+                    const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
+                    if (ticketTimeMs) {
+                        const ticketAge = now - ticketTimeMs;
+                        if (ticketAge < TICKET_AGE_LIMIT) continue;
+                    }
+                }
+
+                const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
+                const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+
+                if (!offenderLink || !serverIpLink) continue;
+
+                const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
+                if (now - lastCheck < CACHE_INTERVAL) continue;
+
+                const ticketIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
+                const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
+                if (!steamIdMatch) continue;
+
+                row.dataset.lastIpCheck = now.toString();
+
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+                const response = await fetch('https://cybershoke.net/api/user/data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json, text/plain, */*',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'include',
+                    body: new URLSearchParams({ steamid64: steamIdMatch[0] }).toString()
+                });
+
+                if (response.status === 429) {
+                    this.globalServerCooldown = Date.now() + 180000;
+                    break;
+                }
+
+                if (!response.ok) continue;
+
+                const result = await response.json();
+                let currentIp = null;
+
+                if (result?.server?.server_ip && result?.server?.server_port) {
+                    currentIp = `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
+                }
+
+                serverIpLink.classList.remove("moderhlpr-server-online", "moderhlpr-server-offline", "moderhlpr-server-other");
+
+                if (!currentIp) {
+                    serverIpLink.classList.add("moderhlpr-server-offline");
+                    // serverIpLink.innerText = "Offline";
+                } else if (currentIp === ticketIp) {
+                    serverIpLink.classList.add("moderhlpr-server-online");
+                    // serverIpLink.innerText = "Online";
+                } else {
+                    serverIpLink.classList.add("moderhlpr-server-other");
+                    // serverIpLink.innerText = "Other";
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            this.isCheckingServer = false;
+        }
+    }
     findMostSeverePunishment(ruleCounters) {
         let bestRule = null;
         let bestScore = -1;
@@ -305,7 +427,6 @@ class TicketService {
 
         return bestRule;
     }
-
     calculateFinalPunishment(rule, count, ruleCounters = {}) {
         let finalName = rule.name;
         let finalDuration = rule.duration;
@@ -361,155 +482,14 @@ class TicketService {
 
         return {finalName, finalDuration, finalDurationStr};
     }
-
-    connectToCurrentServer() {
-        console.log("[Helper] Проверка авто-подключения. Актуальные фичи:", this.settings?.features);
-
-        if (!this.settings?.features?.autoConnectServer) {
-            console.log("[Helper] Авто-подключение отменено: фича выключена в настройках.");
-            return;
-        }
-
-        // Поиск спана со статусом "В работе"
-        const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
-            span => span.textContent.trim() === "В работе"
-        );
-
-        if (!statusSpan) {
-            console.log("[Helper] Авто-подключение отменено: статус 'В работе' не найден.");
-            return;
-        }
-
-        // Защита от множественных кликов через флаг на уровне сессии документа
-        if (this.document.body.dataset.autoConnected === "true") {
-            console.log("[Helper] Авто-подключение уже выполнялось для этого тикета.");
-            return;
-        }
-
-        const connectLink = this.document.querySelector('a[href^="steam://connect/"]');
-        if (connectLink) {
-            console.log("[Helper] Ссылка на коннект найдена:", connectLink.href, "Выполняю клик...");
-            this.document.body.dataset.autoConnected = "true";
-            connectLink.click();
-        } else {
-            console.log("[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.");
-        }
-    }
-
-    async sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    async checkOffendersServers() {
-        if (this.isCheckingServer) return;
-
-        if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
-            const timeLeft = Math.round((this.globalServerCooldown - Date.now()) / 1000);
-            return;
-        }
-
-        if (!this.settings?.features?.trackOffenderServer) return;
-
-        this.isCheckingServer = true;
-
-        const rows = this.document.querySelectorAll('table tbody tr');
-        const now = Date.now();
-
-        const CACHE_INTERVAL = 5000; // мс кэша на проверенную строку
-        const TICKET_AGE_LIMIT = (this.settings?.ticketAgeLimit ?? 20) * 1000; // 20 секунд — не проверяем свежие тикеты, чтобы не спамить API
-
-        try {
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-
-                // Проверяем возраст тикета
-                const timeCell = row.querySelector('td:nth-child(1)');
-                if (!timeCell) continue;
-
-                const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText);
-                if (ticketTimeMs) {
-                    const ticketAge = now - ticketTimeMs;
-                    if (ticketAge < TICKET_AGE_LIMIT) continue; // Пропускаем свежие
-                }
-
-                const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
-                if (now - lastCheck < CACHE_INTERVAL) continue;
-
-                const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
-                const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
-
-                if (!offenderLink || !serverIpLink) continue;
-
-                const ticketIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
-                const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
-                if (!steamIdMatch) continue;
-                const steamId = steamIdMatch[0];
-
-                row.dataset.lastIpCheck = now.toString();
-
-                // Делаем паузу между КАЖДЫМ запросом внутри этого единственного цикла
-                await this.sleep(250);
-
-                const response = await fetch('https://cybershoke.net/api/user/data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json, text/plain, */*',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    // КРИТИЧНО: Передает куки (сессию, токены админа)
-                    credentials: 'include',
-                    body: new URLSearchParams({ steamid64: steamId }).toString()
-                });
-
-                // Если поймали жесткий лимит — уходим в глубокую спячку на 3 минуты
-                if (response.status === 429) {
-                    console.error(`[Helper Трекер] Поймали 429! Включаем блокировку запросов на 3 минуты.`);
-                    this.globalServerCooldown = Date.now() + 180000; // 3 минут в мс
-                    break; // Выходим из цикла обработки строк
-                }
-
-                if (!response.ok) throw new Error(`Ошибка сети API: ${response.status}`);
-
-                const result = await response.json();
-                let currentIp = null;
-
-                if (result?.server?.server_ip && result?.server?.server_port) {
-                    currentIp = `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
-                }
-
-                serverIpLink.classList.remove(
-                    "moderhlpr-server-online",
-                    "moderhlpr-server-offline",
-                    "moderhlpr-server-other"
-                );
-                if (!currentIp) {
-                    serverIpLink.classList.add("moderhlpr-server-offline");
-                    serverIpLink.title = "Игрок оффлайн";
-                } else if (currentIp === ticketIp) {
-                    serverIpLink.classList.add("moderhlpr-server-online");
-                    serverIpLink.title = "Игрок на сервере тикета";
-                } else {
-                    serverIpLink.classList.add("moderhlpr-server-other");
-                    serverIpLink.title = `Игрок на другом сервере: ${currentIp}`;
-                }
-            }
-        } catch (e) {
-            console.error(`[Helper Трекер] Ошибка:`, e);
-        } finally {
-            // Обязательно снимаем замок в конце, чтобы через 5 секунд следующий интервал мог запуститься
-            this.isCheckingServer = false;
-        }
-    }
-
     async processTicketRules(textarea) {
+        this.triggerRows.clear()
+
         const SVG_TRIGGERS = Icons.loupe;
         const SVG_REASON = Icons.bell;
         const SVG_PUNISHMENT = Icons.clock;
         const SVG_CHAT_ERROR = Icons.chat;
         const SVG_SHIELD = Icons.shield;
-
-        this.triggerRows.clear()
 
         this.connectToCurrentServer();
 

@@ -9,6 +9,7 @@ class App {
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
         this.observer = null;
+        this.ipTrackTimeoutId = null;
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -27,6 +28,64 @@ class App {
             rules: this.rules
         });
         this.moderatorService = new ModeratorService({document, chrome});
+    }
+
+    start() {
+        this.chrome.storage.local.get(null, (result) => {});
+
+        this.initSettingsListener();
+
+        fetch(chrome.runtime.getURL("icons/icons.json"))
+            .then(r => r.json())
+            .then(data => {
+                window.Icons = data;
+            });
+
+        this.chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== "local" || !changes.helperSettings) {
+                return;
+            }
+
+            const settings = changes.helperSettings.newValue || {};
+
+            this.updateSettings(settings);
+        });
+
+        this.observer = new MutationObserver((mutations) => {
+            let shouldUpdate = false;
+
+            for (let i = 0; i < mutations.length; i++) {
+                const m = mutations[i];
+                if (m.type === 'attributes' && m.attributeName === 'class') {
+                    const targetClass = m.target.className;
+                    if (typeof targetClass === 'string' && targetClass.includes('moderhlpr-')) {
+                        continue;
+                    }
+                }
+                if (m.type === 'attributes' && m.attributeName.startsWith('data-')) {
+                    continue;
+                }
+                shouldUpdate = true;
+                break;
+            }
+
+            if (shouldUpdate) {
+                this.runDOMUpdates();
+            }
+        });
+
+        this.runDOMUpdates();
+
+        this.handleTrackOffenderLoop();
+    }
+
+    initSettingsListener() {
+        this.chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === 'updateSettings' && request.settings) {
+                this.updateSettings(request.settings);
+                sendResponse({ status: 'success' });
+            }
+        });
     }
 
     updateSettings(settings) {
@@ -51,8 +110,44 @@ class App {
 
         if (this.observer) this.observer.disconnect();
 
+        if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
+            this.ticketService.connectToCurrentServer();
+        }
+
         this.cleanupChangedSettings(previousSettings, this.settings);
-        this.runDOMUpdates();
+        this.handleTrackOffenderLoop(previousSettings);
+    }
+
+    handleTrackOffenderLoop(previousSettings = null) {
+        const isEnabled = this.features.trackOffenderServer;
+        const currentInterval = this.settings.trackOffenderInterval || 5;
+        const prevInterval = previousSettings?.trackOffenderInterval;
+
+        if (!isEnabled || (prevInterval !== undefined && prevInterval !== currentInterval)) {
+            if (this.ipTrackTimeoutId) {
+                clearTimeout(this.ipTrackTimeoutId);
+                this.ipTrackTimeoutId = null;
+            }
+        }
+
+        if (isEnabled && !this.ipTrackTimeoutId) {
+            this.scheduleNextCheck();
+        }
+    }
+
+    scheduleNextCheck() {
+        if (!this.features.trackOffenderServer) return;
+
+        const intervalMs = (this.settings.trackOffenderInterval || 5) * 1000;
+
+        this.ipTrackTimeoutId = setTimeout(async () => {
+            try {
+                await this.ticketService.checkOffendersServers();
+            } catch (err) {
+                console.error(err);
+            }
+            this.scheduleNextCheck();
+        }, intervalMs);
     }
 
     cleanupChangedSettings(previousSettings, nextSettings) {
@@ -95,42 +190,8 @@ class App {
         }
     }
 
-    start() {
-        this.chrome.storage.local.get(null, (result) => {});
-
-        fetch(chrome.runtime.getURL("icons/icons.json"))
-            .then(r => r.json())
-            .then(data => {
-                window.Icons = data;
-            });
-
-        this.chrome.storage.onChanged.addListener((changes, areaName) => {
-            if (areaName !== "local" || !changes.helperSettings) {
-                return;
-            }
-
-            const settings = changes.helperSettings.newValue || {};
-
-            this.updateSettings(settings);
-        });
-
-        this.observer = new MutationObserver(() => this.runDOMUpdates());
-        this.observer.observe(this.document.documentElement, {childList: true, subtree: true});
-        this.runDOMUpdates();
-        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
-    }
-
     runDOMUpdates() {
         if (this.observer) this.observer.disconnect();
-
-        if (this.features.scanSchedulePage && this.window.location.href.includes('/worktime')) {
-            this.moderatorService.scanSchedulePage();
-        }
-
-        this.moderatorService.highlightSavedModerators();
-        if (this.features.translateText) {
-            this.messageService.processChatMessages();
-        }
 
         const textareas = this.document.querySelectorAll('textarea');
         textareas.forEach(textarea => {
@@ -158,11 +219,26 @@ class App {
             }
         });
 
+        if (this.features.scanSchedulePage) {
+            this.moderatorService.scanSchedulePage();
+        }
+        this.moderatorService.highlightSavedModerators()
+
+        if (this.features.translateText) {
+            this.messageService.processChatMessages();
+        }
+
         if (this.features.manageEmptyBlocks) {
             this.ticketService.manageEmptyBlocks();
         }
 
-        if (this.observer) this.observer.observe(this.document.documentElement, {childList: true, subtree: true});
+        if (this.observer) {
+            this.observer.observe(this.document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true
+            });
+        }
 
         const rows = this.document.querySelectorAll('tr');
         rows.forEach(row => {
@@ -176,16 +252,6 @@ class App {
 
         if (this.features.highlightDuplicateServers) {
             this.messageService.highlightDuplicateServerIps();
-        }
-
-        if (this.features.trackOffenderServer) {
-            if (!this.ipTrackInterval) {
-                const intervalMs = (this.settings.trackOffenderInterval) * 1000;
-                this.ipTrackInterval = setInterval(() => this.ticketService.checkOffendersServers(), intervalMs);
-            }
-        } else if (this.ipTrackInterval) {
-            clearInterval(this.ipTrackInterval);
-            this.ipTrackInterval = null;
         }
     }
 }
