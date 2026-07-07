@@ -3,7 +3,7 @@
    ========================================================================== */
 
 /* Информационные плашки результатов проверки триггеров */
-.moderhlpr-info-badge {
+.ioh-info-badge {
     padding: 10px;
     margin: 10px 0;
     border-radius: 12px;
@@ -23,35 +23,35 @@
 }
 
 /* Модификатор: Нарушений нет (Зеленая тема сайта) */
-.moderhlpr-info-badge--success {
+.ioh-info-badge--success {
     border-color: var(--color-success, #10b981);
     background: color-mix(in srgb, var(--color-success, #10b981) 12%, var(--color-bg-card, #1e293b));
     color: var(--color-success, #10b981);
 }
 
 /* Модификатор: Нарушения найдены (Красная/Опасная тема сайта) */
-.moderhlpr-info-badge--accent {
+.ioh-info-badge--accent {
     border-color: var(--color-danger, #ef4444);
     background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, var(--color-bg-card, #1e293b));
     color: var(--color-danger, #ef4444);
 }
 
 /* Модификатор: Предупреждение (Желтая/Варнинг тема сайта) */
-.moderhlpr-info-badge--warning {
+.ioh-info-badge--warning {
     border-color: var(--color-warning, #f59e0b);
     background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, var(--color-bg-card, #1e293b));
     color: var(--color-warning, #f59e0b);
 }
 
 /* Модификатор: Приглушенный блок (Чат пуст, ошибки селекторов) */
-.moderhlpr-info-badge--muted {
+.ioh-info-badge--muted {
     border-color: var(--color-border, rgba(255, 255, 255, 0.1));
     background: var(--color-bg-card, #1e293b);
     color: var(--color-text-muted, #94a3b8);
 }
 
 /* Стилизация строк внутри плашки для выравнивания иконок и текста */
-.moderhlpr-row {
+.ioh-badge-row {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -59,31 +59,31 @@
     color: var(--color-text, #f8fafc);
 }
 
-.moderhlpr-row:last-child {
+.ioh-badge-row:last-child {
     margin-bottom: 0;
 }
 
-.moderhlpr-analysis-label .moderhlpr-badge-icon {
+.ioh-analysis-label .ioh-badge-icon {
     width: 16px;
     height: 16px;
 }
 
-.moderhlpr-analysis-value {
+.ioh-analysis-value {
     flex-wrap: wrap;
     gap: 6px;
     color: var(--color-text, #f8fafc);
     overflow-wrap: anywhere;
 }
 
-.moderhlpr-analysis-value--muted {
+.ioh-analysis-value--muted {
     color: var(--color-text-muted, #94a3b8);
 }
 
-.moderhlpr-analysis-triggers {
+.ioh-analysis-triggers {
     align-items: baseline;
 }
 
-.moderhlpr-analysis-chips {
+.ioh-analysis-chips {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -91,7 +91,7 @@
     margin-top: 2px;
 }
 
-.moderhlpr-analysis-chip {
+.ioh-analysis-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -105,7 +105,7 @@
     line-height: 1.2;
 }
 
-.moderhlpr-analysis-chip b {
+.ioh-analysis-chip b {
     display: inline-grid;
     place-items: center;
     min-width: 16px;
@@ -116,12 +116,12 @@
     font-size: 11px;
 }
 
-.moderhlpr-trigger-separator {
+.ioh-trigger-separator {
     color: var(--color-text-muted, #94a3b8);
 }
 
 /* Внутренний текст активности/частоты триггеров (выводится строго в строку с причиной) */
-.moderhlpr-activity-text {
+.ioh-activity-text {
     display: inline;
     margin-left: 6px;
     font-size: 12px;
@@ -132,15 +132,15 @@
 }
 
 /* Подсвеченные триггеры внутри строки результатов */
-.moderhlpr-analysis-row {
+.ioh-analysis-row {
     grid-template-columns: 1fr;
 }
 
-.moderhlpr-analysis-value {
+.ioh-analysis-value {
     padding-top: 8px;
 }
 
-.moderhlpr-analysis-grid {
+.ioh-analysis-grid {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -148,7 +148,7 @@
     border: none;
 }
 
-.moderhlpr-analysis-row {
+.ioh-analysis-row {
     display: flex;
     align-items: center;
     gap: 20px;
@@ -164,7 +164,7 @@
     );
 }
 
-.moderhlpr-analysis-label {
+.ioh-analysis-label {
     border-right: 0;
     color: var(--color-text-muted, #94a3b8);
     padding-bottom: 7px;
@@ -174,32 +174,32 @@
     letter-spacing: .08em;
 }
 
-.moderhlpr-analysis-value {
+.ioh-analysis-value {
     padding: 0;
     font-size: 14px;
 }
 
-.moderhlpr-badge-icon {
+.ioh-badge-icon {
     margin-right: 4px;
     position: relative;
 
     flex-shrink: 0;
 }
 
-.moderhlpr-trigger-link {
+.ioh-trigger-link {
     cursor: pointer;
     transition: color 1.5s;
 }
 
-.moderhlpr-trigger-link:hover {
+.ioh-trigger-link:hover {
     color: var(--color-danger);
 }
 
-.moderhlpr-chat-highlight {
-    animation: moderhlpr-chat-highlight 1.5s ease;
+.ioh-chat-highlight {
+    animation: ioh-chat-highlight 1.5s ease;
 }
 
-@keyframes moderhlpr-chat-highlight {
+@keyframes ioh-chat-highlight {
     0% {
         background: color-mix(in srgb, var(--color-danger) 28%, transparent);
         box-shadow: inset 0 0 0 2px var(--color-danger);

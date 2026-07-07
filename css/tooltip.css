@@ -2,7 +2,7 @@
    IO HELPER Styles
    ========================================================================== */
 
-.moderhlpr-trigger-tooltip {
+.ioh-trigger-tooltip {
     color: var(--color-danger, #ef4444);
     border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 28%, transparent);
     background: color-mix(in srgb, var(--color-danger, #ef4444) 13%, transparent);
@@ -15,14 +15,14 @@
     transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
 
-.moderhlpr-trigger-tooltip:hover {
+.ioh-trigger-tooltip:hover {
     background: color-mix(in srgb, var(--color-danger, #ef4444) 20%, transparent);
     border-color: color-mix(in srgb, var(--color-danger, #ef4444) 55%, transparent);
     transform: translateY(-0.5px);
 }
 
 /* Всплывающий тултип при наведении на слово-триггер */
-.moderhlpr-trigger-tooltip::after {
+.ioh-trigger-tooltip::after {
     content: attr(data-full-msg);
     position: absolute;
     bottom: 140%;
@@ -51,13 +51,13 @@
 }
 
 /* Отображение тултипа при наведении */
-.moderhlpr-trigger-tooltip:hover::after {
+.ioh-trigger-tooltip:hover::after {
     opacity: 1;
     visibility: visible;
 }
 
 /* Стрелочка (треугольник) под тултипом */
-.moderhlpr-trigger-tooltip::before {
+.ioh-trigger-tooltip::before {
     content: '';
     position: absolute;
     bottom: 120%;
@@ -73,7 +73,7 @@
     transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.moderhlpr-trigger-tooltip:hover::before {
+.ioh-trigger-tooltip:hover::before {
     opacity: 1;
     visibility: visible;
 }

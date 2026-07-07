@@ -3,5 +3,21 @@
    ========================================================================== */
 
 /* ==========================================================================
-   ModerHLPR iOS 16/17 Aesthetic Styles + Cybershoke Native Theme Integration
+   IO Helper shared utility styles
    ========================================================================== */
+
+.ioh-account-created {
+    margin-top: 4px;
+}
+
+.ioh-account-value {
+    display: inline-flex;
+    align-items: center;
+
+    padding: 4px 0;
+
+    color: #eef2f7;
+    font-weight: 600;
+
+    transition: .2s;
+}

@@ -22,18 +22,18 @@ class MessageService {
         }
 
         messageCell.dataset.mhlprHoverReady = 'true';
-        messageCell.classList.add('moderhlpr-chat-message');
+        messageCell.classList.add('ioh-chat-message');
 
         const translateOnHover = async () => {
             if (messageCell.dataset.isTranslating === 'true') return;
 
             if (!messageCell.dataset.translatedText) {
                 messageCell.dataset.isTranslating = 'true';
-                messageCell.classList.add('moderhlpr-loading');
+                messageCell.classList.add('ioh-loading');
 
                 const result = await this.badgeService.translateText(originalText, 'RU');
 
-                messageCell.classList.remove('moderhlpr-loading');
+                messageCell.classList.remove('ioh-loading');
                 messageCell.dataset.isTranslating = 'false';
 
                 if (result && result.translated) {
@@ -43,13 +43,13 @@ class MessageService {
 
             if (messageCell.matches(':hover') && messageCell.dataset.translatedText) {
                 textNode.nodeValue = messageCell.dataset.translatedText;
-                messageCell.classList.add('moderhlpr-translated');
+                messageCell.classList.add('ioh-translated');
             }
         };
 
         const restore = () => {
             textNode.nodeValue = originalText;
-            messageCell.classList.remove('moderhlpr-translated');
+            messageCell.classList.remove('ioh-translated');
         };
 
         messageCell.addEventListener('mouseenter', translateOnHover);
@@ -85,7 +85,7 @@ class MessageService {
                     const regex = new RegExp(`(${escapedTrigger})`, 'gi');
 
                     if (regex.test(html)) {
-                        html = html.replace(regex, '<span class="moderhlpr-complaint-trigger">$1</span>');
+                        html = html.replace(regex, '<span class="ioh-complaint-trigger">$1</span>');
                         changed = true;
                     }
                 });
@@ -100,7 +100,7 @@ class MessageService {
     }
 
     clearComplaintTriggerHighlights() {
-        this.document.querySelectorAll('.moderhlpr-complaint-trigger').forEach(span => {
+        this.document.querySelectorAll('.ioh-complaint-trigger').forEach(span => {
             span.replaceWith(this.document.createTextNode(span.textContent || ''));
         });
 
@@ -119,7 +119,7 @@ class MessageService {
                 allDivs.forEach(div => {
                     if (div.innerText.includes('CYBERSHOKE:') && !div.querySelector('.cs-hours-span')) {
                         div.innerHTML = div.innerHTML.replace(/(CYBERSHOKE:\s*)(\d+ч)/i, (match, p1, p2) => {
-                            return `${p1}<span class="cs-hours-span moderhlpr-new-account-hours">${p2}</span>`;
+                            return `${p1}<span class="cs-hours-span ioh-new-account-hours">${p2}</span>`;
                         });
                     }
                 });
@@ -128,7 +128,7 @@ class MessageService {
     }
 
     clearNewAccountHighlights() {
-        this.document.querySelectorAll('.cs-hours-span.moderhlpr-new-account-hours').forEach(span => {
+        this.document.querySelectorAll('.cs-hours-span.ioh-new-account-hours').forEach(span => {
             span.replaceWith(this.document.createTextNode(span.textContent || ''));
         });
     }
@@ -167,7 +167,7 @@ class MessageService {
                 if (duplicates && duplicates.length > 1) {
                     duplicates.forEach(duplicateRow => {
                         duplicateRow.classList.add(
-                            'moderhlpr-duplicate-server'
+                            'ioh-duplicate-server'
                         );
 
                         duplicateRow.dataset.duplicateServerChecked = 'true';
@@ -181,9 +181,9 @@ class MessageService {
 
     clearDuplicateServerHighlights() {
         this.document
-            .querySelectorAll('.moderhlpr-duplicate-server')
+            .querySelectorAll('.ioh-duplicate-server')
             .forEach(row => {
-                row.classList.remove('moderhlpr-duplicate-server');
+                row.classList.remove('ioh-duplicate-server');
             });
 
         this.document
@@ -194,13 +194,13 @@ class MessageService {
     }
 
     clearTranslationDecorations() {
-        this.document.querySelectorAll('.moderhlpr-chat-message').forEach(messageCell => {
+        this.document.querySelectorAll('.ioh-chat-message').forEach(messageCell => {
             const textNode = this.utils.extractMainTextNode(messageCell);
             if (textNode && messageCell.dataset.mhlprOriginalText) {
                 textNode.nodeValue = messageCell.dataset.mhlprOriginalText;
             }
 
-            messageCell.classList.remove('moderhlpr-chat-message', 'moderhlpr-loading', 'moderhlpr-translated');
+            messageCell.classList.remove('ioh-chat-message', 'ioh-loading', 'ioh-translated');
             delete messageCell.dataset.mhlprHoverReady;
             delete messageCell.dataset.isTranslating;
             delete messageCell.dataset.translatedText;

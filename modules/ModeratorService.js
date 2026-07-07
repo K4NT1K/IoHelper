@@ -78,8 +78,8 @@ class ModeratorService {
                     if (moderators[steamId]) {
 
                         const row = link.closest('tr');
-                        if (row && !row.classList.contains('moderhlpr-highlighted-moderator')) {
-                            row.classList.add('moderhlpr-highlighted-moderator');
+                        if (row && !row.classList.contains('ioh-highlighted-moderator')) {
+                            row.classList.add('ioh-highlighted-moderator');
                         }
 
                         if (!link.dataset.hasModerBadge) {
@@ -87,7 +87,7 @@ class ModeratorService {
                             template.innerHTML = Icons.admin.trim();
 
                             const badge = template.content.firstElementChild;
-                            badge.classList.add("moderhlpr-admin-icon");
+                            badge.classList.add("ioh-admin-icon");
 
                             const idContainer = link.closest('div');
                             const parentContainer = idContainer ? idContainer.parentElement : null;

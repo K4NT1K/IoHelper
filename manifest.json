@@ -3,6 +3,9 @@
   "name": "IO HELPER",
   "version": "2.3.1",
   "description": "Улучшает функционал IO сайта",
+  "background": {
+    "service_worker": "background.js"
+  },
   "permissions": [
     "storage",
     "activeTab"
@@ -15,7 +18,8 @@
     "default_icon": "icons/icon128.png"
   },
   "host_permissions": [
-    "https://raw.githubusercontent.com/K4NT1K/*"
+    "https://raw.githubusercontent.com/K4NT1K/*",
+    "https://steamid.io/*"
   ],
   "web_accessible_resources": [
     {

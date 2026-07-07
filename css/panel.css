@@ -3,7 +3,7 @@
    ========================================================================== */
 
 /* Панель с кнопками быстрых комментариев */
-.moderhlpr-panel {
+.ioh-panel {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -19,7 +19,7 @@
 }
 
 /* Кнопки панели комментариев — используем нативные переменные темы */
-.moderhlpr-panel-btn {
+.ioh-panel-btn {
     appearance: none;
     -webkit-appearance: none;
     display: inline-flex;
@@ -38,13 +38,13 @@
     transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.16s ease;
 }
 
-.moderhlpr-panel-btn:hover {
+.ioh-panel-btn:hover {
     border-color: color-mix(in srgb, var(--color-primary, #60a5fa) 58%, var(--color-border, rgba(255, 255, 255, 0.12)));
     background: color-mix(in srgb, var(--color-primary, #1e293b) 62%, var(--color-primary, #3b82f6) 38%);
     transform: translateY(-1px) scale(1.05);
     transition: 0.3s;
 }
 
-.moderhlpr-panel-btn:active {
+.ioh-panel-btn:active {
     transform: scale(0.98);
 }

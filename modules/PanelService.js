@@ -3,7 +3,7 @@ class PanelService {
         this.document = document;
     }
 
-    getCommentText(name, clickCount, defaultText) {
+    buildCommentText(name, clickCount, defaultText) {
         if (clickCount === 1) {
             return defaultText;
         }
@@ -23,16 +23,72 @@ class PanelService {
         return defaultText;
     }
 
+    readTrackedMessages(target) {
+        try {
+            return JSON.parse(target.dataset.iohTrackedMessages || '{}');
+        } catch (error) {
+            return {};
+        }
+    }
+
+    writeTrackedMessages(target, trackedMessages) {
+        target.dataset.iohTrackedMessages = JSON.stringify(trackedMessages);
+    }
+
+    removeTrackedMessage(textValue, messageToRemove) {
+        if (!messageToRemove) {
+            return textValue;
+        }
+
+        const lines = textValue.split('\n');
+        const lineIndex = lines.lastIndexOf(messageToRemove);
+
+        if (lineIndex === -1) {
+            return textValue;
+        }
+
+        lines.splice(lineIndex, 1);
+        return lines.join('\n');
+    }
+
+    normalizeTextareaValue(textValue) {
+        return textValue
+            .split('\n')
+            .map(line => line.trimEnd())
+            .filter((line, index, lines) => line.length > 0 || (index > 0 && index < lines.length - 1))
+            .join('\n')
+            .trim();
+    }
+
+    applyTrackedMessage(target, messageKey, nextMessage) {
+        const trackedMessages = this.readTrackedMessages(target);
+        const previousMessage = trackedMessages[messageKey];
+
+        let nextValue = this.removeTrackedMessage(target.value, previousMessage);
+
+        if (nextMessage) {
+            const trimmedValue = nextValue.trim();
+            nextValue = trimmedValue ? `${trimmedValue}\n${nextMessage}` : nextMessage;
+            trackedMessages[messageKey] = nextMessage;
+        } else {
+            delete trackedMessages[messageKey];
+        }
+
+        target.value = this.normalizeTextareaValue(nextValue);
+        this.writeTrackedMessages(target, trackedMessages);
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
     createPanel(templates, target, panelId) {
         if (typeof templates === 'undefined') return this.document.createElement('div');
         const panel = this.document.createElement('div');
         panel.id = panelId;
-        panel.className = 'moderhlpr-panel';
+        panel.className = 'ioh-panel';
         Object.entries(templates).forEach(([name, text]) => {
             const btn = this.document.createElement('button');
-            btn.className = 'moderhlpr-panel-btn';
+            btn.className = 'ioh-panel-btn';
             const icon = this.document.createElement('span');
-            icon.className = 'moderhlpr-panel-btn-icon';
+            icon.className = 'ioh-panel-btn-icon';
             icon.setAttribute('aria-hidden', 'true');
 
             const label = this.document.createElement('span');
@@ -46,10 +102,8 @@ class PanelService {
                 clickCount++;
                 clearTimeout(clickTimer);
                 clickTimer = setTimeout(() => {
-                    const comment = this.getCommentText(name, clickCount, text);
-                    const currentValue = target.value.trim();
-                    target.value = currentValue ? `${currentValue}\n${comment}` : comment;
-                    target.dispatchEvent(new Event('input', { bubbles: true }));
+                    const comment = this.buildCommentText(name, clickCount, text);
+                    this.applyTrackedMessage(target, `${panelId}:${name}`, comment);
                     clickCount = 0;
                 }, 250);
             };

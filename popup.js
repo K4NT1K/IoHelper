@@ -78,6 +78,12 @@ function renderToggles(features) {
             help: 'Анализирует историю чата в тикете и показывает подсказку по нарушению и наказанию.'
         },
         {
+            key: 'showSteamAccountCreationDate',
+            label: 'Дата создания Steam-аккаунта',
+            desc: 'showSteamAccountCreationDate',
+            help: 'Показывает дату создания Steam-аккаунта нарушителя в открытом тикете.'
+        },
+        {
             key: 'manageEmptyBlocks',
             label: 'Скрывать пустые блоки',
             desc: 'manageEmptyBlocks',
@@ -93,7 +99,7 @@ function renderToggles(features) {
             key: 'autoConnectServer',
             label: 'Автоподключение к серверу',
             desc: 'autoConnectServer',
-            help: 'Автоматически нажимает на ссылку подключения при открытии тикета "В работе".'
+            help: 'Автоматически нажимает на ссылку подключения при принятии тикета.'
         },
         {
             key: 'trackOffenderServer',

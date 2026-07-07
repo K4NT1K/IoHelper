@@ -1,18 +1,21 @@
 class TicketService {
-    constructor({document, utils, badgeService, settings, rules}) {
+    constructor({document, utils, badgeService, panelService, settings, rules, muteExceptions = {}}) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
+        this.panelService = panelService;
         this.settings = settings;
         this.rules = rules;
+        this.muteExceptions = muteExceptions;
 
         this.triggerRows = new Map();
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
         this.isCheckingServer = false;
+        this.steamAccountCreationCache = new Map();
     }
 
     handleTriggerClick(e) {
-        const trigger = e.target.closest(".moderhlpr-trigger-link");
+        const trigger = e.target.closest(".ioh-trigger-link");
         if (!trigger) return;
 
         const target = this.triggerRows.get(trigger.dataset.triggerId);
@@ -25,10 +28,10 @@ class TicketService {
             block: "center"
         });
 
-        rows.forEach(row => row.classList.add("moderhlpr-chat-highlight"));
+        rows.forEach(row => row.classList.add("ioh-chat-highlight"));
 
         setTimeout(() => {
-            rows.forEach(row => row.classList.remove("moderhlpr-chat-highlight"));
+            rows.forEach(row => row.classList.remove("ioh-chat-highlight"));
         }, 1000);
     }
 
@@ -52,7 +55,7 @@ class TicketService {
         }
         return null;
     }
-    getNormalizeReason(reason) {
+    normalizeReason(reason) {
         return String(reason || '')
             .replace(/\s*\([^)]*\)\s*/g, ' ')
             .replace(/\s+/g, ' ')
@@ -101,7 +104,7 @@ class TicketService {
     findRecentMuteForReasons(muteHistoryBlock, reasonNames) {
         if (!muteHistoryBlock) return null;
 
-        const acceptedReasons = reasonNames.map(reason => this.getNormalizeReason(reason)).filter(Boolean);
+        const acceptedReasons = reasonNames.map(reason => this.normalizeReason(reason)).filter(Boolean);
         const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
         let latestMute = null;
 
@@ -110,7 +113,7 @@ class TicketService {
             if (cells.length < 6) return;
 
             const rowDate = this.parseDateCell(cells[1]);
-            const reason = this.getNormalizeReason(cells[3]?.innerText);
+            const reason = this.normalizeReason(cells[3]?.innerText);
             if (!rowDate || rowDate < thirtyDaysAgo || !acceptedReasons.includes(reason)) return;
 
             const duration = this.utils.parseDurationToMinutes(cells[5]?.innerText?.trim());
@@ -188,35 +191,23 @@ class TicketService {
             const cardText = card.innerText;
             if (!cardText) return;
 
-            if (cardText.includes('История Тикетов')) {
-                if (cardText.includes('Тикетов нет') || cardText.includes('Не найдено')) {
-                    card.style.display = 'none';
-                    card.dataset.moderhlprManagedHidden = 'true';
-                } else {
-                    card.style.display = 'block';
-                    delete card.dataset.moderhlprManagedHidden;
+            [
+                ['История Тикетов', ['Тикетов нет', 'Не найдено']],
+                ['История Банов', ['Банов нет', 'Не найдено']],
+                ['История Мутов', ['Мутов нет', 'Не найдено']]
+            ].forEach(([title, emptyMarkers]) => {
+                if (!cardText.includes(title)) {
+                    return;
                 }
-            }
 
-            if (cardText.includes('История Банов')) {
-                if (cardText.includes('Банов нет') || cardText.includes('Не найдено')) {
+                if (emptyMarkers.some(marker => cardText.includes(marker))) {
                     card.style.display = 'none';
-                    card.dataset.moderhlprManagedHidden = 'true';
+                    card.dataset.iohManagedHidden = 'true';
                 } else {
                     card.style.display = 'block';
-                    delete card.dataset.moderhlprManagedHidden;
+                    delete card.dataset.iohManagedHidden;
                 }
-            }
-
-            if (cardText.includes('История Мутов')) {
-                if (cardText.includes('Мутов нет') || cardText.includes('Не найдено')) {
-                    card.style.display = 'none';
-                    card.dataset.moderhlprManagedHidden = 'true';
-                } else {
-                    card.style.display = 'block';
-                    delete card.dataset.moderhlprManagedHidden;
-                }
-            }
+            });
 
             if (cardText.includes('История Чата')) {
                 const hasNoMessages = cardText.includes('Чат пуст');
@@ -225,32 +216,29 @@ class TicketService {
 
                 if (hasNoMessages && !hasRows) {
                     card.style.display = 'none';
-                    card.dataset.moderhlprManagedHidden = 'true';
+                    card.dataset.iohManagedHidden = 'true';
                 } else {
                     if (card.style.display === 'none') {
                         card.style.display = 'block';
                     }
-                    delete card.dataset.moderhlprManagedHidden;
+                    delete card.dataset.iohManagedHidden;
                 }
             }
         });
     }
     restoreManagedEmptyBlocks() {
-        this.document.querySelectorAll('[data-moderhlpr-managed-hidden="true"]').forEach(card => {
+        this.document.querySelectorAll('[data-ioh-managed-hidden="true"]').forEach(card => {
             card.style.display = 'block';
-            delete card.dataset.moderhlprManagedHidden;
+            delete card.dataset.iohManagedHidden;
         });
     }
 
     connectToCurrentServer() {
-        console.log("[Helper] Проверка авто-подключения. Актуальные фичи:", this.settings?.features);
 
         if (!this.settings?.features?.autoConnectServer) {
-            console.log("[Helper] Авто-подключение отменено: фича выключена в настройках.");
             return;
         }
 
-        // Поиск спана со статусом "В работе"
         const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
             span => span.textContent.trim() === "В работе"
         );
@@ -307,6 +295,172 @@ class TicketService {
 
     clearTicketRuleBadge() {
         this.document.getElementById('helper-suggest-badge')?.remove();
+    }
+    clearSteamAccountCreationDate() {
+        this.document.querySelectorAll('.ioh-account-created').forEach(node => node.remove());
+    }
+    findInfoField(labelText) {
+        const label = Array.from(this.document.querySelectorAll('span'))
+            .find(span => span.textContent.trim() === labelText);
+
+        return label?.parentElement || null;
+    }
+
+    findFieldValueBlock(field) {
+        if (!field) {
+            return null;
+        }
+
+        return Array.from(field.children).find(child => child.tagName === 'DIV') || null;
+    }
+    extractSteamIdFromField(field) {
+        const valueBlock = this.findFieldValueBlock(field);
+        const profileLink = valueBlock?.querySelector('a[href*="cybershoke.net/"], a[href*="/moderator/profile/"]');
+        const sourceText = `${profileLink?.href || ''} ${profileLink?.textContent || ''}`;
+        const steamIdMatch = sourceText.match(/\d{17,18}/);
+
+        return steamIdMatch ? steamIdMatch[0] : null;
+    }
+    ensureSteamAccountCreationNode(field) {
+        let node = field.parentNode.querySelector('.ioh-account-created');
+        if (node) {
+            return node.querySelector('.ioh-account-value');
+        }
+
+        node = this.document.createElement('div');
+        node.className = field.className + ' ioh-account-created';
+
+        const labelSpan = this.document.createElement('span');
+        const originalSpan = field.querySelector('span');
+        labelSpan.className = originalSpan ? originalSpan.className : '';
+        labelSpan.textContent = 'Создан';
+
+        const valueDiv = this.document.createElement('div');
+        const originalDiv = field.querySelector('div');
+        valueDiv.className = (originalDiv ? originalDiv.className : '') + ' ioh-account-value';
+
+        node.appendChild(labelSpan);
+        node.appendChild(valueDiv);
+
+        field.insertAdjacentElement('afterend', node);
+
+        return valueDiv;
+    }
+    extractCreationDateFromHtml(html) {
+        const parser = new DOMParser();
+        const parsedDocument = parser.parseFromString(html, 'text/html');
+        const rowLikeNodes = parsedDocument.querySelectorAll('tr, li, p, div');
+        const labelPattern = /(created|member since|account created|registered)/i;
+        const datePatterns = [
+            /([A-Z][a-z]{2,9}\s+\d{1,2},\s+\d{4})/,
+            /(\d{1,2}\s+[A-Z][a-z]{2,9}\s+\d{4})/,
+            /(\d{4}-\d{2}-\d{2})/,
+            /(\d{2}\.\d{2}\.\d{4})/
+        ];
+
+        for (const row of rowLikeNodes) {
+            const cells = row.querySelectorAll('th, td');
+            if (cells.length >= 2 && labelPattern.test(cells[0].textContent || '')) {
+                const valueText = cells[1].textContent.replace(/\s+/g, ' ').trim();
+                if (valueText) {
+                    return valueText;
+                }
+            }
+
+            const rowText = row.textContent.replace(/\s+/g, ' ').trim();
+            if (!labelPattern.test(rowText)) {
+                continue;
+            }
+
+            for (const pattern of datePatterns) {
+                const match = rowText.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+        }
+
+        const fullText = parsedDocument.body?.textContent?.replace(/\s+/g, ' ').trim() || '';
+        if (!fullText) {
+            return null;
+        }
+
+        const labelIndex = fullText.search(labelPattern);
+        if (labelIndex === -1) {
+            return null;
+        }
+
+        const snippet = fullText.slice(labelIndex, labelIndex + 120);
+        for (const pattern of datePatterns) {
+            const match = snippet.match(pattern);
+            if (match) {
+                return match[1];
+            }
+        }
+
+        return null;
+    }
+    fetchSteamAccountCreationDate(steamId) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { action: "fetchSteamDate", steamId: steamId },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        return reject(chrome.runtime.lastError);
+                    }
+                    if (response && response.success) {
+                        resolve(response.data); // This is your HTML string payload to parse
+                    } else {
+                        reject(response ? response.error : "Unknown error");
+                    }
+                }
+            );
+        });
+    }
+    async renderSteamAccountCreationDate() {
+        const ticketTextarea = this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]');
+        if (!ticketTextarea) {
+            this.clearSteamAccountCreationDate();
+            return;
+        }
+
+        const offenderField = this.findInfoField('Нарушитель');
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+
+        if (!offenderField || !offenderSteamId) {
+            return;
+        }
+
+        const valueNode = this.ensureSteamAccountCreationNode(offenderField);
+        const containerNode = valueNode.closest('.ioh-account-created');
+
+        if (containerNode.dataset.steamId === offenderSteamId && containerNode.dataset.loaded === 'true') {
+            return;
+        }
+
+        containerNode.dataset.steamId = offenderSteamId;
+        containerNode.dataset.loaded = 'false';
+        valueNode.textContent = 'Загрузка...';
+
+        try {
+            const htmlPayload = await this.fetchSteamAccountCreationDate(offenderSteamId);
+
+            const creationDate = this.extractCreationDateFromHtml(htmlPayload);
+
+            valueNode.textContent = creationDate ? creationDate : 'Профиль скрыт';
+        } catch (error) {
+            valueNode.textContent = 'Ошибка загрузки';
+        }
+
+        containerNode.dataset.loaded = 'true';
+    }
+
+    getKeywordExceptions(keyword) {
+        const loweredKeyword = String(keyword || '').toLowerCase();
+
+        return Object.entries(this.muteExceptions || {})
+            .filter(([exceptionKey]) => loweredKeyword.includes(exceptionKey.toLowerCase()) || exceptionKey.toLowerCase().includes(loweredKeyword))
+            .flatMap(([, exceptions]) => exceptions || []);
     }
 
     async checkOffendersServers() {
@@ -411,15 +565,15 @@ class TicketService {
 
                 const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
                 if (linkToUpdate) {
-                    linkToUpdate.classList.remove("moderhlpr-server-online", "moderhlpr-server-offline", "moderhlpr-server-other");
+                    linkToUpdate.classList.remove("ioh-server-online", "ioh-server-offline", "ioh-server-other");
 
                     if (!currentIp) {
-                        linkToUpdate.classList.add("moderhlpr-server-offline");
+                        linkToUpdate.classList.add("ioh-server-offline");
                         // serverIpLink.innerText = "Offline";
                     } else if (currentIp === targetIp) {
-                        linkToUpdate.classList.add("moderhlpr-server-online");
+                        linkToUpdate.classList.add("ioh-server-online");
                     } else {
-                        linkToUpdate.classList.add("moderhlpr-server-other");
+                        linkToUpdate.classList.add("ioh-server-other");
                     }
                 }
             }
@@ -523,12 +677,12 @@ class TicketService {
         const chatHistoryBlock = this.getBlockByHeader('История Чата');
 
         if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Внимание:</b> У игрока уже есть активный мут! Проверка триггеров приостановлена.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Внимание:</b> У игрока уже есть активный мут! Проверка триггеров приостановлена.</span></div>`, textarea);
             return;
         }
 
         if (!chatHistoryBlock || chatHistoryBlock.style.display === 'none' || chatHistoryBlock.innerText.includes('Чат пуст') || chatHistoryBlock.innerText.includes('Не найдено')) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             return;
         }
 
@@ -556,7 +710,7 @@ class TicketService {
 
         const rows = Array.from(chatHistoryBlock.querySelectorAll('tbody tr, tr')).filter(row => row.querySelector('td'));
         if (rows.length === 0) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="moderhlpr-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             return;
         }
 
@@ -600,7 +754,14 @@ class TicketService {
             for (const rule of this.rules) {
                 if (!Array.isArray(rule.keywords) || rule.keywords.length === 0) continue;
 
-                const matchedKeywords = rule.keywords.filter(kw => textLower.includes(String(kw).toLowerCase()));
+                const matchedKeywords = rule.keywords.filter(keyword => {
+                    const normalizedKeyword = String(keyword).toLowerCase();
+                    return this.utils.containsTrigger(
+                        textLower,
+                        normalizedKeyword,
+                        this.getKeywordExceptions(normalizedKeyword)
+                    );
+                });
                 if (matchedKeywords.length > 0) {
                     matchedRules.push({
                         rule,
@@ -675,17 +836,17 @@ class TicketService {
             .map(([name, count]) => `${name}: ${count}`)
             .join(' | ');
 
-        const activityHTML = activeStatsSummary ? ` <span class="moderhlpr-activity-text">(${this.utils.escapeHtml(activeStatsSummary)})</span>` : '';
+        const activityHTML = activeStatsSummary ? ` <span class="ioh-activity-text">(${this.utils.escapeHtml(activeStatsSummary)})</span>` : '';
         const activityChipsHTML = activeStats.length > 1
             ? activeStats
                 .map(([name, count]) =>
-                    `<span class="moderhlpr-analysis-chip">${this.utils.escapeHtml(name)}<b>${count}</b></span>`
+                    `<span class="ioh-analysis-chip">${this.utils.escapeHtml(name)}<b>${count}</b></span>`
                 )
                 .join('')
             : '';
 
         if (allViolations.length === 0) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="moderhlpr-row">${SVG_SHIELD}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="ioh-badge-row">${SVG_SHIELD}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
             return;
         }
 
@@ -703,12 +864,12 @@ class TicketService {
 
         const topTriggers = sortedTriggers.map(t => `
     <span
-        class="moderhlpr-trigger-tooltip moderhlpr-trigger-link"
+        class="ioh-trigger-tooltip ioh-trigger-link"
         data-trigger-id="${t.id}"
         data-full-msg="${this.utils.escapeHtml(t.fullMessage)}">
         ${this.utils.escapeHtml(t.keyword)}
     </span>`);
-        const topTriggersHTML = topTriggers.join('<span class="moderhlpr-trigger-separator">,</span> ');
+        const topTriggersHTML = topTriggers.join('<span class="ioh-trigger-separator">,</span> ');
 
         let finalDurationForDisplay = finalDurationStr;
 
@@ -724,21 +885,21 @@ class TicketService {
         const punishmentText = isWarning ? finalDurationStr : `мут на ${finalDurationForDisplay}`;
 
         const htmlResponse = `
-                <div class="moderhlpr-analysis-grid">
-                    <div class="moderhlpr-analysis-row">
-                        <div class="moderhlpr-analysis-label">${SVG_TRIGGERS}<span>Триггеры</span></div>
-                        <div class="moderhlpr-analysis-value moderhlpr-analysis-triggers">${topTriggersHTML}</div>
+                <div class="ioh-analysis-grid">
+                    <div class="ioh-analysis-row">
+                        <div class="ioh-analysis-label">${SVG_TRIGGERS}<span>Триггеры</span></div>
+                        <div class="ioh-analysis-value ioh-analysis-triggers">${topTriggersHTML}</div>
                     </div>
-                    <div class="moderhlpr-analysis-row">
-                        <div class="moderhlpr-analysis-label">${SVG_REASON}<span>Причина</span></div>
-                        <div class="moderhlpr-analysis-value">
+                    <div class="ioh-analysis-row">
+                        <div class="ioh-analysis-label">${SVG_REASON}<span>Причина</span></div>
+                        <div class="ioh-analysis-value">
                             <strong>${this.utils.escapeHtml(finalName)}</strong>
-                            ${activityChipsHTML ? `<div class="moderhlpr-analysis-chips">${activityChipsHTML}</div>` : ''}
+                            ${activityChipsHTML ? `<div class="ioh-analysis-chips">${activityChipsHTML}</div>` : ''}
                         </div>
                     </div>
-                    <div class="moderhlpr-analysis-row moderhlpr-analysis-row--verdict">
-                        <div class="moderhlpr-analysis-label">${SVG_PUNISHMENT}<span>Вердикт</span></div>
-                        <div class="moderhlpr-analysis-value"><strong>${this.utils.escapeHtml(punishmentText)}</strong></div>
+                    <div class="ioh-analysis-row ioh-analysis-row--verdict">
+                        <div class="ioh-analysis-label">${SVG_PUNISHMENT}<span>Вердикт</span></div>
+                        <div class="ioh-analysis-value"><strong>${this.utils.escapeHtml(punishmentText)}</strong></div>
                     </div>
                 </div>
             </div>

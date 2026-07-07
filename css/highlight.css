@@ -2,7 +2,7 @@
    IO HELPER Styles
    ========================================================================== */
 
-.moderhlpr-chat-highlight {
+.ioh-chat-highlight {
     background-color: rgba(239, 68, 68, 0.15) !important;
     color: #ef4444 !important;
     font-weight: bold;
@@ -12,16 +12,16 @@
 }
 
 /* Подсветка подозрительных строк в таблице жалоб */
-.moderhlpr-row-danger {
+.ioh-row-danger {
     background-color: rgba(239, 68, 68, 0.04) !important;
 }
 
-.moderhlpr-row-warning {
+.ioh-row-warning {
     background-color: rgba(245, 158, 11, 0.03) !important;
 }
 
 /* Класс для подсветки триггеров жалоб */
-.moderhlpr-complaint-trigger {
+.ioh-complaint-trigger {
     background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
     color: var(--color-danger, #ef4444) !important;
     padding: 2px 4px !important;
@@ -30,7 +30,7 @@
     display: inline-block !important;
 }
 
-.moderhlpr-new-account-hours {
+.ioh-new-account-hours {
     background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
     color: var(--color-danger, #ef4444) !important;
     padding: 2px 4px !important;
@@ -41,13 +41,13 @@
 
 /* Стили для строки подсвеченного модератора */
 /* Подсветка строки модератора золотым цветом */
-tr.moderhlpr-highlighted-moderator {
+tr.ioh-highlighted-moderator {
     background-color: rgb(65 52 0) !important;
     border: 2px solid #facc15 !important;
 }
 
 /* На всякий случай фиксируем выравнивание иконки */
-svg.moderhlpr-admin-icon {
+svg.ioh-admin-icon {
     display: inline-block !important;
     width: 15px !important;
     height: 15px !important;
@@ -59,7 +59,7 @@ svg.moderhlpr-admin-icon {
     right: 5px !important;
 }
 
-.moderhlpr-duplicate-server {
+.ioh-duplicate-server {
     position: relative;
     border-left: 3px solid var(--color-warning);
 
@@ -86,9 +86,9 @@ svg.moderhlpr-admin-icon {
             background 0.5s ease;
 }
 
-.moderhlpr-server-online,
-.moderhlpr-server-other,
-.moderhlpr-server-offline {
+.ioh-server-online,
+.ioh-server-other,
+.ioh-server-offline {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -99,57 +99,57 @@ svg.moderhlpr-admin-icon {
     transition: .3s;
 }
 
-.moderhlpr-server-online::before,
-.moderhlpr-server-other::before,
-.moderhlpr-server-offline::before {
+.ioh-server-online::before,
+.ioh-server-other::before,
+.ioh-server-offline::before {
     content: "";
     width: 7px;
     height: 7px;
     border-radius: 50%;
     flex-shrink: 0;
 
-    animation: moderhlpr-status-pulse 1.5s infinite ease-in-out;
+    animation: ioh-status-pulse 1.5s infinite ease-in-out;
 }
-.moderhlpr-server-online {
+.ioh-server-online {
     color: var(--color-success-real) !important;
     background: color-mix(in srgb, var(--color-success-real) 12%, transparent);
     box-shadow:
             0 0 8px color-mix(in srgb, var(--color-success-real) 18%, transparent);
 }
 
-.moderhlpr-server-online::before {
+.ioh-server-online::before {
     background: var(--color-success-real);
     box-shadow:
             0 0 6px var(--color-success-real),
             0 0 12px color-mix(in srgb, var(--color-success-real) 45%, transparent);
 }
-.moderhlpr-server-other {
+.ioh-server-other {
     color: var(--color-warning) !important;
     background: color-mix(in srgb, var(--color-warning) 12%, transparent);
     box-shadow:
             0 0 8px color-mix(in srgb, var(--color-warning) 18%, transparent);
 }
 
-.moderhlpr-server-other::before {
+.ioh-server-other::before {
     background: var(--color-warning);
     box-shadow:
             0 0 6px var(--color-warning),
             0 0 12px color-mix(in srgb, var(--color-warning) 45%, transparent);
 }
-.moderhlpr-server-offline {
+.ioh-server-offline {
     color: var(--color-danger) !important;
     background: color-mix(in srgb, var(--color-danger) 12%, transparent);
     box-shadow:
             0 0 8px color-mix(in srgb, var(--color-danger) 18%, transparent);
 }
 
-.moderhlpr-server-offline::before {
+.ioh-server-offline::before {
     background: var(--color-danger);
     box-shadow:
             0 0 6px var(--color-danger),
             0 0 12px color-mix(in srgb, var(--color-danger) 45%, transparent);
 }
-@keyframes moderhlpr-status-pulse {
+@keyframes ioh-status-pulse {
     0%, 100% {
         box-shadow:
                 0 0 4px currentColor,

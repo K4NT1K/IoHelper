@@ -12,7 +12,7 @@ class BadgeService {
                 targetTextarea.parentNode.insertBefore(badge, targetTextarea);
             }
         }
-        badge.className = `moderhlpr-info-badge moderhlpr-info-badge--${variant}`;
+        badge.className = `ioh-info-badge ioh-info-badge--${variant}`;
         badge.innerHTML = innerHTML;
     }
 

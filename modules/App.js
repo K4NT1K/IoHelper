@@ -4,6 +4,7 @@ class App {
         this.document = document;
         this.chrome = chrome;
         this.rules = config.muteRules || [];
+        this.muteExceptions = config.muteExceptions || {};
         this.templates = config.templates || {};
         this.settings = config.settings;
         this.features = this.settings.features;
@@ -24,8 +25,10 @@ class App {
             document,
             utils: this.utils,
             badgeService: this.badgeService,
+            panelService: this.panelService,
             settings: this.settings,
-            rules: this.rules
+            rules: this.rules,
+            muteExceptions: this.muteExceptions
         });
         this.moderatorService = new ModeratorService({document, chrome});
     }
@@ -58,7 +61,7 @@ class App {
                 const m = mutations[i];
                 if (m.type === 'attributes' && m.attributeName === 'class') {
                     const targetClass = m.target.className;
-                    if (typeof targetClass === 'string' && targetClass.includes('moderhlpr-')) {
+                    if (typeof targetClass === 'string' && targetClass.includes('ioh-')) {
                         continue;
                     }
                 }
@@ -106,6 +109,7 @@ class App {
         this.messageService.settings = this.settings;
         this.ticketService.settings = this.settings;
         this.ticketService.rules = this.rules;
+        this.ticketService.muteExceptions = this.muteExceptions;
         this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
 
         if (this.observer) this.observer.disconnect();
@@ -196,21 +200,11 @@ class App {
 
         const textareas = this.document.querySelectorAll('textarea');
         textareas.forEach(textarea => {
-            let parent = textarea.parentElement;
-            let isNotificationModal = false;
-            while (parent && parent !== this.document.body) {
-                if (parent.innerText && (parent.innerText.includes('Отправить уведомление'))) {
-                    isNotificationModal = true;
-                    break;
-                }
-                parent = parent.parentElement;
-            }
-
-            if (isNotificationModal) {
-                if (!textarea.parentElement.querySelector(".moderhlpr-panel") && typeof this.templates.notification !== 'undefined') {
+            if (this.isNotificationTextarea(textarea)) {
+                if (!textarea.parentElement.querySelector(".ioh-panel") && typeof this.templates.notification !== 'undefined') {
                     textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.notification, textarea, 'mod-notif-panel'), textarea);
                 }
-            } else if (textarea.placeholder && (textarea.placeholder.includes('Опишите детали закрытия'))) {
+            } else if (this.isTicketResolutionTextarea(textarea)) {
                 if (!this.document.getElementById('mod-ticket-panel') && typeof this.templates.ticket !== 'undefined') {
                     textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.ticket, textarea, 'mod-ticket-panel'), textarea);
                 }
@@ -231,6 +225,12 @@ class App {
 
         if (this.features.manageEmptyBlocks) {
             this.ticketService.manageEmptyBlocks();
+        }
+
+        if (this.features.showSteamAccountCreationDate) {
+            this.ticketService.renderSteamAccountCreationDate();
+        } else {
+            this.ticketService.clearSteamAccountCreationDate();
         }
 
         if (this.observer) {
@@ -255,7 +255,21 @@ class App {
             this.messageService.highlightDuplicateServerIps();
         }
     }
+
+    isNotificationTextarea(textarea) {
+        let parent = textarea.parentElement;
+        while (parent && parent !== this.document.body) {
+            if (parent.innerText && parent.innerText.includes('Отправить уведомление')) {
+                return true;
+            }
+            parent = parent.parentElement;
+        }
+        return false;
+    }
+
+    isTicketResolutionTextarea(textarea) {
+        return Boolean(textarea.placeholder && textarea.placeholder.includes('Опишите детали закрытия'));
+    }
 }
 
 window.App = App;
-
