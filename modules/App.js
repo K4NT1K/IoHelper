@@ -115,6 +115,7 @@ class App {
         }
 
         this.cleanupChangedSettings(previousSettings, this.settings);
+        this.runDOMUpdates();
         this.handleTrackOffenderLoop(previousSettings);
     }
 

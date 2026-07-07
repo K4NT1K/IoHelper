@@ -43,8 +43,7 @@
 /* Подсветка строки модератора золотым цветом */
 tr.moderhlpr-highlighted-moderator {
     background-color: rgb(65 52 0) !important;
-    border: 1px solid #facc15 !important;
-    border-top: 2px solid #facc15 !important;
+    border: 2px solid #facc15 !important;
 }
 
 /* На всякий случай фиксируем выравнивание иконки */
@@ -86,38 +85,6 @@ svg.moderhlpr-admin-icon {
     transition:
             background 0.5s ease;
 }
-
-/*.moderhlpr-server-online,*/
-/*.moderhlpr-server-other,*/
-/*.moderhlpr-server-offline {*/
-/*    display: inline-flex;*/
-/*    align-items: center;*/
-/*    padding: 1px 8px;*/
-/*    border-radius: 6px;*/
-/*    font-weight: 600;*/
-/*    transition: .5s;*/
-/*}*/
-
-/*.moderhlpr-server-online {*/
-/*    color: var(--color-success-real) !important;*/
-/*    background: color-mix(in srgb, var(--color-success-real) 12%, transparent);*/
-/*    box-shadow:*/
-/*            0 0 8px color-mix(in srgb, var(--color-success-real) 18%, transparent);*/
-/*}*/
-
-/*.moderhlpr-server-other {*/
-/*    color: var(--color-warning) !important;*/
-/*    background: color-mix(in srgb, var(--color-warning) 12%, transparent);*/
-/*    box-shadow:*/
-/*            0 0 8px color-mix(in srgb, var(--color-warning) 18%, transparent);*/
-/*}*/
-
-/*.moderhlpr-server-offline {*/
-/*    color: var(--color-danger) !important;*/
-/*    background: color-mix(in srgb, var(--color-danger) 12%, transparent);*/
-/*    box-shadow:*/
-/*            0 0 8px color-mix(in srgb, var(--color-danger) 18%, transparent);*/
-/*}*/
 
 .moderhlpr-server-online,
 .moderhlpr-server-other,

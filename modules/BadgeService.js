@@ -22,7 +22,7 @@ class BadgeService {
             const response = await fetch(url);
             const data = await response.json();
             return data && data[0] ? { translated: data[0].map(item => item[0]).join('') } : null;
-        } catch (err) { return null; }
+        } catch (err) { console.log("Google api error: ", err);return null; }
     }
 }
 

@@ -24,7 +24,7 @@ class ConfigService {
                     [this.LOCAL_KEY]: remote
                 });
 
-                console.log("[IO HELPER] Config updated from Github");
+                console.log("[IO HELPER] Config updated from server");
 
                 return remote;
             }

@@ -4,7 +4,7 @@ const refreshIntervalInput = document.getElementById('serverRefreshInterval');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const trackIntervalInput = document.getElementById('trackOffenderInterval');
-const ticketAgeInput = document.getElementById('ticketAgeLimit');
+// const ticketAgeInput = document.getElementById('ticketAgeLimit');
 const addBtn = document.getElementById('addTriggerBtn');
 const resetBtn = document.getElementById('resetDefaultsBtn');
 const toast = document.getElementById('toastMsg');
@@ -91,7 +91,7 @@ function renderToggles(features) {
         },
         {
             key: 'autoConnectServer',
-            label: 'Авто-подключение к серверу',
+            label: 'Автоподключение к серверу',
             desc: 'autoConnectServer',
             help: 'Автоматически нажимает на ссылку подключения при открытии тикета "В работе".'
         },
@@ -188,7 +188,7 @@ function loadSettingsToUI(settings) {
     refreshIntervalInput.value = settings.serverRefreshInterval;
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
     trackIntervalInput.value = settings.trackOffenderInterval;
-    ticketAgeInput.value = settings.ticketAgeLimit;
+    // ticketAgeInput.value = settings.ticketAgeLimit;
 
     renderTriggers(currentSettings.reasonTriggers);
 }
@@ -216,7 +216,7 @@ function collectSettingsFromUI() {
             0
         ),
         trackOffenderInterval: Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1),
-        ticketAgeLimit: Math.max(parseInt(ticketAgeInput.value, 10) || 0, 0),
+        // ticketAgeLimit: Math.max(parseInt(ticketAgeInput.value, 10) || 0, 0),
 
         reasonTriggers: [...currentSettings.reasonTriggers]
 
@@ -290,7 +290,7 @@ triggerInput.addEventListener('keydown', (e) => {
 hoursInput.addEventListener('change', saveCurrentSettings);
 refreshIntervalInput.addEventListener('change', saveCurrentSettings);
 trackIntervalInput.addEventListener('change', saveCurrentSettings);
-ticketAgeInput.addEventListener('change', saveCurrentSettings);
+// ticketAgeInput.addEventListener('change', saveCurrentSettings);
 
 // Сброс к дефолтам
 resetBtn.addEventListener("click", () => {

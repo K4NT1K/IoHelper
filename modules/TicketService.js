@@ -321,42 +321,66 @@ class TicketService {
             return;
         }
 
-        const rows = this.document.querySelectorAll('table tbody tr');
-        if (!rows.length) return;
-
         this.isCheckingServer = true;
-        const now = Date.now();
         const CACHE_INTERVAL = 5000;
-        const TICKET_AGE_LIMIT = (this.settings?.ticketAgeLimit ?? 20) * 1000;
+        const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1000;
 
         try {
-            for (let i = rows.length - 1; i >= 0; i--) {
-                if (!this.settings.features.trackOffenderServer) break;
+            while (this.settings.features.trackOffenderServer) {
+                if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
+                    break;
+                }
 
-                const row = rows[i];
+                const rows = this.document.querySelectorAll('table tbody tr');
+                if (!rows.length) break;
 
-                const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
-                if (timeCell) {
-                    const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
-                    if (ticketTimeMs) {
-                        const ticketAge = now - ticketTimeMs;
-                        if (ticketAge < TICKET_AGE_LIMIT) continue;
+                let targetRow = null;
+                let targetIp = null;
+                let targetSteamId = null;
+                let oldestCheck = Infinity;
+                const now = Date.now();
+
+                for (let i = rows.length - 1; i >= 0; i--) {
+                    const row = rows[i];
+
+                    const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
+                    if (timeCell) {
+                        const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
+                        if (ticketTimeMs && (now - ticketTimeMs) < TICKET_AGE_LIMIT) {
+                            continue;
+                        }
+                    }
+
+                    const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
+                    const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+
+                    if (!offenderLink || !serverIpLink) continue;
+
+                    const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
+                    if (!steamIdMatch) continue;
+
+                    const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
+
+                    if (now - lastCheck < CACHE_INTERVAL) continue;
+
+                    if (lastCheck === 0) {
+                        targetRow = row;
+                        targetIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
+                        targetSteamId = steamIdMatch[0];
+                        break;
+                    }
+
+                    if (lastCheck < oldestCheck) {
+                        oldestCheck = lastCheck;
+                        targetRow = row;
+                        targetIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
+                        targetSteamId = steamIdMatch[0];
                     }
                 }
 
-                const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
-                const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+                if (!targetRow) break;
 
-                if (!offenderLink || !serverIpLink) continue;
-
-                const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
-                if (now - lastCheck < CACHE_INTERVAL) continue;
-
-                const ticketIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
-                const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
-                if (!steamIdMatch) continue;
-
-                row.dataset.lastIpCheck = now.toString();
+                targetRow.dataset.lastIpCheck = Date.now().toString();
 
                 await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -368,7 +392,7 @@ class TicketService {
                         'X-Requested-With': 'XMLHttpRequest'
                     },
                     credentials: 'include',
-                    body: new URLSearchParams({ steamid64: steamIdMatch[0] }).toString()
+                    body: new URLSearchParams({ steamid64: targetSteamId }).toString()
                 });
 
                 if (response.status === 429) {
@@ -385,17 +409,18 @@ class TicketService {
                     currentIp = `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
                 }
 
-                serverIpLink.classList.remove("moderhlpr-server-online", "moderhlpr-server-offline", "moderhlpr-server-other");
+                const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+                if (linkToUpdate) {
+                    linkToUpdate.classList.remove("moderhlpr-server-online", "moderhlpr-server-offline", "moderhlpr-server-other");
 
-                if (!currentIp) {
-                    serverIpLink.classList.add("moderhlpr-server-offline");
-                    // serverIpLink.innerText = "Offline";
-                } else if (currentIp === ticketIp) {
-                    serverIpLink.classList.add("moderhlpr-server-online");
-                    // serverIpLink.innerText = "Online";
-                } else {
-                    serverIpLink.classList.add("moderhlpr-server-other");
-                    // serverIpLink.innerText = "Other";
+                    if (!currentIp) {
+                        linkToUpdate.classList.add("moderhlpr-server-offline");
+                        // serverIpLink.innerText = "Offline";
+                    } else if (currentIp === targetIp) {
+                        linkToUpdate.classList.add("moderhlpr-server-online");
+                    } else {
+                        linkToUpdate.classList.add("moderhlpr-server-other");
+                    }
                 }
             }
         } catch (e) {
@@ -404,6 +429,7 @@ class TicketService {
             this.isCheckingServer = false;
         }
     }
+
     findMostSeverePunishment(ruleCounters) {
         let bestRule = null;
         let bestScore = -1;
