@@ -10,7 +10,9 @@
       "showSteamAccountCreationDate": true,
       "trackOffenderServer": false,
       "autoConnectServer": false,
-      "scanSchedulePage": false
+      "scanSchedulePage": false,
+      "squareTickets": false,
+      "optimizeSpaTabs": false
     },
     "newAccountHours": 7,
     "serverRefreshInterval": 30,
@@ -356,6 +358,12 @@
       "плох",
       "глох",
       "блох"
+    ],
+    "bot": [
+      "aimbot"
+    ],
+    "бот": [
+      "аимбот"
     ],
     "даун": [
       "даунвольт",
