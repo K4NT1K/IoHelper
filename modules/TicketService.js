@@ -12,6 +12,7 @@ class TicketService {
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
         this.isCheckingServer = false;
         this.steamAccountCreationCache = new Map();
+        this.lastChatSignatureByTextarea = new WeakMap();
     }
 
     handleTriggerClick(e) {
@@ -208,28 +209,14 @@ class TicketService {
                     delete card.dataset.iohManagedHidden;
                 }
             });
-
-            if (cardText.includes('История Чата')) {
-                const hasNoMessages = cardText.includes('Чат пуст');
-
-                const hasRows = card.querySelectorAll('tbody tr, tr td').length > 0;
-
-                if (hasNoMessages && !hasRows) {
-                    card.style.display = 'none';
-                    card.dataset.iohManagedHidden = 'true';
-                } else {
-                    if (card.style.display === 'none') {
-                        card.style.display = 'block';
-                    }
-                    delete card.dataset.iohManagedHidden;
-                }
-            }
         });
     }
     restoreManagedEmptyBlocks() {
         this.document.querySelectorAll('[data-ioh-managed-hidden="true"]').forEach(card => {
-            card.style.display = 'block';
+            const prev = card.dataset.iohManagedPrevDisplay;
+            card.style.display = typeof prev === 'string' ? (prev || 'block') : 'block';
             delete card.dataset.iohManagedHidden;
+            delete card.dataset.iohManagedPrevDisplay;
         });
     }
 
@@ -272,25 +259,30 @@ class TicketService {
         }
 
         this.currentServerRefreshInterval = setInterval(() => {
-            const headers = [...this.document.querySelectorAll("h3")];
-
-            const header = headers.find(h =>
-                h.textContent.trim() === "Текущий сервер"
-            );
-
-            if (!header) return;
-
-            const container = header.closest("div");
-            if (!container) return;
-
-            const refreshButton = [...container.querySelectorAll("button")]
-                .find(btn => btn.textContent.includes("Обновить"));
-
-            if (!refreshButton || refreshButton.disabled) return;
-
-            refreshButton.click();
+            this.refreshCurrentServerNowIfAvailable();
 
         }, seconds * 1000);
+    }
+
+    refreshCurrentServerNowIfAvailable() {
+        const headers = [...this.document.querySelectorAll("h3")];
+
+        const header = headers.find(h =>
+            h.textContent.trim() === "Текущий сервер"
+        );
+
+        if (!header) return false;
+
+        const container = header.closest("div");
+        if (!container) return false;
+
+        const refreshButton = [...container.querySelectorAll("button")]
+            .find(btn => btn.textContent.includes("Обновить"));
+
+        if (!refreshButton || refreshButton.disabled) return false;
+
+        refreshButton.click();
+        return true;
     }
 
     clearTicketRuleBadge() {
@@ -298,6 +290,57 @@ class TicketService {
     }
     clearSteamAccountCreationDate() {
         this.document.querySelectorAll('.ioh-account-created').forEach(node => node.remove());
+    }
+
+    findTicketTablesForCards() {
+        const tables = Array.from(this.document.querySelectorAll('table'));
+
+        // Demo + real tickets tables share the same Russian columns.
+        return tables.filter(table => {
+            const thTexts = Array.from(table.querySelectorAll('thead th'))
+                .map(th => (th.textContent || '').trim());
+
+            if (thTexts.length < 6) return false;
+
+            const hasTime = thTexts.some(t => t.includes('Время'));
+            const hasServer = thTexts.some(t => t.includes('Сервер'));
+            const hasSender = thTexts.some(t => t.includes('Отправитель'));
+            const hasOffender = thTexts.some(t => t.includes('Нарушитель'));
+            const hasReason = thTexts.some(t => t.includes('Причина'));
+
+            return hasTime && hasServer && hasSender && hasOffender && hasReason;
+        });
+    }
+    renderSquareTicketCards() {
+        const tables = this.findTicketTablesForCards();
+
+        tables.forEach(table => {
+            const headerCells = Array.from(table.querySelectorAll('thead th'));
+            const headerLabels = headerCells.map(th => (th.textContent || '').trim());
+
+            table.querySelectorAll('tbody tr').forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                cells.forEach((cell, idx) => {
+                    const label = headerLabels[idx] || '';
+                    if (!label) return;
+
+                    // Store label for CSS; do not override if it already matches.
+                    if (cell.dataset.iohLabel === label) return;
+                    cell.dataset.iohLabel = label;
+                });
+            });
+
+            table.classList.add('ioh-ticket-cards-enabled');
+        });
+    }
+
+    clearSquareTicketCards() {
+        this.document.querySelectorAll('table.ioh-ticket-cards-enabled').forEach(table => {
+            table.classList.remove('ioh-ticket-cards-enabled');
+            table.querySelectorAll('td[data-ioh-label]').forEach(td => {
+                td.removeAttribute('data-ioh-label');
+            });
+        });
     }
     findInfoField(labelText) {
         const label = Array.from(this.document.querySelectorAll('span'))
@@ -662,15 +705,28 @@ class TicketService {
 
         return {finalName, finalDuration, finalDurationStr};
     }
+
+    getAnalysisIcons() {
+        const icons = window.Icons || {};
+
+        return {
+            triggers: icons.loupe || '',
+            reason: icons.bell || '',
+            punishment: icons.clock || '',
+            chatError: icons.chat || '',
+            shield: icons.shield || ''
+        };
+    }
+
     async processTicketRules(textarea) {
         console.count("processTicketRules");
-        this.triggerRows.clear()
 
-        const SVG_TRIGGERS = Icons.loupe;
-        const SVG_REASON = Icons.bell;
-        const SVG_PUNISHMENT = Icons.clock;
-        const SVG_CHAT_ERROR = Icons.chat;
-        const SVG_SHIELD = Icons.shield;
+        const analysisIcons = this.getAnalysisIcons();
+        const SVG_TRIGGERS = analysisIcons.triggers;
+        const SVG_REASON = analysisIcons.reason;
+        const SVG_PUNISHMENT = analysisIcons.punishment;
+        const SVG_CHAT_ERROR = analysisIcons.chatError;
+        const SVG_SHIELD = analysisIcons.shield;
 
         this.connectToCurrentServer();
 
@@ -714,6 +770,17 @@ class TicketService {
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             return;
         }
+
+        // Skip heavy re-analysis when chat didn't change (prevents repeated renders).
+        const lastRow = rows[rows.length - 1];
+        const signature = `${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}`;
+        const prevSignature = this.lastChatSignatureByTextarea.get(textarea);
+        if (prevSignature === signature) {
+            return;
+        }
+        this.lastChatSignatureByTextarea.set(textarea, signature);
+
+        this.triggerRows.clear()
 
         const allViolations = [];
         const ruleCounters = {};

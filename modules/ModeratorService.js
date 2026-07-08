@@ -83,8 +83,15 @@ class ModeratorService {
                         }
 
                         if (!link.dataset.hasModerBadge) {
+                            const adminSvg = window.Icons?.admin;
+                            if (!adminSvg) {
+                                // Icons not loaded yet: keep row highlight (already applied above),
+                                // but postpone badge rendering until next invocation.
+                                return;
+                            }
+
                             const template = document.createElement("template");
-                            template.innerHTML = Icons.admin.trim();
+                            template.innerHTML = adminSvg.trim();
 
                             const badge = template.content.firstElementChild;
                             badge.classList.add("ioh-admin-icon");

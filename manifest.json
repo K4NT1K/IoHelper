@@ -41,7 +41,8 @@
         "css/analysis.css",
         "css/tooltip.css",
         "css/highlight.css",
-        "css/misc.css"
+        "css/misc.css",
+        "css/ticketCards.css"
       ],
       "js": [
         "modules/Utils.js",
@@ -51,6 +52,7 @@
         "modules/MessageService.js",
         "modules/TicketService.js",
         "modules/ModeratorService.js",
+        "modules/Optimizer.js",
         "modules/App.js",
         "content.js"
       ],

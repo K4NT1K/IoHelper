@@ -56,62 +56,74 @@ function renderToggles(features) {
         {
             key: 'highlightComplaintTriggers',
             label: 'Подсветка триггеров жалоб',
-            desc: 'highlightComplaintTriggers',
+            desc: '',
             help: 'Подсвечивает слова из списка триггеров в причине жалобы.'
         },
         {
             key: 'highlightNewAccounts',
             label: 'Подсветка новых аккаунтов',
-            desc: 'highlightNewAccounts',
+            desc: '',
             help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
         },
         {
             key: 'highlightDuplicateServers',
             label: 'Дубликаты серверов',
-            desc: 'highlightDuplicateServers',
+            desc: '',
             help: 'Выделяет жалобы, пришедшие с одного сервера.'
         },
         {
             key: 'processTicketRules',
             label: 'Анализ тикетов',
-            desc: 'processTicketRules',
+            desc: '',
             help: 'Анализирует историю чата в тикете и показывает подсказку по нарушению и наказанию.'
         },
         {
             key: 'showSteamAccountCreationDate',
             label: 'Дата создания Steam-аккаунта',
-            desc: 'showSteamAccountCreationDate',
+            desc: '',
             help: 'Показывает дату создания Steam-аккаунта нарушителя в открытом тикете.'
         },
         {
             key: 'manageEmptyBlocks',
             label: 'Скрывать пустые блоки',
-            desc: 'manageEmptyBlocks',
+            desc: '',
             help: 'Скрывает пустые блоки истории тикетов, банов, мутов.'
         },
         {
             key: 'translateText',
             label: 'Перевод сообщений',
-            desc: 'translateText',
+            desc: '',
             help: 'Добавляет перевод нерусских сообщений в истории чата при наведении на них курсором.'
         },
         {
             key: 'autoConnectServer',
             label: 'Автоподключение к серверу',
-            desc: 'autoConnectServer',
+            desc: '',
             help: 'Автоматически нажимает на ссылку подключения при принятии тикета.'
         },
         {
             key: 'trackOffenderServer',
             label: 'Трекер серверов нарушителей',
-            desc: 'trackOffenderServer',
+            desc: '',
             help: 'Включает отслеживание текущего сервера игрока.'
         },
         {
             key: 'scanSchedulePage',
             label: 'Сканировать расписание',
-            desc: 'scanSchedulePage',
+            desc: '',
             help: 'Обновляет базу модераторов при открытии страницы "Таймлайн" для подсветки в тикетах.'
+        },
+        {
+            key: 'squareTickets',
+            label: 'Квадратные тикеты',
+            desc: 'BETA TEST',
+            help: 'Рисует строки тикетов как более “билетные” карточки (квадратнее по форме).'
+        },
+        {
+            key: 'optimizeSpaTabs',
+            label: 'Оптимизация SPA вкладок',
+            desc: 'BETA TEST',
+            help: 'Блокирует фоновые загрузки данных для неактивных вкладок SPA.'
         }
     ];
 

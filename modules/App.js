@@ -11,6 +11,18 @@ class App {
         this.reasonTriggers = this.settings.reasonTriggers;
         this.observer = null;
         this.ipTrackTimeoutId = null;
+        this.ticketChatHistoryObservers = new Map();
+        this.tablesRowsObserver = null;
+        this.currentServerModeratorsObserver = null;
+        this.currentServerModeratorsDebounceId = null;
+        this.ticketInitObserver = null;
+        this.ticketInitDebounceId = null;
+        this.currentServerSectionObserver = null;
+        this.currentServerSectionDebounceId = null;
+        this.tableEnhancementsObserver = null;
+        this.tableEnhancementsDebounceId = null;
+        this.navigationWatcherInstalled = false;
+        this._lastHref = this.window?.location?.href || '';
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -31,6 +43,7 @@ class App {
             muteExceptions: this.muteExceptions
         });
         this.moderatorService = new ModeratorService({document, chrome});
+        this.optimizer = new Optimizer({window, disabledTabKeys: ['reports']});
     }
 
     start() {
@@ -42,6 +55,7 @@ class App {
             .then(r => r.json())
             .then(data => {
                 window.Icons = data;
+                this.runDOMUpdates();
             });
 
         this.chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -54,40 +68,14 @@ class App {
             this.updateSettings(settings);
         });
 
-        this.observer = new MutationObserver((mutations) => {
-            let shouldUpdate = false;
-
-            for (let i = 0; i < mutations.length; i++) {
-                const m = mutations[i];
-                if (m.type === 'attributes' && m.attributeName === 'class') {
-                    const targetClass = m.target.className;
-                    if (typeof targetClass === 'string' && targetClass.includes('ioh-')) {
-                        continue;
-                    }
-                }
-                if (m.type === 'attributes' && m.attributeName.startsWith('data-')) {
-                    continue;
-                }
-                const target = m.target;
-
-                if (
-                    target.closest?.(".ioh-panel") ||
-                    target.closest?.(".ioh-info-badge") ||
-                    target.closest?.(".ioh-account-created")
-                ) {
-                    continue;
-                }
-
-                shouldUpdate = true;
-                break;
-            }
-
-            if (shouldUpdate) {
-                this.runDOMUpdates();
-            }
-        });
-
+        this.optimizer.setEnabled(this.features.optimizeSpaTabs);
+        this.initNavigationWatcher();
         this.runDOMUpdates();
+        this.initTicketMountObserver();
+        this.initCurrentServerSectionObserver();
+        this.initCurrentServerModeratorsObserver();
+        this.initTableEnhancementsObserver();
+        this.initTablesRowsObserver();
 
         this.handleTrackOffenderLoop();
     }
@@ -122,14 +110,21 @@ class App {
         this.ticketService.muteExceptions = this.muteExceptions;
         this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
 
-        if (this.observer) this.observer.disconnect();
-
         if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
             this.ticketService.connectToCurrentServer();
         }
 
         this.cleanupChangedSettings(previousSettings, this.settings);
+
+        if (!this.features.processTicketRules) {
+            this.teardownTicketChatHistoryObservers();
+        }
+
+        this.optimizer.setEnabled(this.features.optimizeSpaTabs);
         this.runDOMUpdates();
+        this.initTicketMountObserver();
+        this.initCurrentServerSectionObserver();
+        this.initTableEnhancementsObserver();
         this.handleTrackOffenderLoop(previousSettings);
     }
 
@@ -207,8 +202,21 @@ class App {
 
     runDOMUpdates() {
         console.count('runDOMUpdates');
-        if (this.observer) this.observer.disconnect();
+        this.initPageSpecificFeatures();
+        this.initTicketSectionFeatures();
+        this.initCurrentServerFeatures();
+        this.initTableFeatures();
+    }
 
+    initPageSpecificFeatures() {
+        this.optimizer.setEnabled(this.features.optimizeSpaTabs);
+
+        if (this.features.scanSchedulePage) {
+            this.moderatorService.scanSchedulePage();
+        }
+    }
+
+    initTicketSectionFeatures() {
         const textareas = this.document.querySelectorAll('textarea');
         textareas.forEach(textarea => {
             if (this.isNotificationTextarea(textarea)) {
@@ -220,15 +228,13 @@ class App {
                     textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.ticket, textarea, 'mod-ticket-panel'), textarea);
                 }
                 if (this.features.processTicketRules) {
-                    this.ticketService.processTicketRules(textarea);
+                    this.ensureTicketChatHistoryObserver(textarea);
+                }
+                if (this.features.autoConnectServer) {
+                    this.ticketService.connectToCurrentServer();
                 }
             }
         });
-
-        if (this.features.scanSchedulePage) {
-            this.moderatorService.scanSchedulePage();
-        }
-        this.moderatorService.highlightSavedModerators()
 
         if (this.features.translateText) {
             this.messageService.processChatMessages();
@@ -243,27 +249,507 @@ class App {
         } else {
             this.ticketService.clearSteamAccountCreationDate();
         }
+    }
 
-        if (this.observer) {
-            this.observer.observe(this.document.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true
-            });
+    initCurrentServerFeatures() {
+        this.moderatorService.highlightSavedModerators();
+        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
+
+        if (this.settings.serverRefreshInterval > 0) {
+            this.ticketService.refreshCurrentServerNowIfAvailable();
         }
+    }
 
-        const rows = this.document.querySelectorAll('tr');
-        rows.forEach(row => {
-            if (this.features.highlightComplaintTriggers) {
-                this.messageService.highlightComplaintTriggers(row);
-            }
-            if (this.features.highlightNewAccounts) {
-                this.messageService.highlightNewAccounts(row);
-            }
+    initCurrentServerNotificationsPanels() {
+        if (typeof this.templates.notification === 'undefined') return;
+
+        const headers = Array.from(this.document.querySelectorAll('h3'));
+        const currentServerHeader = headers.find(h => h.textContent?.includes('Текущий сервер'));
+        const scope = currentServerHeader
+            ? (currentServerHeader.closest('div') || currentServerHeader.parentElement)
+            : this.document.body;
+
+        if (!scope || !scope.querySelectorAll) return;
+
+        const textareas = scope.querySelectorAll('textarea');
+        textareas.forEach(textarea => {
+            if (!this.isNotificationTextarea(textarea)) return;
+            if (!textarea.parentElement) return;
+
+            // Ensure we don't insert multiple panels for the same textarea parent.
+            if (textarea.parentElement.querySelector('.ioh-panel')) return;
+
+            textarea.parentNode.insertBefore(
+                this.panelService.createPanel(
+                    this.templates.notification,
+                    textarea,
+                    'mod-notif-panel'
+                ),
+                textarea
+            );
         });
+    }
+
+    initTableFeatures() {
+        if (this.features.squareTickets) {
+            this.ticketService.renderSquareTicketCards();
+        } else {
+            this.ticketService.clearSquareTicketCards();
+        }
 
         if (this.features.highlightDuplicateServers) {
             this.messageService.highlightDuplicateServerIps();
+        }
+    }
+
+    initNavigationWatcher() {
+        if (this.navigationWatcherInstalled) return;
+        this.navigationWatcherInstalled = true;
+
+        const self = this;
+        const history = this.window.history;
+
+        if (history?.pushState) {
+            const originalPushState = history.pushState;
+            history.pushState = function () {
+                const ret = originalPushState.apply(this, arguments);
+                self.handleNavigationChange();
+                return ret;
+            };
+        }
+
+        if (history?.replaceState) {
+            const originalReplaceState = history.replaceState;
+            history.replaceState = function () {
+                const ret = originalReplaceState.apply(this, arguments);
+                self.handleNavigationChange();
+                return ret;
+            };
+        }
+
+        this.window.addEventListener('popstate', () => this.handleNavigationChange());
+    }
+
+    handleNavigationChange() {
+        const href = this.window.location.href;
+        if (href === this._lastHref) return;
+        this._lastHref = href;
+
+        this.teardownTicketChatHistoryObservers();
+        this.teardownTablesRowsObserver();
+        this.teardownCurrentServerSectionObserver();
+        this.teardownTableEnhancementsObserver();
+        this.teardownCurrentServerModeratorsObserver();
+        this.ticketService.clearTicketRuleBadge();
+
+        this.runDOMUpdates();
+        this.initCurrentServerSectionObserver();
+        this.initCurrentServerModeratorsObserver();
+        this.initTicketMountObserver();
+        this.initTableEnhancementsObserver();
+        this.initTablesRowsObserver();
+    }
+
+    teardownTicketChatHistoryObservers() {
+        for (const entry of this.ticketChatHistoryObservers.values()) {
+            if (entry.debounceTimerId) {
+                clearTimeout(entry.debounceTimerId);
+            }
+            entry.observer.disconnect();
+        }
+        this.ticketChatHistoryObservers.clear();
+    }
+
+    teardownTablesRowsObserver() {
+        if (!this.tablesRowsObserver) return;
+        this.tablesRowsObserver.disconnect();
+        this.tablesRowsObserver = null;
+    }
+
+    teardownCurrentServerModeratorsObserver() {
+        if (!this.currentServerModeratorsObserver) return;
+        this.currentServerModeratorsObserver.disconnect();
+        this.currentServerModeratorsObserver = null;
+        if (this.currentServerModeratorsDebounceId) {
+            clearTimeout(this.currentServerModeratorsDebounceId);
+            this.currentServerModeratorsDebounceId = null;
+        }
+    }
+
+    teardownCurrentServerSectionObserver() {
+        if (!this.currentServerSectionObserver) return;
+        this.currentServerSectionObserver.disconnect();
+        this.currentServerSectionObserver = null;
+        if (this.currentServerSectionDebounceId) {
+            clearTimeout(this.currentServerSectionDebounceId);
+            this.currentServerSectionDebounceId = null;
+        }
+    }
+
+    teardownTableEnhancementsObserver() {
+        if (!this.tableEnhancementsObserver) return;
+        this.tableEnhancementsObserver.disconnect();
+        this.tableEnhancementsObserver = null;
+        if (this.tableEnhancementsDebounceId) {
+            clearTimeout(this.tableEnhancementsDebounceId);
+            this.tableEnhancementsDebounceId = null;
+        }
+    }
+
+    initTicketMountObserver() {
+        if (this.ticketInitObserver) {
+            this.ticketInitObserver.disconnect();
+        }
+
+        this.ticketInitObserver = new MutationObserver((mutations) => {
+            if (!this._hasRelevantTicketMountMutation(mutations)) {
+                return;
+            }
+
+            if (this.ticketInitDebounceId) {
+                clearTimeout(this.ticketInitDebounceId);
+            }
+
+            this.ticketInitDebounceId = setTimeout(() => {
+                this.ticketInitDebounceId = null;
+                this.runDOMUpdates();
+            }, 120);
+        });
+
+        this.ticketInitObserver.observe(this.document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    initCurrentServerModeratorsObserver() {
+        // Re-init safely (e.g. after SPA navigation).
+        this.teardownCurrentServerModeratorsObserver();
+
+        const triggerHighlight = () => {
+            if (this.currentServerModeratorsDebounceId) {
+                clearTimeout(this.currentServerModeratorsDebounceId);
+            }
+
+            this.currentServerModeratorsDebounceId = setTimeout(() => {
+                this.currentServerModeratorsDebounceId = null;
+                // Highlight is idempotent via CSS class.
+                this.moderatorService.highlightSavedModerators();
+            }, 180);
+        };
+
+        this.currentServerModeratorsObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes || []) {
+                    if (!node || node.nodeType !== 1) continue;
+
+                    // Fast paths: the section/header or any moderator profile link.
+                    if (node.matches?.('h3') && node.textContent?.includes('Текущий сервер')) {
+                        triggerHighlight();
+                        return;
+                    }
+
+                    if (node.querySelector?.('a[href*="cybershoke.net/"]')) {
+                        triggerHighlight();
+                        return;
+                    }
+                }
+            }
+        });
+
+        this.currentServerModeratorsObserver.observe(this.document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // Also run once in case the table already exists.
+        triggerHighlight();
+    }
+
+    initCurrentServerSectionObserver() {
+        this.teardownCurrentServerSectionObserver();
+
+        const triggerCurrentServerInit = () => {
+            if (this.currentServerSectionDebounceId) {
+                clearTimeout(this.currentServerSectionDebounceId);
+            }
+
+            this.currentServerSectionDebounceId = setTimeout(() => {
+                this.currentServerSectionDebounceId = null;
+                this.initCurrentServerFeatures();
+                this.initCurrentServerNotificationsPanels();
+            }, 160);
+        };
+
+        this.currentServerSectionObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes || []) {
+                    if (!node || node.nodeType !== 1) continue;
+
+                    if (node.matches?.('h3') && node.textContent?.includes('Текущий сервер')) {
+                        triggerCurrentServerInit();
+                        return;
+                    }
+
+                    if (node.querySelector?.('h3')) {
+                        const header = Array.from(node.querySelectorAll('h3')).find(h => h.textContent?.includes('Текущий сервер'));
+                        if (header) {
+                            triggerCurrentServerInit();
+                            return;
+                        }
+                    }
+
+                    if (node.matches?.('button') && node.textContent?.includes('Обновить')) {
+                        triggerCurrentServerInit();
+                        return;
+                    }
+
+                    if (node.querySelector?.('button')) {
+                        const refreshButton = Array.from(node.querySelectorAll('button')).find(btn => btn.textContent?.includes('Обновить'));
+                        if (refreshButton) {
+                            triggerCurrentServerInit();
+                            return;
+                        }
+                    }
+
+                    // If the page renders notification textarea asynchronously, also trigger
+                    // on generic textarea mounts.
+                    if (node.matches?.('textarea')) {
+                        triggerCurrentServerInit();
+                        return;
+                    }
+
+                    if (node.querySelector?.('textarea')) {
+                        triggerCurrentServerInit();
+                        return;
+                    }
+                }
+            }
+        });
+
+        this.currentServerSectionObserver.observe(this.document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        triggerCurrentServerInit();
+    }
+
+    initTableEnhancementsObserver() {
+        this.teardownTableEnhancementsObserver();
+
+        const triggerTableInit = () => {
+            if (this.tableEnhancementsDebounceId) {
+                clearTimeout(this.tableEnhancementsDebounceId);
+            }
+
+            this.tableEnhancementsDebounceId = setTimeout(() => {
+                this.tableEnhancementsDebounceId = null;
+                this.initTableFeatures();
+            }, 160);
+        };
+
+        this.tableEnhancementsObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes || []) {
+                    if (!node || node.nodeType !== 1) continue;
+
+                    if (node.matches?.('table, tr')) {
+                        triggerTableInit();
+                        return;
+                    }
+
+                    if (node.querySelector?.('table, tr')) {
+                        triggerTableInit();
+                        return;
+                    }
+                }
+            }
+        });
+
+        this.tableEnhancementsObserver.observe(this.document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        triggerTableInit();
+    }
+
+    _hasRelevantTicketMountMutation(mutations) {
+        const isRelevantNode = (node) => {
+            if (!node || node.nodeType !== 1) return false;
+
+            if (
+                node.closest?.('.ioh-panel') ||
+                node.closest?.('.ioh-info-badge') ||
+                node.closest?.('.ioh-account-created')
+            ) {
+                return false;
+            }
+
+            if (node.matches?.('textarea[placeholder*="Опишите детали закрытия"]')) return true;
+            if (node.matches?.('textarea')) return true;
+            if (node.matches?.('h3')) return true;
+            if (node.querySelector?.('textarea[placeholder*="Опишите детали закрытия"]')) return true;
+            if (node.querySelector?.('h3')) return true;
+            if (node.textContent?.includes('История Чата')) return true;
+            if (node.textContent?.includes('Нарушитель')) return true;
+
+            return false;
+        };
+
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes || []) {
+                if (isRelevantNode(node)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    _findChatHistoryBlockScoped(scopeEl) {
+        const containers = [];
+        if (scopeEl) {
+            containers.push(scopeEl);
+            const closestSection = scopeEl.closest?.('section, article, main, [role="main"]');
+            if (closestSection && !containers.includes(closestSection)) {
+                containers.push(closestSection);
+            }
+        }
+        containers.push(this.document.body);
+
+        for (const container of containers) {
+            const headers = Array.from(container.querySelectorAll('h3'));
+            const targetHeader = headers.find(h3 => h3.textContent.includes('История Чата'));
+            if (!targetHeader) continue;
+
+            let parent = targetHeader.parentElement;
+            while (parent && parent !== this.document.body) {
+                if (parent.querySelector('table')) {
+                    return parent;
+                }
+                parent = parent.parentElement;
+            }
+        }
+
+        return this.ticketService.getBlockByHeader('История Чата');
+    }
+
+    ensureTicketChatHistoryObserver(textarea) {
+        if (this.ticketChatHistoryObservers.has(textarea)) return;
+        if (!this.document.contains(textarea)) return;
+
+        const scopeEl = textarea.closest('section, article, main, [role="main"]')
+            || textarea.parentElement
+            || this.document.body;
+        let chatHistoryBlock = this._findChatHistoryBlockScoped(scopeEl);
+
+        const attachObserver = (block) => {
+            if (!block) return;
+            if (this.ticketChatHistoryObservers.has(textarea)) return;
+
+            const entry = {
+                observer: null,
+                debounceTimerId: null,
+            };
+
+            const observer = new MutationObserver(() => {
+                if (!this.features.processTicketRules) return;
+                this._debouncedProcessTicketRules(textarea);
+            });
+            entry.observer = observer;
+            entry.observer.observe(block, {childList: true, subtree: true});
+            this.ticketChatHistoryObservers.set(textarea, entry);
+
+            this._runTicketChatAnalysis(textarea);
+        };
+
+        if (chatHistoryBlock) {
+            attachObserver(chatHistoryBlock);
+            return;
+        }
+
+        // Wait until chat history appears (ticket DOM can be rendered in phases).
+        const tempObserver = new MutationObserver(() => {
+            if (!this.document.contains(textarea)) {
+                tempObserver.disconnect();
+                return;
+            }
+
+            const nextBlock = this._findChatHistoryBlockScoped(scopeEl);
+            if (!nextBlock) return;
+
+            tempObserver.disconnect();
+            attachObserver(nextBlock);
+        });
+
+        tempObserver.observe(this.document.body, {childList: true, subtree: true});
+    }
+
+    _debouncedProcessTicketRules(textarea, delayMs = 250) {
+        const entry = this.ticketChatHistoryObservers.get(textarea);
+        if (!entry) return;
+        if (!this.features.processTicketRules) return;
+
+        if (entry.debounceTimerId) {
+            clearTimeout(entry.debounceTimerId);
+            entry.debounceTimerId = null;
+        }
+
+        entry.debounceTimerId = setTimeout(() => {
+            entry.debounceTimerId = null;
+            this._runTicketChatAnalysis(textarea);
+        }, delayMs);
+    }
+
+    _runTicketChatAnalysis(textarea) {
+        if (!this.document.contains(textarea)) return;
+
+        if (this.features.manageEmptyBlocks) {
+            this.ticketService.manageEmptyBlocks();
+        }
+
+        if (this.features.translateText) {
+            this.messageService.processChatMessages();
+        }
+
+        this.ticketService.processTicketRules(textarea);
+    }
+
+    initTablesRowsObserver() {
+        // If SPA content is re-rendered, ensure we don't keep an old observer.
+        this.teardownTablesRowsObserver();
+
+        const self = this;
+        this.tablesRowsObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes || []) {
+                    if (!node || node.nodeType !== 1) continue;
+
+                    if (node.matches && node.matches('tr')) {
+                        self._applyRowHighlights(node);
+                        continue;
+                    }
+
+                    const rows = node.querySelectorAll?.('tr') || [];
+                    rows.forEach(row => self._applyRowHighlights(row));
+                }
+            }
+        });
+
+        // Apply once for existing content.
+        this.document.querySelectorAll('tr').forEach(row => this._applyRowHighlights(row));
+        this.tablesRowsObserver.observe(this.document.documentElement, {childList: true, subtree: true});
+    }
+
+    _applyRowHighlights(row) {
+        if (this.features.highlightComplaintTriggers) {
+            this.messageService.highlightComplaintTriggers(row);
+        }
+        if (this.features.highlightNewAccounts) {
+            this.messageService.highlightNewAccounts(row);
         }
     }
 
