@@ -68,6 +68,16 @@ class App {
                 if (m.type === 'attributes' && m.attributeName.startsWith('data-')) {
                     continue;
                 }
+                const target = m.target;
+
+                if (
+                    target.closest?.(".ioh-panel") ||
+                    target.closest?.(".ioh-info-badge") ||
+                    target.closest?.(".ioh-account-created")
+                ) {
+                    continue;
+                }
+
                 shouldUpdate = true;
                 break;
             }
@@ -196,6 +206,7 @@ class App {
     }
 
     runDOMUpdates() {
+        console.count('runDOMUpdates');
         if (this.observer) this.observer.disconnect();
 
         const textareas = this.document.querySelectorAll('textarea');

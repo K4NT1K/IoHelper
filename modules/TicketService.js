@@ -449,7 +449,7 @@ class TicketService {
 
             valueNode.textContent = creationDate ? creationDate : 'Профиль скрыт';
         } catch (error) {
-            valueNode.textContent = 'Ошибка загрузки';
+            valueNode.textContent = 'Ошибка загрузки ⟳';
         }
 
         containerNode.dataset.loaded = 'true';
@@ -663,6 +663,7 @@ class TicketService {
         return {finalName, finalDuration, finalDurationStr};
     }
     async processTicketRules(textarea) {
+        console.count("processTicketRules");
         this.triggerRows.clear()
 
         const SVG_TRIGGERS = Icons.loupe;
