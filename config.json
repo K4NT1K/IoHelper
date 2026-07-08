@@ -15,7 +15,7 @@
       "optimizeSpaTabs": false
     },
     "newAccountHours": 7,
-    "serverRefreshInterval": 30,
+    "serverRefreshInterval": 15,
     "trackOffenderInterval": 4,
     "ticketAgeLimit": 0,
     "reasonTriggers": [
@@ -378,8 +378,7 @@
       "жирно"
     ],
     "ебал": [
-      "проебал",
-      "еба"
+      "проебал"
     ]
   },
   "moderators": {
