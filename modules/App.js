@@ -9,6 +9,7 @@ class App {
         this.settings = config.settings;
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
+        this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
         this.observer = null;
         this.ipTrackTimeoutId = null;
         this.ticketChatHistoryObservers = new Map();
@@ -108,14 +109,21 @@ class App {
             }
         };
 
+        if (settings.reasonTriggersAutoconnect) {
+            this.settings.reasonTriggersAutoconnect = settings.reasonTriggersAutoconnect;
+        }
+
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
-
+        this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
         this.messageService.settings = this.settings;
         this.ticketService.settings = this.settings;
         this.ticketService.rules = this.rules;
         this.ticketService.muteExceptions = this.muteExceptions;
-        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
+
+        if (previousSettings.serverRefreshInterval !== settings.serverRefreshInterval) {
+            this.ticketService.stopCurrentServerRefresh();
+        }
 
         if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
             this.ticketService.connectToCurrentServer();
@@ -273,10 +281,19 @@ class App {
 
     initCurrentServerFeatures() {
         this.moderatorService.highlightSavedModerators();
-        this.ticketService.setCurrentServerRefreshInterval(this.settings.serverRefreshInterval);
+
+        const ticketKey = window.location.pathname || window.location.href;
+
+        if (!this.ticketService.hasCurrentServerSection()) {
+            this.ticketService.stopCurrentServerRefresh();
+            return;
+        }
 
         if (this.settings.serverRefreshInterval > 0) {
             this.ticketService.refreshCurrentServerNowIfAvailable();
+            this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
+        } else {
+            this.ticketService.stopCurrentServerRefresh();
         }
     }
 
@@ -417,6 +434,7 @@ class App {
         this.teardownCurrentServerModeratorsObserver();
         this.ticketService.clearTicketRuleBadge();
         this.ticketService.resetChatAnalysisCache();
+        this.ticketService.stopCurrentServerRefresh();
 
         this.runDOMUpdates();
         this.initCurrentServerFeatures();
@@ -555,49 +573,28 @@ class App {
             this.currentServerSectionDebounceId = setTimeout(() => {
                 this.currentServerSectionDebounceId = null;
                 this.initCurrentServerFeatures();
-                this.initNotificationPanels();
             }, 160);
+        };
+
+        const isCurrentServerNode = (node) => {
+            if (!node || node.nodeType !== 1) return false;
+
+            if (node.matches?.('h3') && node.textContent?.includes('Текущий сервер')) {
+                return true;
+            }
+
+            if (node.querySelector?.('h3')) {
+                return Array.from(node.querySelectorAll('h3'))
+                    .some(h => h.textContent?.includes('Текущий сервер'));
+            }
+
+            return false;
         };
 
         this.currentServerSectionObserver = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes || []) {
-                    if (!node || node.nodeType !== 1) continue;
-
-                    if (node.matches?.('h3') && node.textContent?.includes('Текущий сервер')) {
-                        triggerCurrentServerInit();
-                        return;
-                    }
-
-                    if (node.querySelector?.('h3')) {
-                        const header = Array.from(node.querySelectorAll('h3')).find(h => h.textContent?.includes('Текущий сервер'));
-                        if (header) {
-                            triggerCurrentServerInit();
-                            return;
-                        }
-                    }
-
-                    if (node.matches?.('button') && node.textContent?.includes('Обновить')) {
-                        triggerCurrentServerInit();
-                        return;
-                    }
-
-                    if (node.querySelector?.('button')) {
-                        const refreshButton = Array.from(node.querySelectorAll('button')).find(btn => btn.textContent?.includes('Обновить'));
-                        if (refreshButton) {
-                            triggerCurrentServerInit();
-                            return;
-                        }
-                    }
-
-                    // If the page renders notification textarea asynchronously, also trigger
-                    // on generic textarea mounts.
-                    if (node.matches?.('textarea')) {
-                        triggerCurrentServerInit();
-                        return;
-                    }
-
-                    if (node.querySelector?.('textarea')) {
+                    if (isCurrentServerNode(node)) {
                         triggerCurrentServerInit();
                         return;
                     }
@@ -766,7 +763,7 @@ class App {
         tempObserver.observe(this.document.body, {childList: true, subtree: true});
     }
 
-    _debouncedProcessTicketRules(textarea, delayMs = 250) {
+    _debouncedProcessTicketRules(textarea, delayMs = 100) {
         const entry = this.ticketChatHistoryObservers.get(textarea);
         if (!entry) return;
         if (!this.features.processTicketRules) return;

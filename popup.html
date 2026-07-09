@@ -74,6 +74,22 @@
     </section>
 
     <section class="settings-section">
+        <div class="section-title">Автоподключение</div>
+        <p class="section-hint">Категории жалоб, при которых срабатывает автоподключение.</p>
+        <div class="reason-checkboxes" id="autoConnectReasonsContainer"></div>
+        <p class="section-hint section-hint--spaced">Триггеры автоподключения срабатывают по тексту жалобы игрока, не по категории.</p>
+        <div class="triggers-area">
+            <div class="triggers-wrap" id="autoConnectTriggersContainer"></div>
+            <div class="triggers-input-row">
+                <input type="text" id="autoConnectTriggerInput" placeholder="Новый триггер автоподключения" autocomplete="off"/>
+                <button class="icon-btn btn-add-trigger" id="addAutoConnectTriggerBtn" title="Добавить триггер"
+                        aria-label="Добавить триггер автоподключения">+
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
         <div class="section-title">Триггеры жалоб</div>
         <div class="triggers-area">
             <div class="triggers-wrap" id="triggersContainer"></div>

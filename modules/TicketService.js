@@ -14,6 +14,10 @@ class TicketService {
         this.steamAccountCreationCache = new Map();
         this.chatSignatureByKey = new Map();
         this.globalServerCooldown = 0;
+        this.recentlyLeftOffenders = new Map();
+        this._currentServerRefreshTicketKey = null;
+        this._currentServerRefreshSeconds = null;
+        this.LEFT_OFFENDER_TTL_MS = 5 * 60 * 1000;
     }
 
     getChatCacheKey(textarea) {
@@ -242,66 +246,171 @@ class TicketService {
         });
     }
 
-    connectToCurrentServer() {
+    markOffenderLeft(steamId) {
+        if (!steamId) return;
+        this.recentlyLeftOffenders.set(steamId, Date.now() + this.LEFT_OFFENDER_TTL_MS);
+    }
 
+    clearOffenderLeft(steamId) {
+        if (!steamId) return;
+        this.recentlyLeftOffenders.delete(steamId);
+    }
+
+    isOffenderRecentlyLeft(steamId) {
+        if (!steamId) return false;
+
+        const expiresAt = this.recentlyLeftOffenders.get(steamId);
+        if (!expiresAt) return false;
+
+        if (Date.now() >= expiresAt) {
+            this.recentlyLeftOffenders.delete(steamId);
+            return false;
+        }
+
+        return true;
+    }
+
+    getTicketComplaintParts() {
+        const field = this.findInfoField('Причина');
+        const valueBlock = this.findFieldValueBlock(field);
+        return this.utils.parseComplaintCell(valueBlock || field);
+    }
+
+    getTicketComplaintCategory() {
+        return this.getTicketComplaintParts().category;
+    }
+
+    getPlayerComplaintText() {
+        return this.getTicketComplaintParts().playerText;
+    }
+
+    complaintTextMatchesAutoconnectTrigger(text) {
+        const haystack = String(text || '').toLowerCase();
+        if (!haystack) return false;
+
+        return (this.settings.reasonTriggersAutoconnect || []).some(trigger => {
+            if (!trigger) return false;
+            return haystack.includes(String(trigger).toLowerCase());
+        });
+    }
+
+    shouldAutoConnectToServer() {
         if (!this.settings?.features?.autoConnectServer) {
-            return;
+            return {allowed: false, reason: 'функция отключена'};
         }
 
         const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
-            span => span.textContent.trim() === "В работе"
+            span => span.textContent.trim() === 'В работе'
         );
 
         if (!statusSpan) {
-            console.log("[Helper] Авто-подключение отменено: статус 'В работе' не найден.");
+            return {allowed: false, reason: "статус 'В работе' не найден"};
+        }
+
+        const offenderField = this.findInfoField('Нарушитель');
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+
+        if (offenderSteamId && this.isOffenderRecentlyLeft(offenderSteamId)) {
+            return {allowed: false, reason: 'нарушитель недавно вышел с сервера'};
+        }
+
+        const category = this.getTicketComplaintCategory();
+        const playerText = this.getPlayerComplaintText();
+        const allowedReasons = this.settings.autoConnectReasons || ['Читерство', 'Багоюз'];
+        const reasonAllowed = allowedReasons.some(reason =>
+            category.toLowerCase().includes(String(reason).toLowerCase())
+        );
+        const triggerAllowed = this.complaintTextMatchesAutoconnectTrigger(playerText);
+
+        if (!reasonAllowed && !triggerAllowed) {
+            return {allowed: false, reason: `причина «${category || 'неизвестна'}» не в списке и триггеры автоподключения не найдены`};
+        }
+
+        return {allowed: true, reason: reasonAllowed ? 'причина в списке' : 'найден триггер в тексте жалобы игрока'};
+    }
+
+    connectToCurrentServer() {
+        const decision = this.shouldAutoConnectToServer();
+        if (!decision.allowed) {
+            console.log(`[Helper] Авто-подключение отменено: ${decision.reason}.`);
             return;
         }
 
         const ticketKey = window.location.pathname || window.location.href;
         if (this.document.body.dataset.autoConnectedFor === ticketKey) {
-            console.log("[Helper] Авто-подключение уже выполнялось для этого тикета.");
+            console.log('[Helper] Авто-подключение уже выполнялось для этого тикета.');
             return;
         }
 
         const connectLink = this.document.querySelector('a[href^="steam://connect/"]');
         if (connectLink) {
-            console.log("[Helper] Ссылка на коннект найдена:", connectLink.href, "Выполняю клик...");
+            console.log('[Helper] Ссылка на коннект найдена:', connectLink.href, 'Выполняю клик...');
             this.document.body.dataset.autoConnectedFor = ticketKey;
             connectLink.click();
         } else {
-            console.log("[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.");
+            console.log('[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.');
         }
     }
 
-    setCurrentServerRefreshInterval(seconds) {
-        clearInterval(this.currentServerRefreshInterval);
+    findCurrentServerHeader() {
+        return Array.from(this.document.querySelectorAll('h3'))
+            .find(h => h.textContent?.includes('Текущий сервер'));
+    }
 
-        if (!seconds || seconds <= 0) {
+    hasCurrentServerSection() {
+        return Boolean(this.findCurrentServerHeader());
+    }
+
+    findCurrentServerRefreshButton(header = this.findCurrentServerHeader()) {
+        if (!header) return null;
+
+        let container = header.parentElement;
+        for (let depth = 0; depth < 8 && container; depth++) {
+            const refreshButton = Array.from(container.querySelectorAll('button'))
+                .find(btn => btn.textContent?.includes('Обновить'));
+            if (refreshButton) return refreshButton;
+            container = container.parentElement;
+        }
+
+        return null;
+    }
+
+    stopCurrentServerRefresh() {
+        if (this.currentServerRefreshInterval) {
+            clearInterval(this.currentServerRefreshInterval);
             this.currentServerRefreshInterval = null;
+        }
+        this._currentServerRefreshTicketKey = null;
+        this._currentServerRefreshSeconds = null;
+    }
+
+    ensureCurrentServerRefresh(ticketKey, seconds) {
+        if (!seconds || seconds <= 0) {
+            this.stopCurrentServerRefresh();
             return;
         }
 
+        if (
+            this._currentServerRefreshTicketKey === ticketKey &&
+            this._currentServerRefreshSeconds === seconds &&
+            this.currentServerRefreshInterval
+        ) {
+            return;
+        }
+
+        this.stopCurrentServerRefresh();
+        this._currentServerRefreshTicketKey = ticketKey;
+        this._currentServerRefreshSeconds = seconds;
         this.currentServerRefreshInterval = setInterval(() => {
             this.refreshCurrentServerNowIfAvailable();
-
         }, seconds * 1000);
     }
 
     refreshCurrentServerNowIfAvailable() {
-        const headers = [...this.document.querySelectorAll("h3")];
-
-        const header = headers.find(h =>
-            h.textContent.trim() === "Текущий сервер"
-        );
-
+        const header = this.findCurrentServerHeader();
         if (!header) return false;
 
-        const container = header.closest("div");
-        if (!container) return false;
-
-        const refreshButton = [...container.querySelectorAll("button")]
-            .find(btn => btn.textContent.includes("Обновить"));
-
+        const refreshButton = this.findCurrentServerRefreshButton(header);
         if (!refreshButton || refreshButton.disabled) return false;
 
         refreshButton.click();
@@ -605,7 +714,7 @@ class TicketService {
                     const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
                     if (!steamIdMatch) continue;
 
-                    const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
+                    const lastCheck = parseInt(row.dataset.lastIpCheck || '0');
 
                     if (now - lastCheck < CACHE_INTERVAL) continue;
 
@@ -642,7 +751,7 @@ class TicketService {
                 });
 
                 if (response.status === 429) {
-                    this.globalServerCooldown = Date.now() + 180000;
+                    this.globalServerCooldown = Date.now() + 10000;
                     break;
                 }
 
@@ -657,14 +766,17 @@ class TicketService {
 
                 const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
                 if (linkToUpdate) {
-                    linkToUpdate.classList.remove("ioh-server-online", "ioh-server-offline", "ioh-server-other");
+                    linkToUpdate.classList.remove('ioh-server-online', 'ioh-server-offline', 'ioh-server-other');
 
                     if (!currentIp) {
-                        linkToUpdate.classList.add("ioh-server-offline");
+                        linkToUpdate.classList.add('ioh-server-offline');
+                        this.markOffenderLeft(targetSteamId);
                     } else if (currentIp === targetIp) {
-                        linkToUpdate.classList.add("ioh-server-online");
+                        linkToUpdate.classList.add('ioh-server-online');
+                        this.clearOffenderLeft(targetSteamId);
                     } else {
-                        linkToUpdate.classList.add("ioh-server-other");
+                        linkToUpdate.classList.add('ioh-server-other');
+                        this.markOffenderLeft(targetSteamId);
                     }
                 }
             }

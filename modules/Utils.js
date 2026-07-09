@@ -110,6 +110,21 @@ class Utils {
         const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         return new RegExp(escapedTrigger, "iu").test(sanitizedText);
     }
+
+    parseComplaintCell(container) {
+        if (!container) {
+            return {category: '', playerText: ''};
+        }
+
+        const wrapper = container.querySelector(':scope > div') || container;
+        const categoryEl = wrapper.querySelector(':scope > div');
+        const playerEl = wrapper.querySelector(':scope > span');
+
+        return {
+            category: categoryEl?.textContent?.trim() || '',
+            playerText: playerEl?.textContent?.trim() || ''
+        };
+    }
 }
 
 window.Utils = Utils;

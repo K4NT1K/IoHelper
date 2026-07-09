@@ -75,27 +75,36 @@ class MessageService {
             const cells = row.querySelectorAll('td');
             const reportCell = cells[5];
 
-            if (reportCell) {
-                let html = reportCell.innerHTML;
-                let changed = false;
+            if (!reportCell) return;
 
-                this.settings.reasonTriggers.forEach(trigger => {
-                    if (!trigger) return;
-                    const escapedTrigger = trigger.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                    const regex = new RegExp(`(${escapedTrigger})`, 'gi');
+            const {playerText} = this.utils.parseComplaintCell(reportCell);
+            const playerEl = reportCell.querySelector(':scope > div > span') ||
+                reportCell.querySelector('span');
 
-                    if (regex.test(html)) {
-                        html = html.replace(regex, '<span class="ioh-complaint-trigger">$1</span>');
-                        changed = true;
-                    }
-                });
-
-                if (changed) {
-                    reportCell.innerHTML = html;
-                }
-
+            if (!playerEl || !playerText) {
                 row.dataset.triggersChecked = 'true';
+                return;
             }
+
+            let html = playerEl.innerHTML;
+            let changed = false;
+
+            this.settings.reasonTriggers.forEach(trigger => {
+                if (!trigger) return;
+                const escapedTrigger = trigger.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp(`(${escapedTrigger})`, 'gi');
+
+                if (regex.test(html)) {
+                    html = html.replace(regex, '<span class="ioh-complaint-trigger">$1</span>');
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                playerEl.innerHTML = html;
+            }
+
+            row.dataset.triggersChecked = 'true';
         });
     }
 

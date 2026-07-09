@@ -4,6 +4,10 @@ const refreshIntervalInput = document.getElementById('serverRefreshInterval');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const trackIntervalInput = document.getElementById('trackOffenderInterval');
+const autoConnectReasonsContainer = document.getElementById('autoConnectReasonsContainer');
+const autoConnectTriggersContainer = document.getElementById('autoConnectTriggersContainer');
+const autoConnectTriggerInput = document.getElementById('autoConnectTriggerInput');
+const addAutoConnectTriggerBtn = document.getElementById('addAutoConnectTriggerBtn');
 // const ticketAgeInput = document.getElementById('ticketAgeLimit');
 const addBtn = document.getElementById('addTriggerBtn');
 const resetBtn = document.getElementById('resetDefaultsBtn');
@@ -172,6 +176,50 @@ function renderToggles(features) {
     });
 }
 
+function renderAutoConnectReasons(options, selectedReasons) {
+    autoConnectReasonsContainer.innerHTML = '';
+
+    options.forEach(reason => {
+        const label = document.createElement('label');
+        label.className = 'reason-checkbox';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = reason;
+        input.checked = selectedReasons.includes(reason);
+        input.addEventListener('change', saveCurrentSettings);
+
+        const text = document.createElement('span');
+        text.textContent = reason;
+
+        label.appendChild(input);
+        label.appendChild(text);
+        autoConnectReasonsContainer.appendChild(label);
+    });
+}
+
+function renderAutoConnectTriggers(triggers) {
+    autoConnectTriggersContainer.innerHTML = '';
+    triggers.forEach((trigger, index) => {
+        const tag = document.createElement('span');
+        tag.className = 'trigger-tag';
+        tag.textContent = trigger;
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-trigger';
+        removeBtn.textContent = 'x';
+        removeBtn.dataset.index = index;
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(removeBtn.dataset.index, 10);
+            currentSettings.reasonTriggersAutoconnect.splice(idx, 1);
+            renderAutoConnectTriggers(currentSettings.reasonTriggersAutoconnect);
+            saveCurrentSettings();
+        });
+        tag.appendChild(removeBtn);
+        autoConnectTriggersContainer.appendChild(tag);
+    });
+}
+
 function renderTriggers(triggers) {
     triggersContainer.innerHTML = '';
     triggers.forEach((trigger, index) => {
@@ -205,9 +253,17 @@ function loadSettingsToUI(settings) {
     hoursInput.value = settings.newAccountHours;
     refreshIntervalInput.value = settings.serverRefreshInterval;
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
+    currentSettings.reasonTriggersAutoconnect = [...(settings.reasonTriggersAutoconnect || [])];
     trackIntervalInput.value = settings.trackOffenderInterval;
     // ticketAgeInput.value = settings.ticketAgeLimit;
 
+    renderAutoConnectReasons(
+        defaultSettings.complaintReasonOptions || [],
+        settings.autoConnectReasons || defaultSettings.autoConnectReasons || []
+    );
+    renderAutoConnectTriggers(
+        settings.reasonTriggersAutoconnect || defaultSettings.reasonTriggersAutoconnect || []
+    );
     renderTriggers(currentSettings.reasonTriggers);
 }
 
@@ -236,7 +292,12 @@ function collectSettingsFromUI() {
         trackOffenderInterval: Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1),
         // ticketAgeLimit: Math.max(parseInt(ticketAgeInput.value, 10) || 0, 0),
 
-        reasonTriggers: [...currentSettings.reasonTriggers]
+        autoConnectReasons: Array.from(
+            autoConnectReasonsContainer.querySelectorAll('input[type="checkbox"]:checked')
+        ).map(input => input.value),
+
+        reasonTriggers: [...currentSettings.reasonTriggers],
+        reasonTriggersAutoconnect: [...currentSettings.reasonTriggersAutoconnect]
 
     };
 
@@ -275,6 +336,12 @@ async function loadSettings() {
             currentSettings.reasonTriggers =
                 helperSettings.reasonTriggers ??
                 currentSettings.reasonTriggers;
+            currentSettings.autoConnectReasons =
+                helperSettings.autoConnectReasons ??
+                currentSettings.autoConnectReasons;
+            currentSettings.reasonTriggersAutoconnect =
+                helperSettings.reasonTriggersAutoconnect ??
+                currentSettings.reasonTriggersAutoconnect;
         }
 
         loadSettingsToUI(currentSettings);
@@ -301,6 +368,30 @@ triggerInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
         addBtn.click();
+    }
+});
+
+addAutoConnectTriggerBtn.addEventListener('click', () => {
+    const text = autoConnectTriggerInput.value.trim();
+    if (!text) return;
+    if (!currentSettings.reasonTriggersAutoconnect) {
+        currentSettings.reasonTriggersAutoconnect = [];
+    }
+    if (currentSettings.reasonTriggersAutoconnect.includes(text)) {
+        showToast('Такой триггер уже есть', 1500);
+        return;
+    }
+    currentSettings.reasonTriggersAutoconnect.push(text);
+    renderAutoConnectTriggers(currentSettings.reasonTriggersAutoconnect);
+    saveCurrentSettings();
+    autoConnectTriggerInput.value = '';
+    autoConnectTriggerInput.focus();
+});
+
+autoConnectTriggerInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addAutoConnectTriggerBtn.click();
     }
 });
 

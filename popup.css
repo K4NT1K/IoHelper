@@ -227,6 +227,59 @@ h1 {
     background: linear-gradient(90deg, var(--stroke), transparent);
 }
 
+.section-hint {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--muted);
+    margin: -2px 0 10px;
+}
+
+.section-hint--spaced {
+    margin-top: 12px;
+}
+
+.reason-checkboxes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.reason-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--glass-soft);
+    border: 1px solid var(--stroke);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    transition: background var(--spring), border-color var(--spring);
+}
+
+.reason-checkbox:hover {
+    background: var(--glass-hover);
+    border-color: var(--stroke-strong);
+}
+
+.reason-checkbox input {
+    accent-color: var(--blue-2);
+}
+
+.reason-checkbox input:checked {
+    background: linear-gradient(
+            135deg,
+            var(--blue),
+            var(--blue-2)
+    );
+
+    border-color: transparent;
+
+    box-shadow:
+            0 0 18px var(--blue-glow);
+}
+
 .toggle-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;

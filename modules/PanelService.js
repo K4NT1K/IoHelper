@@ -17,7 +17,7 @@ class PanelService {
                 ? "Бан"
                 : "Мут";
 
-            return defaultText.replace("Выдан пред", action);
+            return defaultText.replace("Пред", action);
         }
 
         return defaultText;

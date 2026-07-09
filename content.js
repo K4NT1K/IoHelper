@@ -20,6 +20,14 @@
                 ...(result.helperSettings?.features || {})
             };
 
+            if (result.helperSettings?.autoConnectReasons) {
+                config.settings.autoConnectReasons = result.helperSettings.autoConnectReasons;
+            }
+
+            if (result.helperSettings?.reasonTriggersAutoconnect) {
+                config.settings.reasonTriggersAutoconnect = result.helperSettings.reasonTriggersAutoconnect;
+            }
+
             const app = new App({
                 window,
                 document,
