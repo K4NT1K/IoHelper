@@ -21,8 +21,11 @@ class App {
         this.currentServerSectionDebounceId = null;
         this.tableEnhancementsObserver = null;
         this.tableEnhancementsDebounceId = null;
+        this.notificationModalObserver = null;
+        this.notificationModalDebounceId = null;
         this.navigationWatcherInstalled = false;
         this._lastHref = this.window?.location?.href || '';
+        this._lastTicketSectionPath = '';
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -76,6 +79,7 @@ class App {
         this.initCurrentServerModeratorsObserver();
         this.initTableEnhancementsObserver();
         this.initTablesRowsObserver();
+        this.initNotificationModalObserver();
 
         this.handleTrackOffenderLoop();
     }
@@ -91,6 +95,9 @@ class App {
 
     updateSettings(settings) {
         const previousSettings = structuredClone(this.settings);
+        const previousFeatures = previousSettings?.features || {};
+        const newAccountHoursChanged = previousSettings?.newAccountHours !== settings.newAccountHours;
+        const newAccountsReenabled = !previousFeatures.highlightNewAccounts && settings.features?.highlightNewAccounts;
 
         this.settings = {
             ...this.settings,
@@ -115,6 +122,10 @@ class App {
         }
 
         this.cleanupChangedSettings(previousSettings, this.settings);
+
+        if (this.features.highlightNewAccounts && (newAccountHoursChanged || newAccountsReenabled)) {
+            this.messageService.reapplyNewAccountHighlights();
+        }
 
         if (!this.features.processTicketRules) {
             this.teardownTicketChatHistoryObservers();
@@ -201,7 +212,6 @@ class App {
     }
 
     runDOMUpdates() {
-        console.count('runDOMUpdates');
         this.initPageSpecificFeatures();
         this.initTicketSectionFeatures();
         this.initCurrentServerFeatures();
@@ -217,13 +227,17 @@ class App {
     }
 
     initTicketSectionFeatures() {
+        this.initNotificationPanels();
+
+        const ticketPath = window.location.pathname || window.location.href;
+        if (this._lastTicketSectionPath !== ticketPath) {
+            this._lastTicketSectionPath = ticketPath;
+            this.ticketService.resetChatAnalysisCache();
+        }
+
         const textareas = this.document.querySelectorAll('textarea');
         textareas.forEach(textarea => {
-            if (this.isNotificationTextarea(textarea)) {
-                if (!textarea.parentElement.querySelector(".ioh-panel") && typeof this.templates.notification !== 'undefined') {
-                    textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.notification, textarea, 'mod-notif-panel'), textarea);
-                }
-            } else if (this.isTicketResolutionTextarea(textarea)) {
+            if (this.isTicketResolutionTextarea(textarea)) {
                 if (!this.document.getElementById('mod-ticket-panel') && typeof this.templates.ticket !== 'undefined') {
                     textarea.parentNode.insertBefore(this.panelService.createPanel(this.templates.ticket, textarea, 'mod-ticket-panel'), textarea);
                 }
@@ -235,6 +249,12 @@ class App {
                 }
             }
         });
+
+        const hasCurrentServer = Array.from(this.document.querySelectorAll('h3'))
+            .some(h => h.textContent?.includes('Текущий сервер'));
+        if (hasCurrentServer) {
+            this.initCurrentServerFeatures();
+        }
 
         if (this.features.translateText) {
             this.messageService.processChatMessages();
@@ -260,23 +280,13 @@ class App {
         }
     }
 
-    initCurrentServerNotificationsPanels() {
+    initNotificationPanels() {
         if (typeof this.templates.notification === 'undefined') return;
 
-        const headers = Array.from(this.document.querySelectorAll('h3'));
-        const currentServerHeader = headers.find(h => h.textContent?.includes('Текущий сервер'));
-        const scope = currentServerHeader
-            ? (currentServerHeader.closest('div') || currentServerHeader.parentElement)
-            : this.document.body;
-
-        if (!scope || !scope.querySelectorAll) return;
-
-        const textareas = scope.querySelectorAll('textarea');
+        const textareas = this.document.querySelectorAll('textarea');
         textareas.forEach(textarea => {
             if (!this.isNotificationTextarea(textarea)) return;
             if (!textarea.parentElement) return;
-
-            // Ensure we don't insert multiple panels for the same textarea parent.
             if (textarea.parentElement.querySelector('.ioh-panel')) return;
 
             textarea.parentNode.insertBefore(
@@ -288,6 +298,68 @@ class App {
                 textarea
             );
         });
+    }
+
+    initNotificationModalObserver() {
+        if (this.notificationModalObserver) {
+            this.notificationModalObserver.disconnect();
+        }
+
+        const triggerNotificationPanels = () => {
+            if (this.notificationModalDebounceId) {
+                clearTimeout(this.notificationModalDebounceId);
+            }
+
+            this.notificationModalDebounceId = setTimeout(() => {
+                this.notificationModalDebounceId = null;
+                this.initNotificationPanels();
+            }, 150);
+        };
+
+        const isRelevantNotificationNode = (node) => {
+            if (!node || node.nodeType !== 1) return false;
+
+            if (node.closest?.('.ioh-panel')) {
+                return false;
+            }
+
+            if (node.matches?.('textarea')) {
+                return true;
+            }
+
+            if (node.matches?.('[role="dialog"]')) {
+                return true;
+            }
+
+            const text = node.textContent || '';
+            if (text.includes('Отправить уведомление')) {
+                return true;
+            }
+
+            if (node.querySelector?.('textarea, [role="dialog"]')) {
+                return true;
+            }
+
+            return false;
+        };
+
+        this.notificationModalObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes || []) {
+                    if (isRelevantNotificationNode(node)) {
+                        triggerNotificationPanels();
+                        return;
+                    }
+                }
+            }
+        });
+
+        this.notificationModalObserver.observe(this.document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        triggerNotificationPanels();
     }
 
     initTableFeatures() {
@@ -335,14 +407,19 @@ class App {
         if (href === this._lastHref) return;
         this._lastHref = href;
 
+        delete this.document.body.dataset.autoConnected;
+        delete this.document.body.dataset.autoConnectedFor;
+
         this.teardownTicketChatHistoryObservers();
         this.teardownTablesRowsObserver();
         this.teardownCurrentServerSectionObserver();
         this.teardownTableEnhancementsObserver();
         this.teardownCurrentServerModeratorsObserver();
         this.ticketService.clearTicketRuleBadge();
+        this.ticketService.resetChatAnalysisCache();
 
         this.runDOMUpdates();
+        this.initCurrentServerFeatures();
         this.initCurrentServerSectionObserver();
         this.initCurrentServerModeratorsObserver();
         this.initTicketMountObserver();
@@ -358,6 +435,7 @@ class App {
             entry.observer.disconnect();
         }
         this.ticketChatHistoryObservers.clear();
+        this.ticketService.resetChatAnalysisCache();
     }
 
     teardownTablesRowsObserver() {
@@ -477,7 +555,7 @@ class App {
             this.currentServerSectionDebounceId = setTimeout(() => {
                 this.currentServerSectionDebounceId = null;
                 this.initCurrentServerFeatures();
-                this.initCurrentServerNotificationsPanels();
+                this.initNotificationPanels();
             }, 160);
         };
 

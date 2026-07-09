@@ -1,4 +1,4 @@
-/* Ticket cards mode: iOS glass, 2-3 cards per row, hover/shine/animations. */
+/* Ticket cards mode: iOS glass, ~3 cards per row, hover/shine/animations. */
 
 table.ioh-ticket-cards-enabled {
     width: 100%;
@@ -12,16 +12,20 @@ table.ioh-ticket-cards-enabled thead {
 
 table.ioh-ticket-cards-enabled tbody {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
     gap: 16px;
     padding: 8px 0;
 }
 
 table.ioh-ticket-cards-enabled tr {
-    /* "Card" itself */
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+        "time server"
+        "sender offender"
+        "reason score"
+        ". actions";
+    gap: 8px 14px;
 
     border-radius: 18px;
     padding: 14px 14px 12px 14px;
@@ -39,10 +43,7 @@ table.ioh-ticket-cards-enabled tr {
     overflow: hidden;
     user-select: none;
 
-    /* Keep the card close to square visually (content can still grow). */
-    min-height: 260px;
-    max-height: 360px;
-    aspect-ratio: 1 / 1;
+    min-height: 280px;
 }
 
 table.ioh-ticket-cards-enabled tr::after {
@@ -83,12 +84,17 @@ table.ioh-ticket-cards-enabled td {
     display: block;
     padding: 0;
     margin: 0;
-
+    min-width: 0;
     vertical-align: top;
     color: var(--color-text, inherit);
-
-    /* Each cell takes its natural height; card content is clipped by max-height. */
 }
+
+table.ioh-ticket-cards-enabled td[data-ioh-label="Время"] { grid-area: time; }
+table.ioh-ticket-cards-enabled td[data-ioh-label="Сервер"] { grid-area: server; }
+table.ioh-ticket-cards-enabled td[data-ioh-label="Отправитель"] { grid-area: sender; }
+table.ioh-ticket-cards-enabled td[data-ioh-label="Нарушитель"] { grid-area: offender; }
+table.ioh-ticket-cards-enabled td[data-ioh-label*="Счёт"] { grid-area: score; }
+table.ioh-ticket-cards-enabled td[data-ioh-label="Причина"] { grid-area: reason; }
 
 table.ioh-ticket-cards-enabled td[data-ioh-label]::before {
     content: attr(data-ioh-label);
@@ -102,45 +108,33 @@ table.ioh-ticket-cards-enabled td[data-ioh-label]::before {
     color: rgba(148, 163, 184, 0.95);
 }
 
-/* Stronger “Причина” area */
 table.ioh-ticket-cards-enabled td[data-ioh-label="Причина"] {
     font-weight: 850;
     font-size: 15px;
-    line-height: 1.25;
-    max-height: 64px;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    line-height: 1.3;
 }
 
-/* Smaller labels */
 table.ioh-ticket-cards-enabled td[data-ioh-label="Время"],
 table.ioh-ticket-cards-enabled td[data-ioh-label="Сервер"] {
     font-size: 12px;
-    line-height: 1.15;
-    max-height: 28px;
-    overflow: hidden;
+    line-height: 1.2;
 }
 
-/* Make “Счёт нарушителя” less tall */
 table.ioh-ticket-cards-enabled td[data-ioh-label*="Счёт"] {
     font-size: 12px;
-    line-height: 1.15;
-    max-height: 28px;
-    overflow: hidden;
+    line-height: 1.25;
 }
 
-/* Bottom-right actions area */
 table.ioh-ticket-cards-enabled td:last-child,
 table.ioh-ticket-cards-enabled td:not([data-ioh-label]) {
+    grid-area: actions;
     margin-top: auto;
     display: flex;
     justify-content: flex-end;
-    align-items: center;
+    align-items: flex-end;
+    align-self: end;
 }
 
-/* Ensure links inside cards don't look like table cells */
 table.ioh-ticket-cards-enabled a {
     color: inherit;
     text-decoration: none;
@@ -149,5 +143,3 @@ table.ioh-ticket-cards-enabled a {
 table.ioh-ticket-cards-enabled a:hover {
     text-decoration: underline;
 }
-
-

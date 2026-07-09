@@ -149,6 +149,13 @@ svg.ioh-admin-icon {
             0 0 6px var(--color-danger),
             0 0 12px color-mix(in srgb, var(--color-danger) 45%, transparent);
 }
+
+/*.ioh-offline-status {*/
+/*    font-size: 0.85em;*/
+/*    font-weight: 500;*/
+/*    color: rgba(148, 163, 184, 0.9);*/
+/*    white-space: nowrap;*/
+/*}*/
 @keyframes ioh-status-pulse {
     0%, 100% {
         box-shadow:

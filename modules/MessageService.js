@@ -133,6 +133,13 @@ class MessageService {
         });
     }
 
+    reapplyNewAccountHighlights() {
+        this.clearNewAccountHighlights();
+        this.document.querySelectorAll('table tbody tr').forEach(row => {
+            this.highlightNewAccounts(row);
+        });
+    }
+
     highlightDuplicateServerIps(targetRow) {
         const rows = targetRow
             ? [targetRow]

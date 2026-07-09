@@ -12,7 +12,22 @@ class TicketService {
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
         this.isCheckingServer = false;
         this.steamAccountCreationCache = new Map();
-        this.lastChatSignatureByTextarea = new WeakMap();
+        this.chatSignatureByKey = new Map();
+        this.globalServerCooldown = 0;
+    }
+
+    getChatCacheKey(textarea) {
+        const path = window.location.pathname || window.location.href;
+        const marker = textarea?.placeholder || 'ticket';
+        return `${path}|${marker}`;
+    }
+
+    resetChatAnalysisCache(textarea) {
+        if (textarea) {
+            this.chatSignatureByKey.delete(this.getChatCacheKey(textarea));
+            return;
+        }
+        this.chatSignatureByKey.clear();
     }
 
     handleTriggerClick(e) {
@@ -39,9 +54,11 @@ class TicketService {
     getRuleSeverity(rule) {
         return rule?.severity ?? rule?.duration ?? 0;
     }
+
     getMuteHistoryBlock() {
         return this.getBlockByHeader('История Мутов');
     }
+
     getBlockByHeader(textMatch) {
         const headers = Array.from(this.document.querySelectorAll('h3'));
         const targetHeader = headers.find(h3 => h3.textContent.includes(textMatch));
@@ -56,6 +73,7 @@ class TicketService {
         }
         return null;
     }
+
     normalizeReason(reason) {
         return String(reason || '')
             .replace(/\s*\([^)]*\)\s*/g, ' ')
@@ -63,6 +81,7 @@ class TicketService {
             .trim()
             .toLowerCase();
     }
+
     getColumnIndex(row, names, fallbackIndex) {
         const table = row.closest('table');
         const headers = Array.from(table?.querySelectorAll('thead th') || [])
@@ -70,6 +89,7 @@ class TicketService {
         const index = headers.findIndex(header => names.some(name => header.includes(name)));
         return index >= 0 ? index : fallbackIndex;
     }
+
     getChatRowData(row) {
         const cells = row.querySelectorAll('td');
         if (cells.length < 2) return null;
@@ -127,6 +147,7 @@ class TicketService {
 
         return latestMute;
     }
+
     hasActiveMute(muteHistoryBlock) {
         if (!muteHistoryBlock) return false;
 
@@ -211,6 +232,7 @@ class TicketService {
             });
         });
     }
+
     restoreManagedEmptyBlocks() {
         this.document.querySelectorAll('[data-ioh-managed-hidden="true"]').forEach(card => {
             const prev = card.dataset.iohManagedPrevDisplay;
@@ -235,8 +257,8 @@ class TicketService {
             return;
         }
 
-        // Защита от множественных кликов через флаг на уровне сессии документа
-        if (this.document.body.dataset.autoConnected === "true") {
+        const ticketKey = window.location.pathname || window.location.href;
+        if (this.document.body.dataset.autoConnectedFor === ticketKey) {
             console.log("[Helper] Авто-подключение уже выполнялось для этого тикета.");
             return;
         }
@@ -244,12 +266,13 @@ class TicketService {
         const connectLink = this.document.querySelector('a[href^="steam://connect/"]');
         if (connectLink) {
             console.log("[Helper] Ссылка на коннект найдена:", connectLink.href, "Выполняю клик...");
-            this.document.body.dataset.autoConnected = "true";
+            this.document.body.dataset.autoConnectedFor = ticketKey;
             connectLink.click();
         } else {
             console.log("[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.");
         }
     }
+
     setCurrentServerRefreshInterval(seconds) {
         clearInterval(this.currentServerRefreshInterval);
 
@@ -288,6 +311,7 @@ class TicketService {
     clearTicketRuleBadge() {
         this.document.getElementById('helper-suggest-badge')?.remove();
     }
+
     clearSteamAccountCreationDate() {
         this.document.querySelectorAll('.ioh-account-created').forEach(node => node.remove());
     }
@@ -323,8 +347,6 @@ class TicketService {
                 cells.forEach((cell, idx) => {
                     const label = headerLabels[idx] || '';
                     if (!label) return;
-
-                    // Store label for CSS; do not override if it already matches.
                     if (cell.dataset.iohLabel === label) return;
                     cell.dataset.iohLabel = label;
                 });
@@ -333,7 +355,6 @@ class TicketService {
             table.classList.add('ioh-ticket-cards-enabled');
         });
     }
-
     clearSquareTicketCards() {
         this.document.querySelectorAll('table.ioh-ticket-cards-enabled').forEach(table => {
             table.classList.remove('ioh-ticket-cards-enabled');
@@ -342,13 +363,13 @@ class TicketService {
             });
         });
     }
+
     findInfoField(labelText) {
         const label = Array.from(this.document.querySelectorAll('span'))
             .find(span => span.textContent.trim() === labelText);
 
         return label?.parentElement || null;
     }
-
     findFieldValueBlock(field) {
         if (!field) {
             return null;
@@ -356,6 +377,7 @@ class TicketService {
 
         return Array.from(field.children).find(child => child.tagName === 'DIV') || null;
     }
+
     extractSteamIdFromField(field) {
         const valueBlock = this.findFieldValueBlock(field);
         const profileLink = valueBlock?.querySelector('a[href*="cybershoke.net/"], a[href*="/moderator/profile/"]');
@@ -446,7 +468,7 @@ class TicketService {
     fetchSteamAccountCreationDate(steamId) {
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
-                { action: "fetchSteamDate", steamId: steamId },
+                {action: "fetchSteamDate", steamId: steamId},
                 (response) => {
                     if (chrome.runtime.lastError) {
                         return reject(chrome.runtime.lastError);
@@ -459,6 +481,51 @@ class TicketService {
                 }
             );
         });
+    }
+    async loadSteamAccountCreationDate(containerNode, steamId, {force = false} = {}) {
+        const valueNode = containerNode.querySelector('.ioh-account-value');
+        if (!valueNode) return;
+
+        if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === 'true') {
+            return;
+        }
+
+        containerNode.dataset.steamId = steamId;
+        containerNode.dataset.loaded = 'false';
+        valueNode.textContent = 'Загрузка...';
+
+        try {
+            const htmlPayload = await this.fetchSteamAccountCreationDate(steamId);
+            const creationDate = this.extractCreationDateFromHtml(htmlPayload);
+            valueNode.classList.remove('ioh-account-value--error');
+            valueNode.textContent = creationDate ? creationDate : 'Профиль скрыт';
+            containerNode.dataset.loaded = 'true';
+        } catch (error) {
+            this.renderSteamAccountCreationError(valueNode, containerNode, steamId);
+            containerNode.dataset.loaded = 'true';
+        }
+    }
+    renderSteamAccountCreationError(valueNode, containerNode, steamId) {
+        valueNode.textContent = '';
+        valueNode.classList.add('ioh-account-value--error');
+
+        const errorSpan = this.document.createElement('span');
+        errorSpan.className = 'ioh-account-error';
+        errorSpan.textContent = 'Ошибка загрузки';
+
+        const retryBtn = this.document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'ioh-account-retry';
+        retryBtn.title = 'Повторить';
+        retryBtn.textContent = '⟳';
+        retryBtn.addEventListener('click', () => {
+            valueNode.classList.remove('ioh-account-value--error');
+            containerNode.dataset.loaded = 'false';
+            this.loadSteamAccountCreationDate(containerNode, steamId, {force: true});
+        });
+
+        valueNode.appendChild(errorSpan);
+        valueNode.appendChild(retryBtn);
     }
     async renderSteamAccountCreationDate() {
         const ticketTextarea = this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]');
@@ -477,25 +544,7 @@ class TicketService {
         const valueNode = this.ensureSteamAccountCreationNode(offenderField);
         const containerNode = valueNode.closest('.ioh-account-created');
 
-        if (containerNode.dataset.steamId === offenderSteamId && containerNode.dataset.loaded === 'true') {
-            return;
-        }
-
-        containerNode.dataset.steamId = offenderSteamId;
-        containerNode.dataset.loaded = 'false';
-        valueNode.textContent = 'Загрузка...';
-
-        try {
-            const htmlPayload = await this.fetchSteamAccountCreationDate(offenderSteamId);
-
-            const creationDate = this.extractCreationDateFromHtml(htmlPayload);
-
-            valueNode.textContent = creationDate ? creationDate : 'Профиль скрыт';
-        } catch (error) {
-            valueNode.textContent = 'Ошибка загрузки ⟳';
-        }
-
-        containerNode.dataset.loaded = 'true';
+        await this.loadSteamAccountCreationDate(containerNode, offenderSteamId);
     }
 
     getKeywordExceptions(keyword) {
@@ -579,7 +628,7 @@ class TicketService {
 
                 targetRow.dataset.lastIpCheck = Date.now().toString();
 
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 350));
 
                 const response = await fetch('https://cybershoke.net/api/user/data', {
                     method: 'POST',
@@ -589,7 +638,7 @@ class TicketService {
                         'X-Requested-With': 'XMLHttpRequest'
                     },
                     credentials: 'include',
-                    body: new URLSearchParams({ steamid64: targetSteamId }).toString()
+                    body: new URLSearchParams({steamid64: targetSteamId}).toString()
                 });
 
                 if (response.status === 429) {
@@ -612,7 +661,6 @@ class TicketService {
 
                     if (!currentIp) {
                         linkToUpdate.classList.add("ioh-server-offline");
-                        // serverIpLink.innerText = "Offline";
                     } else if (currentIp === targetIp) {
                         linkToUpdate.classList.add("ioh-server-online");
                     } else {
@@ -705,7 +753,6 @@ class TicketService {
 
         return {finalName, finalDuration, finalDurationStr};
     }
-
     getAnalysisIcons() {
         const icons = window.Icons || {};
 
@@ -717,16 +764,13 @@ class TicketService {
             shield: icons.shield || ''
         };
     }
-
     async processTicketRules(textarea) {
-        console.count("processTicketRules");
-
         const analysisIcons = this.getAnalysisIcons();
-        const SVG_TRIGGERS = analysisIcons.triggers;
-        const SVG_REASON = analysisIcons.reason;
-        const SVG_PUNISHMENT = analysisIcons.punishment;
-        const SVG_CHAT_ERROR = analysisIcons.chatError;
-        const SVG_SHIELD = analysisIcons.shield;
+        const triggers = analysisIcons.triggers;
+        const reason = analysisIcons.reason;
+        const punishment = analysisIcons.punishment;
+        const chatError = analysisIcons.chatError;
+        const shield = analysisIcons.shield;
 
         this.connectToCurrentServer();
 
@@ -734,12 +778,13 @@ class TicketService {
         const chatHistoryBlock = this.getBlockByHeader('История Чата');
 
         if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Внимание:</b> У игрока уже есть активный мут! Проверка триггеров приостановлена.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${chatError}<span>Внимание:<b> У игрока уже есть активный мут!</b></span></div>`, textarea);
             return;
         }
 
         if (!chatHistoryBlock || chatHistoryBlock.style.display === 'none' || chatHistoryBlock.innerText.includes('Чат пуст') || chatHistoryBlock.innerText.includes('Не найдено')) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${chatError}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
+            this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|empty-block`);
             return;
         }
 
@@ -767,18 +812,19 @@ class TicketService {
 
         const rows = Array.from(chatHistoryBlock.querySelectorAll('tbody tr, tr')).filter(row => row.querySelector('td'));
         if (rows.length === 0) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${SVG_CHAT_ERROR}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${chatError}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
+            this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|0|empty`);
             return;
         }
 
-        // Skip heavy re-analysis when chat didn't change (prevents repeated renders).
         const lastRow = rows[rows.length - 1];
-        const signature = `${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}`;
-        const prevSignature = this.lastChatSignatureByTextarea.get(textarea);
+        const signature = `${window.location.pathname}|${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}`;
+        const cacheKey = this.getChatCacheKey(textarea);
+        const prevSignature = this.chatSignatureByKey.get(cacheKey);
         if (prevSignature === signature) {
             return;
         }
-        this.lastChatSignatureByTextarea.set(textarea, signature);
+        this.chatSignatureByKey.set(cacheKey, signature);
 
         this.triggerRows.clear()
 
@@ -897,6 +943,19 @@ class TicketService {
             }
         });
 
+        if (ruleCounters['Троллинг/провокация'] === 1 &&
+            ruleCounters['Спам в микрофон/чат'] === 0 &&
+        ruleCounters['Оскорбление'] === 0 &&
+        ruleCounters['Токсичность'] === 0 &&
+        ruleCounters['Расизм / дискриминация'] === 0) {
+            ruleCounters['Троллинг/провокация'] = 0;
+            allViolations.splice(
+                0,
+                allViolations.length,
+                ...allViolations.filter(v => v.ruleName !== 'Троллинг/провокация')
+            );
+        }
+
         const activeStats = Object.entries(ruleCounters)
             .filter(([_, count]) => count > 0);
 
@@ -914,7 +973,7 @@ class TicketService {
             : '';
 
         if (allViolations.length === 0) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="ioh-badge-row">${SVG_SHIELD}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="ioh-badge-row">${shield}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
             return;
         }
 
@@ -955,18 +1014,18 @@ class TicketService {
         const htmlResponse = `
                 <div class="ioh-analysis-grid">
                     <div class="ioh-analysis-row">
-                        <div class="ioh-analysis-label">${SVG_TRIGGERS}<span>Триггеры</span></div>
+                        <div class="ioh-analysis-label">${triggers}<span>Триггеры</span></div>
                         <div class="ioh-analysis-value ioh-analysis-triggers">${topTriggersHTML}</div>
                     </div>
                     <div class="ioh-analysis-row">
-                        <div class="ioh-analysis-label">${SVG_REASON}<span>Причина</span></div>
+                        <div class="ioh-analysis-label">${reason}<span>Причина</span></div>
                         <div class="ioh-analysis-value">
                             <strong>${this.utils.escapeHtml(finalName)}</strong>
                             ${activityChipsHTML ? `<div class="ioh-analysis-chips">${activityChipsHTML}</div>` : ''}
                         </div>
                     </div>
                     <div class="ioh-analysis-row ioh-analysis-row--verdict">
-                        <div class="ioh-analysis-label">${SVG_PUNISHMENT}<span>Вердикт</span></div>
+                        <div class="ioh-analysis-label">${punishment}<span>Вердикт</span></div>
                         <div class="ioh-analysis-value"><strong>${this.utils.escapeHtml(punishmentText)}</strong></div>
                     </div>
                 </div>

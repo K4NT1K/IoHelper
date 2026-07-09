@@ -54,26 +54,8 @@ function renderToggles(features) {
     featureTogglesEl.innerHTML = '';
     const entries = [
         {
-            key: 'highlightComplaintTriggers',
-            label: 'Подсветка триггеров жалоб',
-            desc: '',
-            help: 'Подсвечивает слова из списка триггеров в причине жалобы.'
-        },
-        {
-            key: 'highlightNewAccounts',
-            label: 'Подсветка новых аккаунтов',
-            desc: '',
-            help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
-        },
-        {
-            key: 'highlightDuplicateServers',
-            label: 'Дубликаты серверов',
-            desc: '',
-            help: 'Выделяет жалобы, пришедшие с одного сервера.'
-        },
-        {
             key: 'processTicketRules',
-            label: 'Анализ тикетов',
+            label: 'Анализ чата',
             desc: '',
             help: 'Анализирует историю чата в тикете и показывает подсказку по нарушению и наказанию.'
         },
@@ -102,22 +84,40 @@ function renderToggles(features) {
             help: 'Автоматически нажимает на ссылку подключения при принятии тикета.'
         },
         {
+            key: 'squareTickets',
+            label: 'Квадратные тикеты',
+            desc: 'BETA TEST',
+            help: 'Позволяет пользоваться сайтом мониторам с книжной ориентацией.'
+        },
+        {
             key: 'trackOffenderServer',
             label: 'Трекер серверов нарушителей',
             desc: '',
             help: 'Включает отслеживание текущего сервера игрока.'
         },
         {
+            key: 'highlightDuplicateServers',
+            label: 'Дубликаты серверов',
+            desc: '',
+            help: 'Выделяет жалобы, пришедшие с одного сервера.'
+        },
+        {
+            key: 'highlightComplaintTriggers',
+            label: 'Подсветка триггеров жалоб',
+            desc: '',
+            help: 'Подсвечивает слова из списка триггеров в причине жалобы.'
+        },
+        {
+            key: 'highlightNewAccounts',
+            label: 'Подсветка новых аккаунтов',
+            desc: '',
+            help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
+        },
+        {
             key: 'scanSchedulePage',
             label: 'Сканировать расписание',
             desc: '',
             help: 'Обновляет базу модераторов при открытии страницы "Таймлайн" для подсветки в тикетах.'
-        },
-        {
-            key: 'squareTickets',
-            label: 'Квадратные тикеты',
-            desc: 'BETA TEST',
-            help: 'Рисует строки тикетов как более “билетные” карточки (квадратнее по форме).'
         },
         {
             key: 'optimizeSpaTabs',
@@ -282,7 +282,6 @@ async function loadSettings() {
 
 }
 
-// Добавление триггера
 addBtn.addEventListener('click', () => {
     const text = triggerInput.value.trim();
     if (!text) return;
@@ -307,10 +306,9 @@ triggerInput.addEventListener('keydown', (e) => {
 
 hoursInput.addEventListener('change', saveCurrentSettings);
 refreshIntervalInput.addEventListener('change', saveCurrentSettings);
-trackIntervalInput.addEventListener('change', saveCurrentSettings);
-// ticketAgeInput.addEventListener('change', saveCurrentSettings);
+trackIntervalInput.addEventListener('input', saveCurrentSettings);
+// ticketAgeInput.addEventListener('input', saveCurrentSettings);
 
-// Сброс к дефолтам
 resetBtn.addEventListener("click", () => {
     if (!confirm("Сбросить все настройки?"))
         return;
@@ -329,17 +327,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     await loadSettings();
 
-    const version = await (await fetch(chrome.runtime.getURL("manifest.json"))).json();
-    document.querySelector(".header-version").textContent = `v${version.version}`;
+    document.querySelector(".header-version").textContent =
+        `v${chrome.runtime.getManifest().version}`;
 
     const icons = await (await fetch(chrome.runtime.getURL("icons/icons.json"))).json();
     document.querySelector(".telegram-icon").innerHTML = icons.telegram;
-    document
-        .getElementById("telegramBtn")
-        .addEventListener("click", () => {
-            chrome.tabs.create({
-                url: "https://t.me/K4NT1K?text=Привет!%20Есть%20идея%20для%20IO%20HELPER.%20Суть:%20"
-            });
+    document.getElementById("telegramBtn").addEventListener("click", () => {
+        chrome.tabs.create({
+            url: "https://t.me/K4NT1K?text=Привет!%20Есть%20идея%20для%20IO%20HELPER.%20Суть:%20"
         });
-
+    });
 });

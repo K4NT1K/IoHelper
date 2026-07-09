@@ -13,6 +13,7 @@
 .ioh-account-value {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
 
     padding: 4px 0;
 
@@ -20,4 +21,52 @@
     font-weight: 600;
 
     transition: .2s;
+}
+
+.ioh-account-value--error {
+    gap: 8px;
+}
+
+.ioh-account-error {
+    color: #eef2f7;
+}
+
+.ioh-account-retry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+
+    border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+    border-radius: 6px;
+
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    color: var(--color-primary);
+
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+
+    cursor: pointer;
+    transition: background .2s, border-color .2s, transform .15s;
+}
+
+.ioh-account-retry:hover {
+    background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 60%, transparent);
+}
+
+.ioh-account-retry:active {
+    transform: scale(0.95);
+}
+
+textarea[placeholder*="Опишите детали закрытия"] {
+    color: var(--color-primary);
+}
+
+textarea[placeholder*="Опишите детали закрытия"]:focus {
+    color: var(--color-primary);
 }
