@@ -619,7 +619,7 @@ h1 {
     color: #dbeafe;
     background: rgba(59, 130, 246, 0.14);
     border: 1px solid rgba(125, 211, 252, 0.2);
-    border-radius: 999px;
+    border-radius: 10px;
     font-size: 12px;
     font-weight: 620;
     transition: var(--spring);
@@ -665,7 +665,7 @@ h1 {
     color: var(--text);
     background: rgba(0, 0, 0, 0.24);
     border: 1px solid var(--stroke);
-    border-radius: 12px;
+    border-radius: 10px;
     font-size: 13px;
     outline: none;
     transition: var(--spring);
