@@ -325,8 +325,19 @@ class TicketService {
     }
 
     shouldAutoConnectToServer() {
+        const allowedPaths = [
+            '/reports/4',
+            '/reports/5',
+            '/ticket/1',
+            '/ticket/2'
+        ];
+        const isAllowedPage = allowedPaths.some(path => window.location.href.includes(path));
+        if (!isAllowedPage) {
+            return { allowed: false, reason: 'Не на странице тикета/репорта' };
+        }
+
         if (!this.settings?.features?.autoConnectServer) {
-            return {allowed: false, reason: 'функция отключена'};
+            return {allowed: false, reason: 'Функция отключена'};
         }
 
         const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
@@ -483,6 +494,7 @@ class TicketService {
             return hasTime && hasServer && hasSender && hasOffender && hasReason;
         });
     }
+
     renderSquareTicketCards() {
         const tables = this.findTicketTablesForCards();
 
@@ -503,6 +515,7 @@ class TicketService {
             table.classList.add('ioh-ticket-cards-enabled');
         });
     }
+
     clearSquareTicketCards() {
         this.document.querySelectorAll('table.ioh-ticket-cards-enabled').forEach(table => {
             table.classList.remove('ioh-ticket-cards-enabled');
@@ -535,6 +548,7 @@ class TicketService {
 
         return null;
     }
+
     findFieldValueBlock(field) {
         if (!field) {
             return null;
@@ -551,6 +565,7 @@ class TicketService {
 
         return steamIdMatch ? steamIdMatch[0] : null;
     }
+
     ensureSteamAccountCreationNode(field) {
         let node = field.parentNode.querySelector('.ioh-account-created');
         if (node) {
@@ -576,6 +591,7 @@ class TicketService {
 
         return valueDiv;
     }
+
     extractCreationDateFromHtml(html) {
         const parser = new DOMParser();
         const parsedDocument = parser.parseFromString(html, 'text/html');
@@ -630,6 +646,7 @@ class TicketService {
 
         return null;
     }
+
     fetchSteamAccountCreationDate(steamId) {
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
@@ -647,6 +664,7 @@ class TicketService {
             );
         });
     }
+
     async loadSteamAccountCreationDate(containerNode, steamId, {force = false} = {}) {
         const valueNode = containerNode.querySelector('.ioh-account-value');
         if (!valueNode) return;
@@ -670,6 +688,7 @@ class TicketService {
             containerNode.dataset.loaded = 'true';
         }
     }
+
     renderSteamAccountCreationError(valueNode, containerNode, steamId) {
         valueNode.textContent = '';
         valueNode.classList.add('ioh-account-value--error');
@@ -692,6 +711,7 @@ class TicketService {
         valueNode.appendChild(errorSpan);
         valueNode.appendChild(retryBtn);
     }
+
     async renderSteamAccountCreationDate() {
         const ticketTextarea = this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]');
         if (!ticketTextarea) {
@@ -866,6 +886,7 @@ class TicketService {
 
         return bestRule;
     }
+
     calculateFinalPunishment(rule, count, ruleCounters = {}) {
         let finalName = rule.name;
         let finalDuration = rule.duration;
@@ -921,6 +942,7 @@ class TicketService {
 
         return {finalName, finalDuration, finalDurationStr};
     }
+
     getAnalysisIcons() {
         const icons = window.Icons || {};
 
@@ -932,6 +954,7 @@ class TicketService {
             shield: icons.shield || ''
         };
     }
+
     async processTicketRules(textarea) {
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
@@ -1113,9 +1136,9 @@ class TicketService {
 
         if (ruleCounters['Троллинг/провокация'] === 1 &&
             ruleCounters['Спам в микрофон/чат'] === 0 &&
-        ruleCounters['Оскорбление'] === 0 &&
-        ruleCounters['Токсичность'] === 0 &&
-        ruleCounters['Расизм / дискриминация'] === 0) {
+            ruleCounters['Оскорбление'] === 0 &&
+            ruleCounters['Токсичность'] === 0 &&
+            ruleCounters['Расизм / дискриминация'] === 0) {
             ruleCounters['Троллинг/провокация'] = 0;
             allViolations.splice(
                 0,
