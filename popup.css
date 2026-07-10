@@ -264,7 +264,26 @@ h1 {
 }
 
 .reason-checkbox input {
-    accent-color: var(--blue-2);
+    appearance: none;
+
+    width: 18px;
+    height: 18px;
+
+    border-radius: 6px;
+
+    background: rgba(19, 112, 216, .15);
+
+    border: 1px solid rgba(125,211,252,.35);
+
+    transition: .2s;
+
+    position: relative;
+
+    cursor: pointer;
+}
+
+.reason-checkbox input:hover {
+    background: rgba(19,112,216,.22);
 }
 
 .reason-checkbox input:checked {
@@ -276,8 +295,24 @@ h1 {
 
     border-color: transparent;
 
-    box-shadow:
-            0 0 18px var(--blue-glow);
+    box-shadow: 0 0 12px var(--blue-glow);
+}
+
+.reason-checkbox input:checked::before {
+    content: "";
+
+    position: absolute;
+
+    left: 6px;
+    top: 3px;
+
+    width: 4px;
+    height: 8px;
+
+    border: solid white;
+    border-width: 0 2px 2px 0;
+
+    transform: rotate(45deg);
 }
 
 .toggle-grid {

@@ -20,14 +20,15 @@
     "ticketAgeLimit": 0,
     "autoConnectReasons": [
       "Читерство",
+      "Мониторинг",
       "Багоюз"
     ],
     "complaintReasonOptions": [
       "Читерство",
       "Багоюз",
+      "Мониторинг",
       "Нарушение правил",
-      "Спам",
-      "Мониторинг"
+      "Спам"
     ],
     "reasonTriggersAutoconnect": [
       "войс",
