@@ -96,7 +96,7 @@ function renderToggles(features) {
         {
             key: 'trackOffenderServer',
             label: 'Трекер серверов нарушителей',
-            desc: 'Может нагружать сайт',
+            desc: '',
             help: 'Включает отслеживание текущего сервера игрока.'
         },
         {
