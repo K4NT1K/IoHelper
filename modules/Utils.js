@@ -120,10 +120,22 @@ class Utils {
         const categoryEl = wrapper.querySelector(':scope > div');
         const playerEl = wrapper.querySelector(':scope > span');
 
-        return {
-            category: categoryEl?.textContent?.trim() || '',
-            playerText: playerEl?.textContent?.trim() || ''
-        };
+        if (categoryEl) {
+            return {
+                category: categoryEl.textContent?.trim() || '',
+                playerText: playerEl?.textContent?.trim() || ''
+            };
+        }
+
+        const directSpan = wrapper.querySelector(':scope > span');
+        if (directSpan) {
+            return {
+                category: directSpan.textContent?.trim() || '',
+                playerText: ''
+            };
+        }
+
+        return {category: '', playerText: ''};
     }
 }
 

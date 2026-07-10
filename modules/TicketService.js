@@ -271,9 +271,39 @@ class TicketService {
     }
 
     getTicketComplaintParts() {
-        const field = this.findInfoField('Причина');
-        const valueBlock = this.findFieldValueBlock(field);
-        return this.utils.parseComplaintCell(valueBlock || field);
+        const categoryField = this.findInfoFieldByLabels(['Причина жалобы', 'Причина']);
+        const valueBlock = this.findFieldValueBlock(categoryField);
+
+        let category = valueBlock?.querySelector(':scope > span')?.textContent?.trim() || '';
+        if (!category) {
+            category = this.utils.parseComplaintCell(valueBlock || categoryField).category;
+        }
+
+        let playerText = this.getTicketPlayerMessageText();
+        if (!playerText) {
+            playerText = this.utils.parseComplaintCell(valueBlock || categoryField).playerText;
+        }
+
+        return {category, playerText};
+    }
+
+    getTicketPlayerMessageText() {
+        const messageField = this.findInfoFieldByLabels(['Сообщение от пользователя']);
+        if (!messageField) {
+            return '';
+        }
+
+        const paragraph = messageField.querySelector(':scope > p');
+        if (paragraph) {
+            return paragraph.textContent?.trim() || '';
+        }
+
+        const valueBlock = this.findFieldValueBlock(messageField);
+        if (valueBlock) {
+            return valueBlock.textContent?.trim() || '';
+        }
+
+        return '';
     }
 
     getTicketComplaintCategory() {
@@ -323,16 +353,25 @@ class TicketService {
         const triggerAllowed = this.complaintTextMatchesAutoconnectTrigger(playerText);
 
         if (!reasonAllowed && !triggerAllowed) {
-            return {allowed: false, reason: `причина «${category || 'неизвестна'}» не в списке и триггеры автоподключения не найдены`};
+            const playerPreview = playerText ? `${playerText.slice(0, 80)}${playerText.length > 80 ? '…' : ''}` : '(пусто)';
+            return {
+                allowed: false,
+                reason: `причина «${category || 'неизвестна'}» не в списке и триггеры автоподключения не найдены`,
+                debug: {category, playerPreview, allowedReasons}
+            };
         }
 
-        return {allowed: true, reason: reasonAllowed ? 'причина в списке' : 'найден триггер в тексте жалобы игрока'};
+        return {
+            allowed: true,
+            reason: reasonAllowed ? 'причина в списке' : 'найден триггер в тексте жалобы игрока',
+            debug: {category, playerText: playerText?.slice(0, 80), allowedReasons}
+        };
     }
 
     connectToCurrentServer() {
         const decision = this.shouldAutoConnectToServer();
         if (!decision.allowed) {
-            console.log(`[Helper] Авто-подключение отменено: ${decision.reason}.`);
+            console.log(`[Helper] Авто-подключение отменено: ${decision.reason}.`, decision.debug || '');
             return;
         }
 
@@ -473,11 +512,28 @@ class TicketService {
         });
     }
 
+    isExtensionUiElement(element) {
+        return Boolean(
+            element?.closest('.ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #helper-suggest-badge, .ioh-badge-row')
+        );
+    }
+
     findInfoField(labelText) {
-        const label = Array.from(this.document.querySelectorAll('span'))
-            .find(span => span.textContent.trim() === labelText);
+        const label = Array.from(this.document.querySelectorAll('span, div'))
+            .find(element => !this.isExtensionUiElement(element) && element.textContent.trim() === labelText);
 
         return label?.parentElement || null;
+    }
+
+    findInfoFieldByLabels(labelTexts) {
+        for (const labelText of labelTexts) {
+            const field = this.findInfoField(labelText);
+            if (field) {
+                return field;
+            }
+        }
+
+        return null;
     }
     findFieldValueBlock(field) {
         if (!field) {
