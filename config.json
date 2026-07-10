@@ -16,7 +16,7 @@
     },
     "newAccountHours": 7,
     "serverRefreshInterval": 15,
-    "trackOffenderInterval": 4,
+    "trackOffenderInterval": 5,
     "ticketAgeLimit": 0,
     "autoConnectReasons": [
       "Читерство",
