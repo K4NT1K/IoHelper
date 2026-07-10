@@ -14,10 +14,11 @@ class TicketService {
         this.steamAccountCreationCache = new Map();
         this.chatSignatureByKey = new Map();
         this.globalServerCooldown = 0;
-        this.recentlyLeftOffenders = new Map();
+        this.offenderOffline = new Map();
+        this.offenderRelocated = new Map();
         this._currentServerRefreshTicketKey = null;
         this._currentServerRefreshSeconds = null;
-        this.LEFT_OFFENDER_TTL_MS = 5 * 60 * 1000;
+        this.LEFT_OFFENDER_TTL_MS = 10 * 60 * 1000;
     }
 
     getChatCacheKey(textarea) {
@@ -246,28 +247,55 @@ class TicketService {
         });
     }
 
-    markOffenderLeft(steamId) {
+    markOffenderOffline(steamId) {
         if (!steamId) return;
-        this.recentlyLeftOffenders.set(steamId, Date.now() + this.LEFT_OFFENDER_TTL_MS);
+        this.offenderOffline.set(steamId, Date.now() + this.LEFT_OFFENDER_TTL_MS);
     }
 
-    clearOffenderLeft(steamId) {
+    clearOffenderOffline(steamId) {
         if (!steamId) return;
-        this.recentlyLeftOffenders.delete(steamId);
+        this.offenderOffline.delete(steamId);
     }
 
-    isOffenderRecentlyLeft(steamId) {
+    isOffenderOffline(steamId) {
         if (!steamId) return false;
 
-        const expiresAt = this.recentlyLeftOffenders.get(steamId);
+        const expiresAt = this.offenderOffline.get(steamId);
         if (!expiresAt) return false;
 
         if (Date.now() >= expiresAt) {
-            this.recentlyLeftOffenders.delete(steamId);
+            this.offenderOffline.delete(steamId);
             return false;
         }
 
         return true;
+    }
+
+    markOffenderRelocated(steamId, serverIp) {
+        if (!steamId || !serverIp) return;
+        this.offenderRelocated.set(steamId, {
+            serverIp: String(serverIp).trim().toLowerCase(),
+            expiresAt: Date.now() + this.LEFT_OFFENDER_TTL_MS
+        });
+    }
+
+    clearOffenderRelocated(steamId) {
+        if (!steamId) return;
+        this.offenderRelocated.delete(steamId);
+    }
+
+    getOffenderRelocatedServer(steamId) {
+        if (!steamId) return null;
+
+        const entry = this.offenderRelocated.get(steamId);
+        if (!entry) return null;
+
+        if (Date.now() >= entry.expiresAt) {
+            this.offenderRelocated.delete(steamId);
+            return null;
+        }
+
+        return entry.serverIp;
     }
 
     getTicketComplaintParts() {
@@ -350,9 +378,18 @@ class TicketService {
 
         const offenderField = this.findInfoField('Нарушитель');
         const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
+        const ticketConnectLink = this.findTicketServerConnectLink();
+        const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
+        const connectTarget = relocatedIp || ticketServerIp || null;
+        const connectSource = relocatedIp ? 'relocated-server' : (ticketServerIp ? 'ticket-server' : null);
 
-        if (offenderSteamId && this.isOffenderRecentlyLeft(offenderSteamId)) {
-            return {allowed: false, reason: 'нарушитель недавно вышел с сервера'};
+        if (offenderSteamId && this.isOffenderOffline(offenderSteamId)) {
+            return {
+                allowed: false,
+                reason: 'нарушитель недавно вышел с сервера',
+                debug: {connectTarget, connectSource}
+            };
         }
 
         const category = this.getTicketComplaintCategory();
@@ -368,15 +405,62 @@ class TicketService {
             return {
                 allowed: false,
                 reason: `причина «${category || 'неизвестна'}» не в списке и триггеры автоподключения не найдены`,
-                debug: {category, playerPreview, allowedReasons}
+                debug: {category, playerPreview, allowedReasons, connectTarget, connectSource}
             };
         }
 
         return {
             allowed: true,
             reason: reasonAllowed ? 'причина в списке' : 'найден триггер в тексте жалобы игрока',
-            debug: {category, playerText: playerText?.slice(0, 80), allowedReasons}
+            debug: {
+                category,
+                playerText: playerText?.slice(0, 80),
+                allowedReasons,
+                connectTarget,
+                connectSource
+            }
         };
+    }
+
+    findTicketServerConnectLink() {
+        const serverField = this.findInfoField('Сервер');
+        const valueBlock = this.findFieldValueBlock(serverField);
+        const scopedLink = valueBlock?.querySelector('a[href^="steam://connect/"]');
+        if (scopedLink) {
+            return scopedLink;
+        }
+
+        for (const link of this.document.querySelectorAll('a[href^="steam://connect/"]')) {
+            if (link.closest('table')) {
+                continue;
+            }
+            return link;
+        }
+
+        return null;
+    }
+
+    extractServerIpFromConnectLink(link) {
+        if (!link?.href) {
+            return null;
+        }
+
+        return link.href.replace(/^steam:\/\/connect\//i, '').trim().toLowerCase() || null;
+    }
+
+    connectToSteamServer(serverIp) {
+        const normalized = String(serverIp || '').trim().toLowerCase();
+        if (!normalized) {
+            return false;
+        }
+
+        const link = this.document.createElement('a');
+        link.href = `steam://connect/${normalized}`;
+        link.style.display = 'none';
+        this.document.body.appendChild(link);
+        link.click();
+        link.remove();
+        return true;
     }
 
     connectToCurrentServer() {
@@ -392,13 +476,24 @@ class TicketService {
             return;
         }
 
-        const connectLink = this.document.querySelector('a[href^="steam://connect/"]');
+        const offenderField = this.findInfoField('Нарушитель');
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
+
+        if (relocatedIp) {
+            console.log('[Helper] Авто-подключение к серверу переезда:', relocatedIp, decision.debug || '');
+            this.document.body.dataset.autoConnectedFor = ticketKey;
+            this.connectToSteamServer(relocatedIp);
+            return;
+        }
+
+        const connectLink = this.findTicketServerConnectLink();
         if (connectLink) {
-            console.log('[Helper] Ссылка на коннект найдена:', connectLink.href, 'Выполняю клик...');
+            console.log('[Helper] Авто-подключение к серверу тикета:', connectLink.href, decision.debug || '');
             this.document.body.dataset.autoConnectedFor = ticketKey;
             connectLink.click();
         } else {
-            console.log('[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.');
+            console.log('[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.', decision.debug || '');
         }
     }
 
@@ -846,13 +941,16 @@ class TicketService {
 
                     if (!currentIp) {
                         linkToUpdate.classList.add('ioh-server-offline');
-                        this.markOffenderLeft(targetSteamId);
+                        this.markOffenderOffline(targetSteamId);
+                        this.clearOffenderRelocated(targetSteamId);
                     } else if (currentIp === targetIp) {
                         linkToUpdate.classList.add('ioh-server-online');
-                        this.clearOffenderLeft(targetSteamId);
+                        this.clearOffenderOffline(targetSteamId);
+                        this.clearOffenderRelocated(targetSteamId);
                     } else {
                         linkToUpdate.classList.add('ioh-server-other');
-                        this.markOffenderLeft(targetSteamId);
+                        this.markOffenderRelocated(targetSteamId, currentIp);
+                        this.clearOffenderOffline(targetSteamId);
                     }
                 }
             }
