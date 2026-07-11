@@ -85,7 +85,7 @@ function renderToggles(features) {
             key: 'autoConnectServer',
             label: 'Автоподключение к серверу',
             desc: '',
-            help: 'Автоматически нажимает на ссылку подключения при принятии тикета.'
+            help: 'Автоматически подключает вас к серверу указанному в тикете.'
         },
         {
             key: 'squareTickets',
