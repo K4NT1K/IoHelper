@@ -137,6 +137,47 @@ class Utils {
 
         return {category: '', playerText: ''};
     }
+
+    formatLastConnectStatus(lastconnectUnix) {
+        if (lastconnectUnix == null || lastconnectUnix === '') {
+            return 'Не в игре';
+        }
+
+        const seconds = Number(lastconnectUnix);
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+            return 'Не в игре';
+        }
+
+        const diffMs = Date.now() - seconds * 1000;
+        if (diffMs < 60 * 1000) {
+            return 'В игре только что';
+        }
+
+        const diffMin = Math.floor(diffMs / (60 * 1000));
+        if (diffMin < 60) {
+            return `В игре ${diffMin} мин назад`;
+        }
+
+        const diffHours = Math.floor(diffMin / 60);
+        if (diffHours < 24) {
+            if (diffHours === 1) {
+                return 'В игре 1 ч назад';
+            }
+            if (diffHours >= 2 && diffHours <= 4) {
+                return `В игре ${diffHours} ч назад`;
+            }
+            return `В игре ${diffHours} ч назад`;
+        }
+
+        const diffDays = Math.floor(diffHours / 24);
+        if (diffDays === 1) {
+            return 'В игре 1 дн назад';
+        }
+        if (diffDays >= 2 && diffDays <= 4) {
+            return `В игре ${diffDays} дн назад`;
+        }
+        return `В игре ${diffDays} дн назад`;
+    }
 }
 
 window.Utils = Utils;

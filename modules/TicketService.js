@@ -16,9 +16,10 @@ class TicketService {
         this.globalServerCooldown = 0;
         this.offenderOffline = new Map();
         this.offenderRelocated = new Map();
+        this.userDataCache = new Map();
         this._currentServerRefreshTicketKey = null;
         this._currentServerRefreshSeconds = null;
-        this.LEFT_OFFENDER_TTL_MS = 10 * 60 * 1000;
+        this.LEFT_OFFENDER_TTL_MS = 8 * 60 * 1000;
     }
 
     getChatCacheKey(textarea) {
@@ -835,6 +836,149 @@ class TicketService {
             .flatMap(([, exceptions]) => exceptions || []);
     }
 
+    extractServerIpFromUserData(result) {
+        if (result?.server?.server_ip && result?.server?.server_port) {
+            return `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
+        }
+
+        return null;
+    }
+
+    extractLastConnect(result) {
+        const raw = result?.cybershoke?.global?.lastconnect;
+        if (raw == null || raw === '') {
+            return null;
+        }
+
+        const seconds = Number(raw);
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+    }
+
+    parseUserDataResult(result) {
+        return {
+            serverIp: this.extractServerIpFromUserData(result),
+            lastconnect: this.extractLastConnect(result)
+        };
+    }
+
+    getCachedUserData(steamId, ttlMs = 5000) {
+        const entry = this.userDataCache.get(steamId);
+        if (!entry) {
+            return null;
+        }
+
+        if (Date.now() - entry.fetchedAt >= ttlMs) {
+            this.userDataCache.delete(steamId);
+            return null;
+        }
+
+        return entry;
+    }
+
+    setCachedUserData(steamId, data) {
+        this.userDataCache.set(steamId, {
+            serverIp: data.serverIp ?? null,
+            lastconnect: data.lastconnect ?? null,
+            fetchedAt: Date.now()
+        });
+    }
+
+    getServerLinkLabelElement(link) {
+        return link.querySelector(':scope > span') || link.querySelector('span');
+    }
+
+    ensureServerLinkOriginalText(link) {
+        if (link.dataset.iohOriginalServerText) {
+            return link.dataset.iohOriginalServerText;
+        }
+
+        const labelEl = this.getServerLinkLabelElement(link);
+        const originalText = labelEl?.textContent?.trim() || link.textContent?.trim() || '';
+        link.dataset.iohOriginalServerText = originalText;
+        return originalText;
+    }
+
+    updateServerLinkDisplay(link, {status, lastconnect = null, currentIp = null}) {
+        if (!link) {
+            return;
+        }
+
+        link.classList.remove('ioh-server-online', 'ioh-server-offline', 'ioh-server-other');
+        const originalText = this.ensureServerLinkOriginalText(link);
+        const labelEl = this.getServerLinkLabelElement(link);
+
+        const setLabelText = (text) => {
+            if (labelEl) {
+                labelEl.textContent = text;
+            } else {
+                link.textContent = text;
+            }
+        };
+
+        if (status === 'offline') {
+            link.classList.add('ioh-server-offline');
+            setLabelText(this.utils.formatLastConnectStatus(lastconnect));
+            return;
+        }
+
+        if (status === 'online') {
+            link.classList.add('ioh-server-online');
+            setLabelText(originalText);
+            return;
+        }
+
+        if (status === 'other') {
+            link.classList.add('ioh-server-other');
+            const displayIp = currentIp || originalText;
+            setLabelText(displayIp);
+            if (currentIp) {
+                link.href = `steam://connect/${currentIp}`;
+            }
+        }
+    }
+
+    async fetchUserData(steamId) {
+        const response = await fetch('https://cybershoke.net/api/user/data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json, text/plain, */*',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'include',
+            body: new URLSearchParams({steamid64: steamId}).toString()
+        });
+
+        return response;
+    }
+
+    applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData) {
+        if (!linkToUpdate) {
+            return;
+        }
+
+        const currentIp = userData.serverIp;
+        const lastconnect = userData.lastconnect;
+
+        if (!currentIp) {
+            this.updateServerLinkDisplay(linkToUpdate, {status: 'offline', lastconnect});
+            this.markOffenderOffline(targetSteamId);
+            this.clearOffenderRelocated(targetSteamId);
+            return;
+        }
+
+        if (currentIp === targetIp) {
+            this.updateServerLinkDisplay(linkToUpdate, {status: 'online', currentIp});
+            this.clearOffenderOffline(targetSteamId);
+            this.clearOffenderRelocated(targetSteamId);
+            return;
+        }
+
+        this.updateServerLinkDisplay(linkToUpdate, {status: 'other', currentIp});
+        this.markOffenderRelocated(targetSteamId, currentIp);
+        this.clearOffenderOffline(targetSteamId);
+    }
+
     async checkOffendersServers() {
         if (!window.location.href.includes('/support/reports') &&
             !window.location.href.includes('/support/tickets')) {
@@ -908,51 +1052,28 @@ class TicketService {
 
                 targetRow.dataset.lastIpCheck = Date.now().toString();
 
-                await new Promise(resolve => setTimeout(resolve, 350));
+                let userData = this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
+                if (!userData) {
+                    await new Promise(resolve => setTimeout(resolve, 350));
 
-                const response = await fetch('https://cybershoke.net/api/user/data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json, text/plain, */*',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    credentials: 'include',
-                    body: new URLSearchParams({steamid64: targetSteamId}).toString()
-                });
+                    const response = await this.fetchUserData(targetSteamId);
 
-                if (response.status === 429) {
-                    this.globalServerCooldown = Date.now() + 10000;
-                    break;
-                }
+                    if (response.status === 429) {
+                        this.globalServerCooldown = Date.now() + 5000;
+                        break;
+                    }
 
-                if (!response.ok) continue;
+                    if (!response.ok) {
+                        continue;
+                    }
 
-                const result = await response.json();
-                let currentIp = null;
-
-                if (result?.server?.server_ip && result?.server?.server_port) {
-                    currentIp = `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
+                    const result = await response.json();
+                    userData = this.parseUserDataResult(result);
+                    this.setCachedUserData(targetSteamId, userData);
                 }
 
                 const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
-                if (linkToUpdate) {
-                    linkToUpdate.classList.remove('ioh-server-online', 'ioh-server-offline', 'ioh-server-other');
-
-                    if (!currentIp) {
-                        linkToUpdate.classList.add('ioh-server-offline');
-                        this.markOffenderOffline(targetSteamId);
-                        this.clearOffenderRelocated(targetSteamId);
-                    } else if (currentIp === targetIp) {
-                        linkToUpdate.classList.add('ioh-server-online');
-                        this.clearOffenderOffline(targetSteamId);
-                        this.clearOffenderRelocated(targetSteamId);
-                    } else {
-                        linkToUpdate.classList.add('ioh-server-other');
-                        this.markOffenderRelocated(targetSteamId, currentIp);
-                        this.clearOffenderOffline(targetSteamId);
-                    }
-                }
+                this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
             }
         } catch (e) {
             console.error(e);
