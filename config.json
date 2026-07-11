@@ -133,10 +133,10 @@
   ],
   "muteExceptions": {
     ".com": [
-      "faceit", "cybershoke"
+      "faceit.com", "steamcommunity.com"
     ],
     "https://": [
-      "faceit", "cybershoke"
+      "https://faceit", "https://cybershoke", "https://steamcommunity", "https://cs2rep"
     ],
     "syn": [
       "sync"

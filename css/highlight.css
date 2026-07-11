@@ -22,7 +22,7 @@
 
 /* Класс для подсветки триггеров жалоб */
 .ioh-complaint-trigger {
-    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 17%, transparent) !important;
     color: var(--color-danger, #ef4444) !important;
     padding: 2px 4px !important;
     border-radius: 4px !important;
@@ -31,7 +31,7 @@
 }
 
 .ioh-new-account-hours {
-    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent) !important;
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 17%, transparent) !important;
     color: var(--color-danger, #ef4444) !important;
     padding: 2px 4px !important;
     border-radius: 4px !important;
