@@ -836,6 +836,72 @@ class TicketService {
             .flatMap(([, exceptions]) => exceptions || []);
     }
 
+    extractServerLabel(result) {
+        const server = result?.server;
+        if (!server) {
+            return null;
+        }
+
+        const parts = [];
+        if (server.mode) {
+            parts.push(String(server.mode));
+        }
+        if (server.category) {
+            parts.push(String(server.category));
+        }
+        if (server.num != null && server.num !== '') {
+            parts.push(`#${server.num}`);
+        }
+
+        return parts.length ? parts.join(' ') : null;
+    }
+
+    extractBansList(result) {
+        const candidates = [
+            result?.basic?.bans_list,
+            result?.bans_list,
+            result?.cybershoke?.bans_list
+        ];
+
+        for (const list of candidates) {
+            if (Array.isArray(list) && list.length) {
+                return list;
+            }
+        }
+
+        return [];
+    }
+
+    isBanActive(ban) {
+        if (Number(ban?.type) !== 4) {
+            return false;
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+        const end = Number(ban?.end);
+        const created = Number(ban?.created);
+        const length = Number(ban?.length);
+
+        if (Number.isFinite(end) && end > now) {
+            return true;
+        }
+
+        if (Number.isFinite(created) && Number.isFinite(length) && length > 0 && created + length > now) {
+            return true;
+        }
+
+        return false;
+    }
+
+    extractActiveBan(result) {
+        const bans = this.extractBansList(result);
+        if (!bans.length) {
+            return false;
+        }
+
+        return bans.some(ban => this.isBanActive(ban));
+    }
+
     extractServerIpFromUserData(result) {
         if (result?.server?.server_ip && result?.server?.server_port) {
             return `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
@@ -857,7 +923,9 @@ class TicketService {
     parseUserDataResult(result) {
         return {
             serverIp: this.extractServerIpFromUserData(result),
-            lastconnect: this.extractLastConnect(result)
+            lastconnect: this.extractLastConnect(result),
+            serverLabel: this.extractServerLabel(result),
+            isBanned: this.extractActiveBan(result)
         };
     }
 
@@ -879,12 +947,24 @@ class TicketService {
         this.userDataCache.set(steamId, {
             serverIp: data.serverIp ?? null,
             lastconnect: data.lastconnect ?? null,
+            serverLabel: data.serverLabel ?? null,
+            isBanned: Boolean(data.isBanned),
             fetchedAt: Date.now()
         });
     }
 
     getServerLinkLabelElement(link) {
         return link.querySelector(':scope > span') || link.querySelector('span');
+    }
+
+    ensureServerLinkOriginalIp(link) {
+        if (link.dataset.iohOriginalServerIp) {
+            return link.dataset.iohOriginalServerIp;
+        }
+
+        const ip = link.href.replace(/^steam:\/\/connect\//i, '').trim().toLowerCase();
+        link.dataset.iohOriginalServerIp = ip;
+        return ip;
     }
 
     ensureServerLinkOriginalText(link) {
@@ -898,7 +978,7 @@ class TicketService {
         return originalText;
     }
 
-    updateServerLinkDisplay(link, {status, lastconnect = null, currentIp = null}) {
+    updateServerLinkDisplay(link, {status, lastconnect = null, currentIp = null, serverLabel = null}) {
         if (!link) {
             return;
         }
@@ -924,17 +1004,29 @@ class TicketService {
         if (status === 'online') {
             link.classList.add('ioh-server-online');
             setLabelText(originalText);
+            const originalIp = link.dataset.iohOriginalServerIp;
+            if (originalIp) {
+                link.href = `steam://connect/${originalIp}`;
+            }
             return;
         }
 
         if (status === 'other') {
             link.classList.add('ioh-server-other');
-            const displayIp = currentIp || originalText;
-            setLabelText(displayIp);
+            const displayText = serverLabel || currentIp || originalText;
+            setLabelText(displayText);
             if (currentIp) {
                 link.href = `steam://connect/${currentIp}`;
             }
         }
+    }
+
+    applyOffenderBanHighlight(row, isBanned) {
+        if (!row) {
+            return;
+        }
+
+        row.classList.toggle('ioh-highlighted-banned', Boolean(isBanned));
     }
 
     async fetchUserData(steamId) {
@@ -974,7 +1066,11 @@ class TicketService {
             return;
         }
 
-        this.updateServerLinkDisplay(linkToUpdate, {status: 'other', currentIp});
+        this.updateServerLinkDisplay(linkToUpdate, {
+            status: 'other',
+            currentIp,
+            serverLabel: userData.serverLabel
+        });
         this.markOffenderRelocated(targetSteamId, currentIp);
         this.clearOffenderOffline(targetSteamId);
     }
@@ -1026,6 +1122,8 @@ class TicketService {
 
                     if (!offenderLink || !serverIpLink) continue;
 
+                    const ticketServerIp = this.ensureServerLinkOriginalIp(serverIpLink);
+
                     const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
                     if (!steamIdMatch) continue;
 
@@ -1035,7 +1133,7 @@ class TicketService {
 
                     if (lastCheck === 0) {
                         targetRow = row;
-                        targetIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
+                        targetIp = ticketServerIp;
                         targetSteamId = steamIdMatch[0];
                         break;
                     }
@@ -1043,7 +1141,7 @@ class TicketService {
                     if (lastCheck < oldestCheck) {
                         oldestCheck = lastCheck;
                         targetRow = row;
-                        targetIp = serverIpLink.href.replace('steam://connect/', '').trim().toLowerCase();
+                        targetIp = ticketServerIp;
                         targetSteamId = steamIdMatch[0];
                     }
                 }
@@ -1074,6 +1172,7 @@ class TicketService {
 
                 const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
                 this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
+                this.applyOffenderBanHighlight(targetRow, userData.isBanned);
             }
         } catch (e) {
             console.error(e);

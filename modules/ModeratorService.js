@@ -63,6 +63,58 @@ class ModeratorService {
         });
     }
 
+    resolveModeratorType(steamId, moderators) {
+        if (moderators?.verification?.[steamId]) {
+            return 'verification';
+        }
+
+        const entry = moderators?.[steamId];
+        if (typeof entry === 'string' && entry) {
+            return 'admin';
+        }
+
+        return null;
+    }
+
+    insertModeratorBadge(link, badgeType) {
+        const iconKey = badgeType === 'verification' ? 'verification' : 'admin';
+        const iconSvg = window.Icons?.[iconKey];
+        if (!iconSvg) {
+            return false;
+        }
+
+        const existingBadge = link.parentElement?.querySelector('.ioh-admin-icon')
+            || link.querySelector('.ioh-admin-icon');
+        if (existingBadge && link.dataset.moderBadgeType === badgeType) {
+            link.dataset.hasModerBadge = 'true';
+            return true;
+        }
+
+        if (existingBadge) {
+            existingBadge.remove();
+        }
+
+        const template = document.createElement('template');
+        template.innerHTML = iconSvg.trim();
+
+        const badge = template.content.firstElementChild;
+        badge.classList.add('ioh-admin-icon');
+
+        const idContainer = link.closest('div');
+        const parentContainer = idContainer ? idContainer.parentElement : null;
+        const nameButton = parentContainer ? parentContainer.querySelector('button') : null;
+
+        if (nameButton) {
+            nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
+        } else {
+            link.appendChild(badge);
+        }
+
+        link.dataset.hasModerBadge = 'true';
+        link.dataset.moderBadgeType = badgeType;
+        return true;
+    }
+
     highlightSavedModerators() {
         this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
             const moderators = helperConfig?.moderators || {};
@@ -72,44 +124,19 @@ class ModeratorService {
 
             links.forEach(link => {
                 const match = link.href.match(/cybershoke\.net\/(\d+)/);
-                if (match) {
-                    const steamId = match[1];
+                if (!match) return;
 
-                    if (moderators[steamId]) {
+                const steamId = match[1];
+                const badgeType = this.resolveModeratorType(steamId, moderators);
+                if (!badgeType) return;
 
-                        const row = link.closest('tr');
-                        if (row && !row.classList.contains('ioh-highlighted-moderator')) {
-                            row.classList.add('ioh-highlighted-moderator');
-                        }
+                const row = link.closest('tr');
+                if (row && !row.classList.contains('ioh-highlighted-moderator')) {
+                    row.classList.add('ioh-highlighted-moderator');
+                }
 
-                        if (!link.dataset.hasModerBadge) {
-                            const adminSvg = window.Icons?.admin;
-                            if (!adminSvg) {
-                                // Icons not loaded yet: keep row highlight (already applied above),
-                                // but postpone badge rendering until next invocation.
-                                return;
-                            }
-
-                            const template = document.createElement("template");
-                            template.innerHTML = adminSvg.trim();
-
-                            const badge = template.content.firstElementChild;
-                            badge.classList.add("ioh-admin-icon");
-
-                            const idContainer = link.closest('div');
-                            const parentContainer = idContainer ? idContainer.parentElement : null;
-
-                            const nameButton = parentContainer ? parentContainer.querySelector('button') : null;
-
-                            if (nameButton) {
-                                nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
-                            } else {
-                                link.appendChild(badge);
-                            }
-
-                            link.dataset.hasModerBadge = 'true';
-                        }
-                    }
+                if (!link.dataset.hasModerBadge || link.dataset.moderBadgeType !== badgeType) {
+                    this.insertModeratorBadge(link, badgeType);
                 }
             });
         });

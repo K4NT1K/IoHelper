@@ -46,6 +46,12 @@ tr.ioh-highlighted-moderator {
     border: 2px solid #facc15 !important;
 }
 
+/* Подсветка строки с забаненным нарушителем */
+tr.ioh-highlighted-banned {
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent) !important;
+    border: 2px solid var(--color-danger, #ef4444) !important;
+}
+
 /* На всякий случай фиксируем выравнивание иконки */
 svg.ioh-admin-icon {
     display: inline-block !important;

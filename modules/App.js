@@ -14,6 +14,7 @@ class App {
         this.ipTrackTimeoutId = null;
         this.ticketChatHistoryObservers = new Map();
         this.tablesRowsObserver = null;
+        this.tablesRowsDebounceId = null;
         this.currentServerModeratorsObserver = null;
         this.currentServerModeratorsDebounceId = null;
         this.ticketInitObserver = null;
@@ -460,6 +461,10 @@ class App {
         if (!this.tablesRowsObserver) return;
         this.tablesRowsObserver.disconnect();
         this.tablesRowsObserver = null;
+        if (this.tablesRowsDebounceId) {
+            clearTimeout(this.tablesRowsDebounceId);
+            this.tablesRowsDebounceId = null;
+        }
     }
 
     teardownCurrentServerModeratorsObserver() {
@@ -621,6 +626,7 @@ class App {
             this.tableEnhancementsDebounceId = setTimeout(() => {
                 this.tableEnhancementsDebounceId = null;
                 this.initTableFeatures();
+                this._reapplyTicketRowHighlights();
             }, 160);
         };
 
@@ -798,25 +804,59 @@ class App {
         this.teardownTablesRowsObserver();
 
         const self = this;
+        const scheduleRowHighlights = (rows) => {
+            if (!rows.size) return;
+
+            if (self.tablesRowsDebounceId) {
+                clearTimeout(self.tablesRowsDebounceId);
+            }
+
+            const rowsToUpdate = rows;
+            self.tablesRowsDebounceId = setTimeout(() => {
+                self.tablesRowsDebounceId = null;
+                rowsToUpdate.forEach(row => self._applyRowHighlights(row));
+            }, 120);
+        };
+
         this.tablesRowsObserver = new MutationObserver((mutations) => {
+            const rowsToUpdate = new Set();
+
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes || []) {
                     if (!node || node.nodeType !== 1) continue;
 
-                    if (node.matches && node.matches('tr')) {
-                        self._applyRowHighlights(node);
+                    if (node.matches?.('tr')) {
+                        rowsToUpdate.add(node);
                         continue;
                     }
 
-                    const rows = node.querySelectorAll?.('tr') || [];
-                    rows.forEach(row => self._applyRowHighlights(row));
+                    const nestedRows = node.querySelectorAll?.('tr') || [];
+                    nestedRows.forEach(row => rowsToUpdate.add(row));
+                }
+
+                const target = mutation.target;
+                const row = target?.nodeType === 1
+                    ? target.closest?.('tbody tr')
+                    : target?.parentElement?.closest?.('tbody tr');
+                if (row) {
+                    rowsToUpdate.add(row);
                 }
             }
+
+            scheduleRowHighlights(rowsToUpdate);
         });
 
         // Apply once for existing content.
-        this.document.querySelectorAll('tr').forEach(row => this._applyRowHighlights(row));
-        this.tablesRowsObserver.observe(this.document.documentElement, {childList: true, subtree: true});
+        this._reapplyTicketRowHighlights();
+        this.tablesRowsObserver.observe(this.document.documentElement, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    }
+
+    _reapplyTicketRowHighlights() {
+        this.document.querySelectorAll('table tbody tr').forEach(row => this._applyRowHighlights(row));
     }
 
     _applyRowHighlights(row) {

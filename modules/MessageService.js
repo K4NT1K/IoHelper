@@ -82,7 +82,6 @@ class MessageService {
                 reportCell.querySelector('span');
 
             if (!playerEl || !playerText) {
-                row.dataset.triggersChecked = 'true';
                 return;
             }
 
@@ -119,6 +118,10 @@ class MessageService {
     }
 
     highlightNewAccounts(row) {
+        if (row.querySelector('.ioh-new-account-hours')) {
+            return;
+        }
+
         const match = row.innerText.match(/CYBERSHOKE:\s*(\d+)ч/i);
         if (match) {
             const hours = parseInt(match[1], 10);
