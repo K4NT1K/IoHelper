@@ -8,6 +8,7 @@
       "manageEmptyBlocks": true,
       "translateText": true,
       "showSteamAccountCreationDate": true,
+      "autoPunishmentDuration": true,
       "trackOffenderServer": false,
       "autoConnectServer": false,
       "scanSchedulePage": false,
@@ -51,6 +52,37 @@
       "Ник": "Ваш никнейм некорректный. Пожалуйста, измените его.",
       "Расизм": "Пожалуйста, не используйте расистские выражения.",
       "Спам": "Пожалуйста, не спамьте."
+    }
+  },
+  "punishmentDurations": {
+    "defaultMuteReason": "Reason_Mute_Toxic",
+    "mute": {
+      "Reason_Mute_Trolling": 21600,
+      "Reason_Mute_Spam": 21600,
+      "Reason_Mute_Insult": 21600,
+      "Reason_Mute_VoiceChange": 21600,
+      "Reason_Mute_Monitoring": 21600,
+      "Reason_Mute_Toxic": 43200,
+      "Reason_Mute_Begging": 43200,
+      "Reason_Mute_Advertising": 86400,
+      "Reason_Mute_Rasism": 259200,
+      "Reason_Mute_BypassMute": 21600
+    },
+    "ban": {
+      "Reason_Ban_Cheat": 63072000,
+      "Reason_Ban_SpamTickets": 3600,
+      "Reason_Ban_IgnoreAdmin": 21600,
+      "Reason_Ban_Unsport": 43200,
+      "Reason_Ban_CheatingPlayers": 259200,
+      "Reason_Ban_CheatingAdmin": 259200,
+      "Reason_Ban_Fraud": 0,
+      "Reason_Ban_ViolationRulesOfMode": 2592000,
+      "Reason_Ban_ExploitingBugs": 1209600,
+      "Reason_Ban_AHK": 1209600,
+      "Reason_Ban_SkinChanger": 1209600,
+      "Reason_Ban_RefusalCheck": 15552000,
+      "Reason_Ban_BypassBan": 63072000,
+      "Reason_Ban_AutoDetect": 63072000
     }
   },
   "muteRules": [
