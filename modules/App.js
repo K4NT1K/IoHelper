@@ -48,6 +48,10 @@ class App {
             muteExceptions: this.muteExceptions
         });
         this.moderatorService = new ModeratorService({document, chrome});
+        this.punishmentService = new PunishmentService({
+            document,
+            durations: config.punishmentDurations
+        });
         this.optimizer = new Optimizer({window, disabledTabKeys: ['reports']});
     }
 
@@ -82,6 +86,7 @@ class App {
         this.initTableEnhancementsObserver();
         this.initTablesRowsObserver();
         this.initNotificationModalObserver();
+        this.initPunishmentFormObserver();
 
         this.handleTrackOffenderLoop();
     }
@@ -141,6 +146,10 @@ class App {
         }
 
         this.optimizer.setEnabled(this.features.optimizeSpaTabs);
+        this.punishmentService.setEnabled(this.features.autoPunishmentDuration !== false);
+        if (this.features.autoPunishmentDuration !== false) {
+            this.initPunishmentFormObserver();
+        }
         this.runDOMUpdates();
         this.initTicketMountObserver();
         this.initCurrentServerSectionObserver();
@@ -378,6 +387,15 @@ class App {
         });
 
         triggerNotificationPanels();
+    }
+
+    initPunishmentFormObserver() {
+        if (this.features.autoPunishmentDuration === false) {
+            this.punishmentService.teardown();
+            return;
+        }
+
+        this.punishmentService.init();
     }
 
     initTableFeatures() {

@@ -64,6 +64,12 @@ function renderToggles(features) {
             help: 'Анализирует историю чата в тикете и показывает подсказку по нарушению и наказанию.'
         },
         {
+            key: 'autoPunishmentDuration',
+            label: 'Автоподстановка срока наказания',
+            desc: '',
+            help: 'Автоматически выбирает срок при выборе причины в формах мута и бана. Учитывает X2-опции сайта.'
+        },
+        {
             key: 'showSteamAccountCreationDate',
             label: 'Дата создания Steam-аккаунта',
             desc: '',
@@ -246,8 +252,9 @@ function loadSettingsToUI(settings) {
     const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"]');
 
     checkboxes.forEach(cb => {
-        cb.checked = settings.features[cb.dataset.feature] ??
-            defaultSettings.features[cb.dataset.feature];
+        cb.checked = settings.features[cb.dataset.feature]
+            ?? defaultSettings.features[cb.dataset.feature]
+            ?? true;
     });
 
     hoursInput.value = settings.newAccountHours;
@@ -324,6 +331,10 @@ async function loadSettings() {
     storage.get(["helperSettings"], ({helperSettings}) => {
         currentSettings = structuredClone(defaultSettings);
 
+        if (currentSettings.features.autoPunishmentDuration === undefined) {
+            currentSettings.features.autoPunishmentDuration = true;
+        }
+
         if (helperSettings) {
             currentSettings = {
                 ...currentSettings,
@@ -333,6 +344,9 @@ async function loadSettings() {
                 ...defaultSettings.features,
                 ...(helperSettings.features || {})
             };
+            if (currentSettings.features.autoPunishmentDuration === undefined) {
+                currentSettings.features.autoPunishmentDuration = true;
+            }
             currentSettings.reasonTriggers =
                 helperSettings.reasonTriggers ??
                 currentSettings.reasonTriggers;

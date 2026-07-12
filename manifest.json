@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.4",
+  "version": "2.5",
   "description": "Улучшает функционал IO сайта",
   "background": {
     "service_worker": "background.js"
@@ -51,6 +51,7 @@
         "modules/PanelService.js",
         "modules/MessageService.js",
         "modules/TicketService.js",
+        "modules/PunishmentService.js",
         "modules/ModeratorService.js",
         "modules/Optimizer.js",
         "modules/App.js",

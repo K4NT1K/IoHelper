@@ -1152,12 +1152,12 @@ class TicketService {
 
                 let userData = this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
                 if (!userData) {
-                    await new Promise(resolve => setTimeout(resolve, 350));
+                    await new Promise(resolve => setTimeout(resolve, 334));
 
                     const response = await this.fetchUserData(targetSteamId);
 
                     if (response.status === 429) {
-                        this.globalServerCooldown = Date.now() + 5000;
+                        this.globalServerCooldown = Date.now() + 2000;
                         break;
                     }
 
