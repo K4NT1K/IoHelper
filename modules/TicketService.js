@@ -46,6 +46,7 @@ class TicketService {
         this._permissionScanSuppressed = 0;
         this._wasMutePanelActive = false;
         this._wasBanPanelActive = false;
+        this._lastManagementOpenedViaAside = false;
         this.handleTicketMuteButtonClick = this.handleTicketMuteButtonClick.bind(this);
         this.handleTicketBanButtonClick = this.handleTicketBanButtonClick.bind(this);
         this.punishmentBridge = new SitePunishmentBridge({document, ticketService: this});
@@ -869,6 +870,19 @@ class TicketService {
         return button?.isConnected ? button : null;
     }
 
+    getLastKnownIssueButton(type) {
+        return type === 'ban' ? this._cachedBanIssueButton : this._cachedMuteIssueButton;
+    }
+
+    getCachedIssueHandler(type) {
+        const handler = type === 'ban' ? this._cachedOpenBanHandler : this._cachedOpenMuteHandler;
+        return typeof handler === 'function' ? handler : null;
+    }
+
+    isManagementPanelMounted(type) {
+        return Boolean(this.findSiteIssueButtonForType(type, {requireVisible: false}));
+    }
+
     findSiteIssueButtonForType(type, options = {}) {
         return this.findSiteIssueButtonInSection(
             this.getManagementSectionTitleForType(type),
@@ -1046,6 +1060,201 @@ class TicketService {
         return type === 'ban' ? this.isBanManagementPanelActive() : this.isMuteManagementPanelActive();
     }
 
+    isManagementSpaTabOpen(type) {
+        return Boolean(this.findSpaTabButton(this.getManagementSectionTitleForType(type)));
+    }
+
+    findAsideLauncherButton() {
+        const aside = this.document.querySelector('aside');
+        if (!aside) {
+            return null;
+        }
+
+        const byReorderId = aside.querySelector(
+            'button.glass-fx[data-reorder-id="6"], button[class*="glass-fx"][data-reorder-id="6"]'
+        );
+        if (byReorderId && !this.isExtensionUiElement(byReorderId)) {
+            return byReorderId;
+        }
+
+        const buttons = Array.from(aside.querySelectorAll('button.glass-fx, button[class*="glass-fx"]'))
+            .filter(button => !this.isExtensionUiElement(button));
+
+        return buttons[2] || null;
+    }
+
+    findAsideManagementLink(type) {
+        const route = this.getManagementRouteForType(type);
+        const aside = this.document.querySelector('aside');
+        if (!aside) {
+            return null;
+        }
+
+        const link = aside.querySelector(
+            `nav a.glass-fx[href="${route}"], nav a[class*="glass-fx"][href="${route}"]`
+        );
+
+        if (link && !this.isExtensionUiElement(link)) {
+            return link;
+        }
+
+        return null;
+    }
+
+    _isElementVisible(element) {
+        if (!element?.isConnected) {
+            return false;
+        }
+
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+            return false;
+        }
+
+        const style = window.getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0;
+    }
+
+    isAsideManagementNavVisible() {
+        const muteLink = this.findAsideManagementLink('mute');
+        const banLink = this.findAsideManagementLink('ban');
+        return [muteLink, banLink].some(link => link && this._isElementVisible(link));
+    }
+
+    waitForAsideManagementNav(timeoutMs = 2000) {
+        if (this.isAsideManagementNavVisible()) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const deadline = Date.now() + timeoutMs;
+            const observer = new MutationObserver(() => {
+                if (this.isAsideManagementNavVisible()) {
+                    observer.disconnect();
+                    resolve(true);
+                } else if (Date.now() > deadline) {
+                    observer.disconnect();
+                    resolve(false);
+                }
+            });
+
+            observer.observe(this.document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['aria-hidden', 'class', 'style', 'data-state']
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(this.isAsideManagementNavVisible());
+            }, timeoutMs + 50);
+        });
+    }
+
+    async openAsideManagementNav() {
+        if (this.isAsideManagementNavVisible()) {
+            return true;
+        }
+
+        const launcher = this.findAsideLauncherButton();
+        if (!launcher) {
+            return false;
+        }
+
+        if (!this.dispatchElementClick(launcher)) {
+            return false;
+        }
+
+        return this.waitForAsideManagementNav(2000);
+    }
+
+    waitForSpaTabExists(tabLabel, timeoutMs = 3000) {
+        if (this.findSpaTabButton(tabLabel)) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const deadline = Date.now() + timeoutMs;
+            const observer = new MutationObserver(() => {
+                if (this.findSpaTabButton(tabLabel)) {
+                    observer.disconnect();
+                    resolve(true);
+                } else if (Date.now() > deadline) {
+                    observer.disconnect();
+                    resolve(false);
+                }
+            });
+
+            observer.observe(this.document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['aria-current', 'aria-hidden', 'class']
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(Boolean(this.findSpaTabButton(tabLabel)));
+            }, timeoutMs + 50);
+        });
+    }
+
+    async openManagementTabViaAside(type) {
+        const sectionTitle = this.getManagementSectionTitleForType(type);
+
+        const navOpened = await this.openAsideManagementNav();
+        if (!navOpened) {
+            return false;
+        }
+
+        const link = this.findAsideManagementLink(type);
+        if (!link || !this.dispatchElementClick(link)) {
+            return false;
+        }
+
+        const tabExists = await this.waitForSpaTabExists(sectionTitle, 3000);
+        if (!tabExists) {
+            return false;
+        }
+
+        await this.waitForSpaTabActive(sectionTitle, 3000);
+        return true;
+    }
+
+    findSpaTabCloseButton(tab) {
+        if (!tab) {
+            return null;
+        }
+
+        const closeUse = tab.querySelector('use[href="#lc-x"]');
+        if (closeUse) {
+            return closeUse.closest('span[role="button"]');
+        }
+
+        return Array.from(tab.querySelectorAll('span[role="button"]'))
+            .find(span => span.querySelector('svg') && !span.querySelector('use[href="#lc-rotate-cw"]'))
+            ?? null;
+    }
+
+    closeSpaTab(tabLabel) {
+        const tab = this.findSpaTabButton(tabLabel);
+        if (!tab) {
+            return false;
+        }
+
+        const closeButton = this.findSpaTabCloseButton(tab);
+        if (!closeButton) {
+            return false;
+        }
+
+        return this.dispatchElementClick(closeButton);
+    }
+
+    closeManagementTab(type) {
+        return this.closeSpaTab(this.getManagementSectionTitleForType(type));
+    }
+
     findSpaTabButton(tabLabel) {
         const glassFxTabs = Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"]'));
 
@@ -1204,25 +1413,42 @@ class TicketService {
         });
     }
 
+    getLastManagementOpenedViaAside() {
+        return this._lastManagementOpenedViaAside;
+    }
+
     async activateManagementPanel(type) {
         const sectionTitle = this.getManagementSectionTitleForType(type);
+        this._lastManagementOpenedViaAside = false;
 
         if (this.isManagementPanelActiveForType(type)) {
             return true;
         }
 
-        const tab = this.findSpaTabButton(sectionTitle);
+        let tab = this.findSpaTabButton(sectionTitle);
+
         if (!tab) {
-            return false;
+            const openedViaAside = await this.openManagementTabViaAside(type);
+            if (!openedViaAside) {
+                return false;
+            }
+
+            this._lastManagementOpenedViaAside = true;
+            tab = this.findSpaTabButton(sectionTitle);
+            if (!tab) {
+                return false;
+            }
         }
 
-        if (!this.dispatchElementClick(tab)) {
-            return false;
-        }
+        if (!this.isManagementPanelActiveForType(type)) {
+            if (!this.dispatchElementClick(tab)) {
+                return false;
+            }
 
-        const activated = await this.waitForPanelActive(sectionTitle, 3000);
-        if (!activated) {
-            return false;
+            const activated = await this.waitForPanelActive(sectionTitle, 3000);
+            if (!activated) {
+                return false;
+            }
         }
 
         const route = this.getManagementRouteForType(type);
@@ -1693,18 +1919,22 @@ class TicketService {
         void this.openSiteBanForm(steamId);
     }
 
-    _invokeCachedSiteHandler(handler, type) {
+    invokeCachedSiteHandler(handler, type, button = null) {
         if (typeof handler !== 'function') {
             return false;
         }
+
+        const eventTarget = (button?.isConnected ? button : null)
+            ?? this.getCachedIssueButton(type)
+            ?? this.getLastKnownIssueButton(type);
 
         try {
             handler({
                 preventDefault() {},
                 stopPropagation() {},
-                nativeEvent: new MouseEvent('click'),
-                currentTarget: null,
-                target: null
+                nativeEvent: new MouseEvent('click', {bubbles: true}),
+                currentTarget: eventTarget,
+                target: eventTarget
             });
             return true;
         } catch (error) {

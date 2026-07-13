@@ -228,7 +228,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 18px;
+    padding: 9px 17px;
     min-height: 38px;
     border-radius: 10px;
     font-size: 14px;
@@ -247,7 +247,8 @@
 .ioh-ticket-issue-mute:hover {
     border-color: color-mix(in srgb, var(--color-warning, #f59e0b) 70%, var(--color-border, rgba(255, 255, 255, 0.12)));
     background: color-mix(in srgb, var(--color-warning, #f59e0b) 34%, var(--color-bg-card, #1e293b));
-    transform: translateY(-1px);
+    transform: scale(1.035);
+    transition: 0.2s ease;
 }
 
 .ioh-ticket-issue-ban {
@@ -259,7 +260,8 @@
 .ioh-ticket-issue-ban:hover {
     border-color: color-mix(in srgb, var(--color-danger, #ef4444) 70%, var(--color-border, rgba(255, 255, 255, 0.12)));
     background: color-mix(in srgb, var(--color-danger, #ef4444) 34%, var(--color-bg-card, #1e293b));
-    transform: translateY(-1px);
+    transform: scale(1.035);
+    transition: 0.2s ease;
 }
 
 .ioh-ticket-issue-mute:active,
