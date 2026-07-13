@@ -47,6 +47,7 @@ class TicketService {
         this._wasMutePanelActive = false;
         this._wasBanPanelActive = false;
         this._lastManagementOpenedViaAside = false;
+        this._punishmentInitFailCount = 0;
         this.handleTicketMuteButtonClick = this.handleTicketMuteButtonClick.bind(this);
         this.handleTicketBanButtonClick = this.handleTicketBanButtonClick.bind(this);
         this.punishmentBridge = new SitePunishmentBridge({document, ticketService: this});
@@ -845,7 +846,62 @@ class TicketService {
 
         this.canIssueMute = Boolean(permissions?.mute);
         this.canIssueBan = Boolean(permissions?.ban);
+        this.mutePanelReady = Boolean(permissions?.mutePanelReady);
+        this.banPanelReady = Boolean(permissions?.banPanelReady);
         this._permissionsHydrated = true;
+    }
+
+    isPunishmentDebugEnabled() {
+        try {
+            return localStorage.getItem('iohDebugPunishment') === '1';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    debugPunishmentLog(reason, details = {}) {
+        if (!this.isPunishmentDebugEnabled()) {
+            return;
+        }
+
+        console.warn(`[IO Helper][punishment] ${reason}`, details);
+    }
+
+    recordPunishmentOpenSuccess() {
+        this._punishmentInitFailCount = 0;
+    }
+
+    handlePunishmentOpenFailure(type) {
+        this.resetPanelReady(type);
+
+        if (type === 'ban') {
+            this._cachedOpenBanHandler = null;
+            this._cachedBanIssueButton = null;
+        } else {
+            this._cachedOpenMuteHandler = null;
+            this._cachedMuteIssueButton = null;
+        }
+
+        this._punishmentInitFailCount += 1;
+
+        if (this._punishmentInitFailCount < 2) {
+            return;
+        }
+
+        this._punishmentInitFailCount = 0;
+
+        if (type === 'ban') {
+            this.canIssueBan = false;
+        } else {
+            this.canIssueMute = false;
+        }
+
+        void this._persistModeratorPermissions();
+        this.refreshComplaintPunishmentButtons();
+    }
+
+    async persistPanelReadyState() {
+        await this._persistModeratorPermissions();
     }
 
     isPanelReadyForType(type) {
@@ -1002,7 +1058,9 @@ class TicketService {
     async _persistModeratorPermissions() {
         const permissions = {
             mute: this.canIssueMute,
-            ban: this.canIssueBan
+            ban: this.canIssueBan,
+            mutePanelReady: this.mutePanelReady,
+            banPanelReady: this.banPanelReady
         };
 
         try {
@@ -1077,10 +1135,24 @@ class TicketService {
             return byReorderId;
         }
 
-        const buttons = Array.from(aside.querySelectorAll('button.glass-fx, button[class*="glass-fx"]'))
-            .filter(button => !this.isExtensionUiElement(button));
+        const byMenuIcon = Array.from(aside.querySelectorAll('button'))
+            .filter(button => !this.isExtensionUiElement(button))
+            .find(button => button.querySelector('use[href="#lc-menu"]'));
+        if (byMenuIcon) {
+            return byMenuIcon;
+        }
 
-        return buttons[2] || null;
+        const byAriaExpanded = Array.from(aside.querySelectorAll('button[aria-expanded]'))
+            .filter(button => !this.isExtensionUiElement(button) && !button.closest('nav'))
+            .find(button => button.querySelector('svg'));
+        if (byAriaExpanded) {
+            return byAriaExpanded;
+        }
+
+        const buttons = Array.from(aside.querySelectorAll('button.glass-fx, button[class*="glass-fx"]'))
+            .filter(button => !this.isExtensionUiElement(button) && !button.closest('nav'));
+
+        return buttons.find(button => button.querySelector('svg')) || buttons[0] || null;
     }
 
     findAsideManagementLink(type) {
@@ -1159,6 +1231,7 @@ class TicketService {
 
         const launcher = this.findAsideLauncherButton();
         if (!launcher) {
+            this.debugPunishmentLog('aside_launcher_not_found');
             return false;
         }
 
@@ -1166,7 +1239,12 @@ class TicketService {
             return false;
         }
 
-        return this.waitForAsideManagementNav(2000);
+        const opened = await this.waitForAsideManagementNav(5000);
+        if (!opened) {
+            this.debugPunishmentLog('aside_nav_not_opened');
+        }
+
+        return opened;
     }
 
     waitForSpaTabExists(tabLabel, timeoutMs = 3000) {
@@ -1213,12 +1291,13 @@ class TicketService {
             return false;
         }
 
-        const tabExists = await this.waitForSpaTabExists(sectionTitle, 3000);
+        const tabExists = await this.waitForSpaTabExists(sectionTitle, 5000);
         if (!tabExists) {
+            this.debugPunishmentLog('management_tab_not_created', {type, via: 'aside'});
             return false;
         }
 
-        await this.waitForSpaTabActive(sectionTitle, 3000);
+        await this.waitForSpaTabActive(sectionTitle, 5000);
         return true;
     }
 
@@ -1256,6 +1335,10 @@ class TicketService {
     }
 
     findSpaTabButton(tabLabel) {
+        if (!tabLabel) {
+            return null;
+        }
+
         const glassFxTabs = Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"]'));
 
         for (const button of glassFxTabs) {
@@ -1279,15 +1362,187 @@ class TicketService {
         }) || null;
     }
 
+    _getAllSpaTabButtons() {
+        return Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"], nav button'))
+            .filter(button => !this.isExtensionUiElement(button));
+    }
+
+    _getSpaTabLabelFromButton(button) {
+        if (!button) {
+            return null;
+        }
+
+        const labelSpan = Array.from(button.querySelectorAll('span'))
+            .find(span => span.textContent.trim());
+
+        return labelSpan ? labelSpan.textContent.trim() : null;
+    }
+
+    findSpaTabButtonFuzzy(tabLabel) {
+        if (!tabLabel) {
+            return null;
+        }
+
+        const exact = this.findSpaTabButton(tabLabel);
+        if (exact) {
+            return exact;
+        }
+
+        const normalizedLabel = tabLabel.toLowerCase();
+
+        for (const button of this._getAllSpaTabButtons()) {
+            const label = this._getSpaTabLabelFromButton(button);
+            if (!label) {
+                continue;
+            }
+
+            const normalized = label.toLowerCase();
+            if (normalized.includes(normalizedLabel) || normalizedLabel.includes(normalized)) {
+                return button;
+            }
+        }
+
+        return null;
+    }
+
+    findNonManagementSpaTab(excludeLabels = []) {
+        const managementLabels = ['Управление мутами', 'Управление банами'];
+        const exclude = new Set([...managementLabels, ...excludeLabels]
+            .map(label => label.toLowerCase()));
+
+        return this._getAllSpaTabButtons().find(button => {
+            const label = this._getSpaTabLabelFromButton(button);
+            return label && !exclude.has(label.toLowerCase());
+        }) || null;
+    }
+
+    findActiveSpaTabButton() {
+        return Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"]'))
+            .find(button => !this.isExtensionUiElement(button) && button.getAttribute('aria-current') === 'page')
+            || null;
+    }
+
+    collectSpaTabLabelCandidates() {
+        const candidates = [];
+        const activeTab = this.findActiveSpaTabButton();
+
+        if (activeTab) {
+            const label = this._getSpaTabLabelFromButton(activeTab);
+            if (label) {
+                candidates.push(label);
+            }
+        }
+
+        const headerTitle = this.document.querySelector('header span');
+        if (headerTitle && !this.isExtensionUiElement(headerTitle)) {
+            const text = headerTitle.textContent.trim();
+            if (text && !candidates.includes(text)) {
+                candidates.push(text);
+            }
+        }
+
+        return candidates;
+    }
+
+    collectReturnTabContext() {
+        const activeTabButton = this.findActiveSpaTabButton();
+        const tabLabelCandidates = this.collectSpaTabLabelCandidates();
+        const tabLabel = activeTabButton
+            ? this._getSpaTabLabelFromButton(activeTabButton)
+            : tabLabelCandidates[0] || null;
+
+        return {
+            pathname: window.location.pathname || '/',
+            href: window.location.href,
+            tabLabel,
+            tabButton: activeTabButton,
+            tabLabelCandidates
+        };
+    }
+
+    isPathnameActive(pathname) {
+        return Boolean(pathname && window.location.pathname === pathname);
+    }
+
+    navigateViaPushState(pathname) {
+        const targetPath = pathname?.startsWith('/') ? pathname : `/${pathname || ''}`;
+        if (!targetPath || window.location.pathname === targetPath) {
+            return;
+        }
+
+        const targetUrl = `${window.location.origin}${targetPath}`;
+        window.history.pushState(null, '', targetUrl);
+        window.dispatchEvent(new PopStateEvent('popstate', {state: null}));
+    }
+
+    async restoreSpaTabFromContext(returnContext) {
+        const {
+            tabButton,
+            tabLabel,
+            tabLabelCandidates = [],
+            pathname
+        } = returnContext || {};
+
+        let returnedViaTab = false;
+
+        if (tabButton?.isConnected) {
+            this.dispatchElementClick(tabButton);
+            const activeLabel = this._getSpaTabLabelFromButton(tabButton) || tabLabel;
+            if (activeLabel) {
+                await this.waitForSpaTabActive(activeLabel, 4000);
+            }
+            returnedViaTab = this.isPathnameActive(pathname)
+                || (activeLabel ? this.isSpaTabActive(activeLabel) : false);
+        }
+
+        if (!returnedViaTab) {
+            const labelsToTry = [...new Set([tabLabel, ...tabLabelCandidates].filter(Boolean))];
+            for (const label of labelsToTry) {
+                const tab = this.findSpaTabButton(label) || this.findSpaTabButtonFuzzy(label);
+                if (!tab) {
+                    continue;
+                }
+
+                this.dispatchElementClick(tab);
+                const activeLabel = this._getSpaTabLabelFromButton(tab) || label;
+                await this.waitForSpaTabActive(activeLabel, 4000);
+
+                if (this.isPathnameActive(pathname) || this.isSpaTabActive(activeLabel)) {
+                    returnedViaTab = true;
+                    break;
+                }
+            }
+        }
+
+        if (!returnedViaTab) {
+            const tab = this.findNonManagementSpaTab(tabLabelCandidates);
+            if (tab) {
+                this.dispatchElementClick(tab);
+                const activeLabel = this._getSpaTabLabelFromButton(tab);
+                if (activeLabel) {
+                    await this.waitForSpaTabActive(activeLabel, 4000);
+                }
+                returnedViaTab = this.isPathnameActive(pathname)
+                    || (activeLabel ? this.isSpaTabActive(activeLabel) : false);
+            }
+        }
+
+        if (!returnedViaTab && pathname) {
+            this.navigateViaPushState(pathname);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            returnedViaTab = this.isPathnameActive(pathname);
+        }
+
+        return returnedViaTab;
+    }
+
     findActiveSpaTabLabel() {
-        const currentTab = Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"]'))
-            .find(button => !this.isExtensionUiElement(button) && button.getAttribute('aria-current') === 'page');
+        const currentTab = this.findActiveSpaTabButton();
 
         if (currentTab) {
-            const labelSpan = Array.from(currentTab.querySelectorAll('span'))
-                .find(span => span.textContent.trim());
-            if (labelSpan) {
-                return labelSpan.textContent.trim();
+            const label = this._getSpaTabLabelFromButton(currentTab);
+            if (label) {
+                return label;
             }
         }
 
@@ -1430,10 +1685,18 @@ class TicketService {
         if (!tab) {
             const openedViaAside = await this.openManagementTabViaAside(type);
             if (!openedViaAside) {
-                return false;
+                const route = this.getManagementRouteForType(type);
+                this.navigateViaPushState(route);
+
+                const tabExists = await this.waitForSpaTabExists(sectionTitle, 5000);
+                if (!tabExists) {
+                    this.debugPunishmentLog('management_tab_not_created', {type, via: 'pushState'});
+                    return false;
+                }
+            } else {
+                this._lastManagementOpenedViaAside = true;
             }
 
-            this._lastManagementOpenedViaAside = true;
             tab = this.findSpaTabButton(sectionTitle);
             if (!tab) {
                 return false;
@@ -1445,7 +1708,7 @@ class TicketService {
                 return false;
             }
 
-            const activated = await this.waitForPanelActive(sectionTitle, 3000);
+            const activated = await this.waitForPanelActive(sectionTitle, 5000);
             if (!activated) {
                 return false;
             }
@@ -1454,8 +1717,7 @@ class TicketService {
         const route = this.getManagementRouteForType(type);
         const routePattern = route.replace(/^\//, '');
         if (!window.location.pathname.includes(routePattern)) {
-            const targetUrl = `${window.location.origin}${route}`;
-            window.history.pushState(null, '', targetUrl);
+            this.navigateViaPushState(route);
         }
 
         return true;

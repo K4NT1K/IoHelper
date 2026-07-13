@@ -17,6 +17,7 @@ class SitePunishmentBridge {
         this.ticketService = ticketService;
         this._returnContext = null;
         this._dialogCleanupObserver = null;
+        this._lastFailReason = null;
     }
 
     openMuteForm(steamId) {
@@ -25,6 +26,10 @@ class SitePunishmentBridge {
 
     openBanForm(steamId) {
         return this.openForm('ban', steamId);
+    }
+
+    _debugLog(reason, details = {}) {
+        this.ticketService.debugPunishmentLog(reason, details);
     }
 
     async openForm(type, steamId) {
@@ -36,22 +41,29 @@ class SitePunishmentBridge {
             return false;
         }
 
+        this._lastFailReason = null;
+
         let opened = await this._trySilentOpen(type);
 
         if (!opened && !this.ticketService.isPanelReadyForType(type)) {
             opened = await this._runVisibleInitFlow(type);
         } else if (!opened) {
+            this.ticketService.resetPanelReady(type);
             opened = await this._trySilentRemount(type);
         }
 
         if (!opened) {
             this._clearReturnContext();
+            this.ticketService.handlePunishmentOpenFailure(type);
             const panel = SitePunishmentBridge.PANELS[type];
             console.warn(`[IO Helper] Нет доступа к форме выдачи ${type === 'ban' ? 'бана' : 'мута'}. Откройте «${panel.sectionTitle}».`);
+            this._debugLog(this._lastFailReason || 'open_form_failed', {type});
             return false;
         }
 
         this.ticketService.markPanelReady(type);
+        this.ticketService.recordPunishmentOpenSuccess();
+        await this.ticketService.persistPanelReadyState();
 
         if (steamId) {
             if (type === 'ban') {
@@ -80,6 +92,8 @@ class SitePunishmentBridge {
         try {
             const activated = await this.ticketService.activateManagementPanel(type);
             if (!activated) {
+                this._lastFailReason = 'management_tab_not_created';
+                this._debugLog('management_tab_not_created', {type});
                 return false;
             }
 
@@ -87,6 +101,8 @@ class SitePunishmentBridge {
 
             const hasIssueButton = await this._waitForIssueButton(type, 5000);
             if (!hasIssueButton) {
+                this._lastFailReason = 'issue_button_not_found';
+                this._debugLog('issue_button_not_found', {type});
                 return false;
             }
 
@@ -97,13 +113,29 @@ class SitePunishmentBridge {
             }
 
             if (!opened) {
+                this._lastFailReason = 'dialog_not_opened';
+                this._debugLog('dialog_not_opened', {type});
                 return false;
             }
 
-            await this._returnToTicketTab(returnContext, {closeManagementTab: false});
+            await new Promise(resolve => setTimeout(resolve, 150));
+
+            const returned = await this._returnToTicketTab(returnContext, {closeManagementTab: false});
+            if (!returned) {
+                this._debugLog('return_to_ticket_failed', {
+                    type,
+                    tabLabel: returnContext.tabLabel,
+                    pathname: returnContext.pathname
+                });
+            }
 
             if (!this._isTargetDialogOpen(type)) {
-                return false;
+                const retried = await this._tryLiveButtonClick(type, 3000);
+                if (!retried) {
+                    this._lastFailReason = 'dialog_closed_after_return';
+                    this._debugLog('dialog_closed_after_return', {type, returned});
+                    return false;
+                }
             }
 
             this._scheduleManagementTabCleanupOnDialogClose(
@@ -117,10 +149,9 @@ class SitePunishmentBridge {
     }
 
     _saveReturnContext(type) {
+        const tabContext = this.ticketService.collectReturnTabContext();
         this._returnContext = {
-            pathname: window.location.pathname || '/',
-            href: window.location.href,
-            tabLabel: this.ticketService.findActiveSpaTabLabel(),
+            ...tabContext,
             managementType: type || null,
             managementTabWasOpen: this.ticketService.isManagementSpaTabOpen(type),
             openedManagementTabForInit: false
@@ -185,25 +216,10 @@ class SitePunishmentBridge {
         const {closeManagementTab = false} = options;
 
         this.ticketService.suppressPermissionScan();
+        let returned = false;
+
         try {
-            let returnedViaTab = false;
-
-            if (returnContext.tabLabel) {
-                const tab = this.ticketService.findSpaTabButton(returnContext.tabLabel);
-                if (tab) {
-                    this.ticketService.dispatchElementClick(tab);
-                    await this.ticketService.waitForSpaTabActive(returnContext.tabLabel, 2000);
-                    returnedViaTab = true;
-                }
-            }
-
-            if (!returnedViaTab) {
-                const targetPath = returnContext.pathname || '/';
-                if (window.location.pathname !== targetPath) {
-                    const targetUrl = `${window.location.origin}${targetPath}`;
-                    window.history.pushState(null, '', targetUrl);
-                }
-            }
+            returned = await this.ticketService.restoreSpaTabFromContext(returnContext);
 
             if (closeManagementTab && returnContext.managementType) {
                 this.ticketService.closeManagementTab(returnContext.managementType);
@@ -214,6 +230,7 @@ class SitePunishmentBridge {
 
         this._clearReturnContext();
         this.ticketService.refreshComplaintPunishmentButtons();
+        return returned;
     }
 
     _findIssueButton(type) {
