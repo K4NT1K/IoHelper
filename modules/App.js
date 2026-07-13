@@ -25,6 +25,8 @@ class App {
         this.tableEnhancementsDebounceId = null;
         this.notificationModalObserver = null;
         this.notificationModalDebounceId = null;
+        this.ticketTabVisibilityObserver = null;
+        this.ticketTabVisibilityDebounceId = null;
         this.navigationWatcherInstalled = false;
         this._lastHref = this.window?.location?.href || '';
         this._lastTicketSectionPath = '';
@@ -45,7 +47,8 @@ class App {
             panelService: this.panelService,
             settings: this.settings,
             rules: this.rules,
-            muteExceptions: this.muteExceptions
+            muteExceptions: this.muteExceptions,
+            chrome
         });
         this.moderatorService = new ModeratorService({document, chrome});
         this.punishmentService = new PunishmentService({
@@ -87,6 +90,8 @@ class App {
         this.initTablesRowsObserver();
         this.initNotificationModalObserver();
         this.initPunishmentFormObserver();
+        this.ticketService.initMuteIssueFeature();
+        this.initTicketTabVisibilityObserver();
 
         this.handleTrackOffenderLoop();
     }
@@ -143,6 +148,7 @@ class App {
 
         if (!this.features.processTicketRules) {
             this.teardownTicketChatHistoryObservers();
+            this.ticketService.teardownTicketPunishmentButtons();
         }
 
         this.optimizer.setEnabled(this.features.optimizeSpaTabs);
@@ -211,6 +217,7 @@ class App {
 
         if (!nextFeatures.processTicketRules && previousFeatures.processTicketRules !== false) {
             this.ticketService.clearTicketRuleBadge();
+            this.ticketService.teardownTicketPunishmentButtons();
         }
 
         if (!nextFeatures.manageEmptyBlocks && previousFeatures.manageEmptyBlocks !== false) {
@@ -287,6 +294,8 @@ class App {
         } else {
             this.ticketService.clearSteamAccountCreationDate();
         }
+
+        this.ticketService.refreshComplaintPunishmentButtons();
     }
 
     initCurrentServerFeatures() {
@@ -447,6 +456,7 @@ class App {
         delete this.document.body.dataset.autoConnectedFor;
 
         this.teardownTicketChatHistoryObservers();
+        this.ticketService.teardownTicketPunishmentButtons();
         this.teardownTablesRowsObserver();
         this.teardownCurrentServerSectionObserver();
         this.teardownTableEnhancementsObserver();
@@ -462,6 +472,14 @@ class App {
         this.initTicketMountObserver();
         this.initTableEnhancementsObserver();
         this.initTablesRowsObserver();
+
+        void this.ticketService.scanModeratorPunishmentPermissions();
+
+        void this.ticketService.loadModeratorPermissions().then(() => {
+            if (this.ticketService.isComplaintPage()) {
+                this.ticketService.refreshComplaintPunishmentButtons();
+            }
+        });
     }
 
     teardownTicketChatHistoryObservers() {
@@ -739,6 +757,7 @@ class App {
     ensureTicketChatHistoryObserver(textarea) {
         if (this.ticketChatHistoryObservers.has(textarea)) return;
         if (!this.document.contains(textarea)) return;
+        if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
 
         const scopeEl = textarea.closest('section, article, main, [role="main"]')
             || textarea.parentElement
@@ -756,6 +775,7 @@ class App {
 
             const observer = new MutationObserver(() => {
                 if (!this.features.processTicketRules) return;
+                if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
                 this._debouncedProcessTicketRules(textarea);
             });
             entry.observer = observer;
@@ -805,6 +825,7 @@ class App {
 
     _runTicketChatAnalysis(textarea) {
         if (!this.document.contains(textarea)) return;
+        if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
 
         if (this.features.manageEmptyBlocks) {
             this.ticketService.manageEmptyBlocks();
@@ -815,6 +836,54 @@ class App {
         }
 
         this.ticketService.processTicketRules(textarea);
+    }
+
+    initTicketTabVisibilityObserver() {
+        if (this.ticketTabVisibilityObserver) {
+            return;
+        }
+
+        const scheduleVisibleTicketRefresh = () => {
+            if (this.ticketTabVisibilityDebounceId) {
+                clearTimeout(this.ticketTabVisibilityDebounceId);
+            }
+
+            this.ticketTabVisibilityDebounceId = setTimeout(() => {
+                this.ticketTabVisibilityDebounceId = null;
+
+                if (this.ticketService.isSitePunishmentDialogOpen()) {
+                    return;
+                }
+
+                const visibleTextarea = this.ticketService.findVisibleTicketResolutionTextarea();
+                if (visibleTextarea && this.features.processTicketRules) {
+                    this.ensureTicketChatHistoryObserver(visibleTextarea);
+                    this.ticketService.resetChatAnalysisCache(visibleTextarea);
+                    this._runTicketChatAnalysis(visibleTextarea);
+                }
+
+                this.ticketService.refreshComplaintPunishmentButtons();
+            }, 120);
+        };
+
+        this.ticketTabVisibilityObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type !== 'attributes') {
+                    continue;
+                }
+
+                if (['aria-hidden', 'class', 'style'].includes(mutation.attributeName)) {
+                    scheduleVisibleTicketRefresh();
+                    return;
+                }
+            }
+        });
+
+        this.ticketTabVisibilityObserver.observe(this.document.body, {
+            attributes: true,
+            attributeFilter: ['aria-hidden', 'class', 'style'],
+            subtree: true
+        });
     }
 
     initTablesRowsObserver() {

@@ -50,6 +50,7 @@
         "modules/BadgeService.js",
         "modules/PanelService.js",
         "modules/MessageService.js",
+        "modules/SitePunishmentBridge.js",
         "modules/TicketService.js",
         "modules/PunishmentService.js",
         "modules/ModeratorService.js",

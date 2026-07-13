@@ -1,5 +1,5 @@
 class TicketService {
-    constructor({document, utils, badgeService, panelService, settings, rules, muteExceptions = {}}) {
+    constructor({document, utils, badgeService, panelService, settings, rules, muteExceptions = {}, chrome = null}) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
@@ -7,6 +7,7 @@ class TicketService {
         this.settings = settings;
         this.rules = rules;
         this.muteExceptions = muteExceptions;
+        this.chrome = chrome;
 
         this.triggerRows = new Map();
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
@@ -20,12 +21,195 @@ class TicketService {
         this._currentServerRefreshTicketKey = null;
         this._currentServerRefreshSeconds = null;
         this.LEFT_OFFENDER_TTL_MS = 8 * 60 * 1000;
+
+        this.MODERATOR_PERMISSIONS_KEY = 'iohModeratorPermissions';
+        this.MUTE_MANAGEMENT_ROUTE = '/comms/list';
+        this.BAN_MANAGEMENT_ROUTE = '/bans/list';
+        this.TICKET_PUNISHMENT_ACTIONS_ID = 'ioh-ticket-punishment-actions';
+        this.TICKET_MUTE_BUTTON_ID = 'ioh-ticket-issue-mute';
+        this.TICKET_BAN_BUTTON_ID = 'ioh-ticket-issue-ban';
+        this.canIssueMute = false;
+        this.canIssueBan = false;
+        this.mutePanelReady = false;
+        this.banPanelReady = false;
+        this._cachedOpenMuteHandler = null;
+        this._cachedOpenBanHandler = null;
+        this._cachedMuteIssueButton = null;
+        this._cachedBanIssueButton = null;
+        this._punishmentPermissionObserver = null;
+        this._punishmentPermissionDebounceId = null;
+        this._muteRevokeDebounceId = null;
+        this._banRevokeDebounceId = null;
+        this._lastPunishmentScope = null;
+        this._isUpdatingPunishmentButtons = false;
+        this._permissionsHydrated = false;
+        this._permissionScanSuppressed = 0;
+        this._wasMutePanelActive = false;
+        this._wasBanPanelActive = false;
+        this.handleTicketMuteButtonClick = this.handleTicketMuteButtonClick.bind(this);
+        this.handleTicketBanButtonClick = this.handleTicketBanButtonClick.bind(this);
+        this.punishmentBridge = new SitePunishmentBridge({document, ticketService: this});
     }
 
     getChatCacheKey(textarea) {
+        const scope = this.getTicketScopeRoot(textarea);
+        const offenderId = this.extractSteamIdFromField(
+            this.findInfoFieldScoped('Нарушитель', scope)
+        ) || 'unknown';
+        const scopeToken = scope?.getAttribute?.('aria-hidden') ?? scope?.className?.slice(0, 40) ?? '';
         const path = window.location.pathname || window.location.href;
-        const marker = textarea?.placeholder || 'ticket';
-        return `${path}|${marker}`;
+        return `${path}|${offenderId}|${scopeToken}`;
+    }
+
+    getTicketScopeRoot(textarea) {
+        if (!textarea) {
+            return this.document.body;
+        }
+
+        let element = textarea.parentElement;
+        while (element && element !== this.document.body) {
+            if (element.hasAttribute?.('aria-hidden') || element.matches?.('section, article, main, [role="main"]')) {
+                return element;
+            }
+            element = element.parentElement;
+        }
+
+        return textarea.closest('section, article, main, [role="main"]')
+            || textarea.parentElement
+            || this.document.body;
+    }
+
+    isVisibleTicketTextarea(textarea) {
+        if (!textarea || !this.document.contains(textarea)) {
+            return false;
+        }
+
+        let element = textarea;
+        while (element) {
+            if (element.getAttribute?.('aria-hidden') === 'true') {
+                return false;
+            }
+
+            const style = window.getComputedStyle?.(element);
+            if (style?.display === 'none' || style?.visibility === 'hidden') {
+                return false;
+            }
+
+            element = element.parentElement;
+        }
+
+        return textarea.getClientRects().length > 0;
+    }
+
+    findVisibleTicketResolutionTextarea() {
+        const textareas = this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]');
+        for (const textarea of textareas) {
+            if (this.isVisibleTicketTextarea(textarea)) {
+                return textarea;
+            }
+        }
+
+        return null;
+    }
+
+    isComplaintPage() {
+        const path = window.location.pathname || '';
+        return /\/support\/(ticket|report)\b|\/ticket\/|\/reports?\//i.test(path);
+    }
+
+    isTicketPage() {
+        return this.isComplaintPage();
+    }
+
+    isOpenComplaintScope(scopeEl) {
+        if (!scopeEl) {
+            return false;
+        }
+
+        const hasOffender = this.findInfoFieldScoped('Нарушитель', scopeEl);
+        const hasPlayerInfo = Array.from(scopeEl.querySelectorAll('h3')).some(
+            header => header.textContent.includes('Информация об игроках')
+        );
+
+        return Boolean(hasOffender || hasPlayerInfo);
+    }
+
+    isOpenTicketScope(scopeEl) {
+        return this.isOpenComplaintScope(scopeEl);
+    }
+
+    isActiveComplaintScope(scopeEl) {
+        if (!scopeEl || !this.document.contains(scopeEl) || !this.isOpenComplaintScope(scopeEl)) {
+            return false;
+        }
+
+        let element = scopeEl;
+        while (element && element !== this.document.body) {
+            const ariaHidden = element.getAttribute?.('aria-hidden');
+            if (ariaHidden === 'true') {
+                return false;
+            }
+            if (ariaHidden === 'false') {
+                return true;
+            }
+            element = element.parentElement;
+        }
+
+        return true;
+    }
+
+    isActiveTicketScope(scopeEl) {
+        return this.isActiveComplaintScope(scopeEl);
+    }
+
+    findActiveComplaintScope() {
+        const hiddenFalsePanels = this.document.querySelectorAll('[aria-hidden="false"]');
+        for (const panel of hiddenFalsePanels) {
+            if (this.isOpenComplaintScope(panel)) {
+                return panel;
+            }
+        }
+
+        const structuralScopes = this.document.querySelectorAll('section, article, main, [role="main"]');
+        for (const scope of structuralScopes) {
+            if (this.isActiveComplaintScope(scope)) {
+                return scope;
+            }
+        }
+
+        return null;
+    }
+
+    findActiveTicketScope() {
+        return this.findActiveComplaintScope();
+    }
+
+    isSitePunishmentDialogOpen() {
+        return Boolean(this.document.querySelector('[role="dialog"][data-state="open"]'));
+    }
+
+    isTargetPunishmentDialogOpen(type) {
+        const inputSelector = type === 'ban' ? '#ban-steamid64' : '#mute-steamid64';
+        return Boolean(this.document.querySelector(`[role="dialog"][data-state="open"] ${inputSelector}`));
+    }
+
+    getBlockByHeaderScoped(textMatch, scopeEl) {
+        const root = scopeEl || this.document.body;
+        const headers = Array.from(root.querySelectorAll('h3'));
+        const targetHeader = headers.find(h3 => h3.textContent.includes(textMatch));
+        if (!targetHeader) {
+            return null;
+        }
+
+        let parent = targetHeader.parentElement;
+        while (parent && parent !== this.document.body) {
+            if (parent.querySelector('table')) {
+                return parent;
+            }
+            parent = parent.parentElement;
+        }
+
+        return null;
     }
 
     resetChatAnalysisCache(textarea) {
@@ -623,8 +807,980 @@ class TicketService {
 
     isExtensionUiElement(element) {
         return Boolean(
-            element?.closest('.ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #helper-suggest-badge, .ioh-badge-row')
+            element?.closest('.ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row')
         );
+    }
+
+    _isExtensionPunishmentButton(button) {
+        return button?.id === this.TICKET_MUTE_BUTTON_ID
+            || button?.id === this.TICKET_BAN_BUTTON_ID
+            || Boolean(button?.closest(`#${this.TICKET_PUNISHMENT_ACTIONS_ID}`));
+    }
+
+    async loadModeratorPermissions() {
+        let permissions = null;
+
+        if (this.chrome?.storage?.local) {
+            try {
+                const result = await this.chrome.storage.local.get(this.MODERATOR_PERMISSIONS_KEY);
+                if (result[this.MODERATOR_PERMISSIONS_KEY]) {
+                    permissions = result[this.MODERATOR_PERMISSIONS_KEY];
+                }
+            } catch (error) {
+                // ignore storage errors
+            }
+        }
+
+        if (!permissions) {
+            try {
+                const sessionRaw = sessionStorage.getItem(this.MODERATOR_PERMISSIONS_KEY);
+                if (sessionRaw) {
+                    permissions = JSON.parse(sessionRaw);
+                }
+            } catch (error) {
+                // ignore session storage errors
+            }
+        }
+
+        this.canIssueMute = Boolean(permissions?.mute);
+        this.canIssueBan = Boolean(permissions?.ban);
+        this._permissionsHydrated = true;
+    }
+
+    isPanelReadyForType(type) {
+        return type === 'ban' ? this.banPanelReady : this.mutePanelReady;
+    }
+
+    resetPanelReady(type) {
+        if (type === 'ban') {
+            this.banPanelReady = false;
+            this._cachedOpenBanHandler = null;
+            this._cachedBanIssueButton = null;
+            return;
+        }
+
+        this.mutePanelReady = false;
+        this._cachedOpenMuteHandler = null;
+        this._cachedMuteIssueButton = null;
+    }
+
+    getCachedIssueButton(type) {
+        const button = type === 'ban' ? this._cachedBanIssueButton : this._cachedMuteIssueButton;
+        return button?.isConnected ? button : null;
+    }
+
+    findSiteIssueButtonForType(type, options = {}) {
+        return this.findSiteIssueButtonInSection(
+            this.getManagementSectionTitleForType(type),
+            options
+        );
+    }
+
+    resolveIssueButtonForType(type) {
+        const sectionTitle = this.getManagementSectionTitleForType(type);
+        let button = this.getCachedIssueButton(type)
+            ?? this.findSiteIssueButtonForType(type, { requireVisible: false });
+
+        if (!button?.isConnected) {
+            button = this.findSiteIssueButtonForType(type, { requireVisible: false });
+        }
+
+        if (!button || !this._isButtonInSection(button, sectionTitle)) {
+            return null;
+        }
+
+        this._cacheIssueHandlerFromButton(button, type);
+        return button;
+    }
+
+    markPanelReady(type) {
+        if (type === 'ban') {
+            this.banPanelReady = true;
+        } else {
+            this.mutePanelReady = true;
+        }
+    }
+
+    suppressPermissionScan() {
+        this._permissionScanSuppressed += 1;
+    }
+
+    releasePermissionScan() {
+        if (this._permissionScanSuppressed > 0) {
+            this._permissionScanSuppressed -= 1;
+        }
+    }
+
+    _handleManagementPanelVisibilityForScan() {
+        const muteActive = this.isMuteManagementPanelActive();
+        const banActive = this.isBanManagementPanelActive();
+
+        if (this._permissionScanSuppressed > 0) {
+            this._wasMutePanelActive = muteActive;
+            this._wasBanPanelActive = banActive;
+            return;
+        }
+
+        const shouldScan = (muteActive && !this._wasMutePanelActive)
+            || (banActive && !this._wasBanPanelActive);
+
+        this._wasMutePanelActive = muteActive;
+        this._wasBanPanelActive = banActive;
+
+        if (shouldScan) {
+            void this.scanModeratorPunishmentPermissions();
+        }
+    }
+
+    _cancelPermissionRevoke(type) {
+        const timerKey = type === 'ban' ? '_banRevokeDebounceId' : '_muteRevokeDebounceId';
+        if (this[timerKey]) {
+            clearTimeout(this[timerKey]);
+            this[timerKey] = null;
+        }
+    }
+
+    _schedulePermissionRevoke(type) {
+        const timerKey = type === 'ban' ? '_banRevokeDebounceId' : '_muteRevokeDebounceId';
+        this._cancelPermissionRevoke(type);
+        this[timerKey] = setTimeout(() => {
+            this[timerKey] = null;
+            void this._tryRevokePermission(type);
+        }, 500);
+    }
+
+    async _tryRevokePermission(type) {
+        if (this._isUpdatingPunishmentButtons) {
+            return;
+        }
+
+        const panelActive = type === 'ban' ? this.isBanManagementPanelActive() : this.isMuteManagementPanelActive();
+        const button = type === 'ban' ? this.findSiteIssueBanButton() : this.findSiteIssueMuteButton();
+
+        if (!panelActive || button) {
+            return;
+        }
+
+        let changed = false;
+
+        if (type === 'ban' && this.canIssueBan) {
+            this.canIssueBan = false;
+            this.banPanelReady = false;
+            this._cachedOpenBanHandler = null;
+            this._cachedBanIssueButton = null;
+            changed = true;
+        } else if (type === 'mute' && this.canIssueMute) {
+            this.canIssueMute = false;
+            this.mutePanelReady = false;
+            this._cachedOpenMuteHandler = null;
+            this._cachedMuteIssueButton = null;
+            changed = true;
+        }
+
+        if (!changed) {
+            return;
+        }
+
+        await this._persistModeratorPermissions();
+        this.refreshComplaintPunishmentButtons();
+    }
+
+    async _persistModeratorPermissions() {
+        const permissions = {
+            mute: this.canIssueMute,
+            ban: this.canIssueBan
+        };
+
+        try {
+            sessionStorage.setItem(this.MODERATOR_PERMISSIONS_KEY, JSON.stringify(permissions));
+        } catch (error) {
+            // ignore session storage errors
+        }
+
+        if (!this.chrome?.storage?.local) {
+            return;
+        }
+
+        try {
+            await this.chrome.storage.local.set({
+                [this.MODERATOR_PERMISSIONS_KEY]: permissions
+            });
+        } catch (error) {
+            // ignore storage errors
+        }
+    }
+
+    isMuteManagementRoute() {
+        return /\/comms\/list\b/i.test(window.location.pathname || '');
+    }
+
+    isBanManagementRoute() {
+        return /\/bans\/list\b/i.test(window.location.pathname || '');
+    }
+
+    getManagementRouteForType(type) {
+        return type === 'ban' ? this.BAN_MANAGEMENT_ROUTE : this.MUTE_MANAGEMENT_ROUTE;
+    }
+
+    isMuteManagementPanelActive() {
+        return this._isManagementPanelVisible('Управление мутами');
+    }
+
+    isBanManagementPanelActive() {
+        return this._isManagementPanelVisible('Управление банами');
+    }
+
+    isMuteManagementPage() {
+        return this.isMuteManagementPanelActive();
+    }
+
+    isBanManagementPage() {
+        return this.isBanManagementPanelActive();
+    }
+
+    getManagementSectionTitleForType(type) {
+        return type === 'ban' ? 'Управление банами' : 'Управление мутами';
+    }
+
+    isManagementPanelActiveForType(type) {
+        return type === 'ban' ? this.isBanManagementPanelActive() : this.isMuteManagementPanelActive();
+    }
+
+    findSpaTabButton(tabLabel) {
+        const glassFxTabs = Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"]'));
+
+        for (const button of glassFxTabs) {
+            if (this.isExtensionUiElement(button)) {
+                continue;
+            }
+
+            const spans = Array.from(button.querySelectorAll('span'));
+            if (spans.some(span => span.textContent.trim() === tabLabel)) {
+                return button;
+            }
+        }
+
+        return Array.from(this.document.querySelectorAll('nav button')).find(button => {
+            if (this.isExtensionUiElement(button)) {
+                return false;
+            }
+
+            return Array.from(button.querySelectorAll('span'))
+                .some(span => span.textContent.trim() === tabLabel);
+        }) || null;
+    }
+
+    findActiveSpaTabLabel() {
+        const currentTab = Array.from(this.document.querySelectorAll('nav button.glass-fx, nav button[class*="glass-fx"]'))
+            .find(button => !this.isExtensionUiElement(button) && button.getAttribute('aria-current') === 'page');
+
+        if (currentTab) {
+            const labelSpan = Array.from(currentTab.querySelectorAll('span'))
+                .find(span => span.textContent.trim());
+            if (labelSpan) {
+                return labelSpan.textContent.trim();
+            }
+        }
+
+        const headerTitle = this.document.querySelector('header span');
+        if (headerTitle && !this.isExtensionUiElement(headerTitle)) {
+            const text = headerTitle.textContent.trim();
+            if (text) {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    isSpaTabActive(tabLabel) {
+        if (!tabLabel) {
+            return false;
+        }
+
+        const tab = this.findSpaTabButton(tabLabel);
+        if (tab?.getAttribute('aria-current') === 'page') {
+            return true;
+        }
+
+        const headerTitle = this.document.querySelector('header span');
+        if (headerTitle && !this.isExtensionUiElement(headerTitle)) {
+            return headerTitle.textContent.trim() === tabLabel;
+        }
+
+        return false;
+    }
+
+    waitForSpaTabActive(tabLabel, timeoutMs = 3000) {
+        if (this.isSpaTabActive(tabLabel)) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const deadline = Date.now() + timeoutMs;
+            const observer = new MutationObserver(() => {
+                if (this.isSpaTabActive(tabLabel)) {
+                    observer.disconnect();
+                    resolve(true);
+                } else if (Date.now() > deadline) {
+                    observer.disconnect();
+                    resolve(false);
+                }
+            });
+
+            observer.observe(this.document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['aria-current', 'aria-hidden', 'class']
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(this.isSpaTabActive(tabLabel));
+            }, timeoutMs + 50);
+        });
+    }
+
+    dispatchElementClick(element) {
+        if (!element) {
+            return false;
+        }
+
+        const handler = this.extractReactClickHandler(element);
+        const event = {
+            preventDefault() {},
+            stopPropagation() {},
+            nativeEvent: new MouseEvent('click', {bubbles: true}),
+            currentTarget: element,
+            target: element
+        };
+
+        if (typeof handler === 'function') {
+            try {
+                handler(event);
+                return true;
+            } catch (error) {
+                // fall through to native click
+            }
+        }
+
+        try {
+            element.click();
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    waitForPanelActive(sectionTitle, timeoutMs = 3000) {
+        if (this._isManagementPanelVisible(sectionTitle)) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const deadline = Date.now() + timeoutMs;
+            const observer = new MutationObserver(() => {
+                if (this._isManagementPanelVisible(sectionTitle)) {
+                    observer.disconnect();
+                    resolve(true);
+                } else if (Date.now() > deadline) {
+                    observer.disconnect();
+                    resolve(false);
+                }
+            });
+
+            observer.observe(this.document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['aria-hidden', 'class', 'style']
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(this._isManagementPanelVisible(sectionTitle));
+            }, timeoutMs + 50);
+        });
+    }
+
+    async activateManagementPanel(type) {
+        const sectionTitle = this.getManagementSectionTitleForType(type);
+
+        if (this.isManagementPanelActiveForType(type)) {
+            return true;
+        }
+
+        const tab = this.findSpaTabButton(sectionTitle);
+        if (!tab) {
+            return false;
+        }
+
+        if (!this.dispatchElementClick(tab)) {
+            return false;
+        }
+
+        const activated = await this.waitForPanelActive(sectionTitle, 3000);
+        if (!activated) {
+            return false;
+        }
+
+        const route = this.getManagementRouteForType(type);
+        const routePattern = route.replace(/^\//, '');
+        if (!window.location.pathname.includes(routePattern)) {
+            const targetUrl = `${window.location.origin}${route}`;
+            window.history.pushState(null, '', targetUrl);
+        }
+
+        return true;
+    }
+
+    _isManagementPanelVisible(sectionTitle) {
+        const headers = Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
+            .filter(element => (
+                !this.isExtensionUiElement(element)
+                && element.textContent.trim() === sectionTitle
+            ));
+
+        for (const header of headers) {
+            let element = header;
+            while (element && element !== this.document.body) {
+                const ariaHidden = element.getAttribute?.('aria-hidden');
+                if (ariaHidden === 'true') {
+                    break;
+                }
+                if (ariaHidden === 'false') {
+                    return true;
+                }
+                element = element.parentElement;
+            }
+        }
+
+        return false;
+    }
+
+    _getManagementPanelRoot(header) {
+        let element = header.parentElement;
+        while (element && element !== this.document.body) {
+            if (element.hasAttribute?.('aria-hidden')) {
+                return element;
+            }
+            element = element.parentElement;
+        }
+
+        return null;
+    }
+
+    _isButtonInSection(button, sectionTitle) {
+        if (!button) {
+            return false;
+        }
+
+        const headers = Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
+            .filter(element => (
+                !this.isExtensionUiElement(element)
+                && element.textContent.trim() === sectionTitle
+            ));
+
+        for (const header of headers) {
+            const panelRoot = this._getManagementPanelRoot(header);
+            if (panelRoot?.contains(button)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    _isHeaderInVisiblePanel(header) {
+        let element = header;
+        while (element && element !== this.document.body) {
+            const ariaHidden = element.getAttribute?.('aria-hidden');
+            if (ariaHidden === 'true') {
+                return false;
+            }
+            if (ariaHidden === 'false') {
+                return true;
+            }
+            element = element.parentElement;
+        }
+
+        return false;
+    }
+
+    findSiteIssueButtonInSection(sectionTitle, { requireVisible = true } = {}) {
+        const headers = Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
+            .filter(element => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle);
+
+        for (const header of headers) {
+            if (requireVisible && !this._isHeaderInVisiblePanel(header)) {
+                continue;
+            }
+
+            const panelRoot = this._getManagementPanelRoot(header);
+            if (!panelRoot) {
+                continue;
+            }
+
+            const button = Array.from(panelRoot.querySelectorAll('button')).find(candidate => (
+                !this._isExtensionPunishmentButton(candidate)
+                && candidate.textContent.trim() === 'Выдать блокировку'
+            ));
+            if (button) {
+                return button;
+            }
+        }
+
+        return null;
+    }
+
+    findSiteIssueMuteButton() {
+        return this.findSiteIssueButtonInSection('Управление мутами');
+    }
+
+    findSiteIssueBanButton() {
+        return this.findSiteIssueButtonInSection('Управление банами');
+    }
+
+    extractReactClickHandler(element) {
+        if (!element) {
+            return null;
+        }
+
+        const propsKey = Object.keys(element).find(key => key.startsWith('__reactProps$'));
+        if (propsKey && typeof element[propsKey]?.onClick === 'function') {
+            return element[propsKey].onClick;
+        }
+
+        const fiberKey = Object.keys(element).find(key => key.startsWith('__reactFiber$'));
+        let fiber = fiberKey ? element[fiberKey] : null;
+        while (fiber) {
+            if (typeof fiber.memoizedProps?.onClick === 'function') {
+                return fiber.memoizedProps.onClick;
+            }
+            if (typeof fiber.pendingProps?.onClick === 'function') {
+                return fiber.pendingProps.onClick;
+            }
+            fiber = fiber.return;
+        }
+
+        return null;
+    }
+
+    _cacheIssueHandlerFromButton(button, type) {
+        const sectionTitle = type === 'ban' ? 'Управление банами' : 'Управление мутами';
+        if (!this._isButtonInSection(button, sectionTitle)) {
+            return;
+        }
+
+        const handler = this.extractReactClickHandler(button);
+        if (typeof handler !== 'function') {
+            return;
+        }
+
+        if (type === 'ban') {
+            this._cachedOpenBanHandler = handler;
+            this._cachedBanIssueButton = button;
+            return;
+        }
+
+        this._cachedOpenMuteHandler = handler;
+        this._cachedMuteIssueButton = button;
+    }
+
+    async scanModeratorPunishmentPermissions() {
+        if (this._isUpdatingPunishmentButtons || this._permissionScanSuppressed > 0) {
+            return;
+        }
+
+        const mutePanelActive = this.isMuteManagementPanelActive();
+        const banPanelActive = this.isBanManagementPanelActive();
+
+        if (!mutePanelActive && !banPanelActive) {
+            return;
+        }
+
+        let changed = false;
+
+        if (mutePanelActive) {
+            const muteButton = this.findSiteIssueMuteButton();
+
+            if (muteButton) {
+                this._cancelPermissionRevoke('mute');
+                this._cacheIssueHandlerFromButton(muteButton, 'mute');
+                if (!this.canIssueMute) {
+                    this.canIssueMute = true;
+                    changed = true;
+                }
+            } else if (this.canIssueMute) {
+                this._schedulePermissionRevoke('mute');
+            }
+        }
+
+        if (banPanelActive) {
+            const banButton = this.findSiteIssueBanButton();
+
+            if (banButton) {
+                this._cancelPermissionRevoke('ban');
+                this._cacheIssueHandlerFromButton(banButton, 'ban');
+                if (!this.canIssueBan) {
+                    this.canIssueBan = true;
+                    changed = true;
+                }
+            } else if (this.canIssueBan) {
+                this._schedulePermissionRevoke('ban');
+            }
+        }
+
+        if (changed) {
+            await this._persistModeratorPermissions();
+            this.refreshComplaintPunishmentButtons();
+        }
+    }
+
+    initMuteIssueFeature() {
+        if (this._punishmentPermissionObserver) {
+            return;
+        }
+
+        this.loadModeratorPermissions().then(() => {
+            this.refreshComplaintPunishmentButtons();
+            setTimeout(() => this.refreshComplaintPunishmentButtons(), 500);
+        });
+
+        this._wasMutePanelActive = this.isMuteManagementPanelActive();
+        this._wasBanPanelActive = this.isBanManagementPanelActive();
+        this.scanModeratorPunishmentPermissions();
+
+        this._punishmentPermissionObserver = new MutationObserver(() => {
+            if (this._punishmentPermissionDebounceId) {
+                clearTimeout(this._punishmentPermissionDebounceId);
+            }
+
+            this._punishmentPermissionDebounceId = setTimeout(() => {
+                this._punishmentPermissionDebounceId = null;
+                this._handleManagementPanelVisibilityForScan();
+            }, 150);
+        });
+
+        this._punishmentPermissionObserver.observe(this.document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['aria-hidden', 'class', 'style']
+        });
+    }
+
+    teardownMuteIssueFeature() {
+        if (this._punishmentPermissionDebounceId) {
+            clearTimeout(this._punishmentPermissionDebounceId);
+            this._punishmentPermissionDebounceId = null;
+        }
+
+        this._cancelPermissionRevoke('mute');
+        this._cancelPermissionRevoke('ban');
+
+        this._punishmentPermissionObserver?.disconnect();
+        this._punishmentPermissionObserver = null;
+    }
+
+    findCloseTicketButton(scopeEl) {
+        const root = scopeEl || this.document.body;
+        return Array.from(root.querySelectorAll('button')).find(
+            button => button.textContent.trim() === 'Закрыть тикет'
+        ) || null;
+    }
+
+    findPunishmentInsertPoint(scopeEl) {
+        const root = scopeEl || this.document.body;
+        const closeButton = this.findCloseTicketButton(root);
+        if (closeButton?.parentNode) {
+            return {parent: closeButton.parentNode, before: closeButton};
+        }
+
+        const backButton = Array.from(root.querySelectorAll('button')).find(
+            button => button.textContent.trim().includes('Вернуться назад')
+        );
+        if (backButton?.parentNode) {
+            return {parent: backButton.parentNode, before: backButton};
+        }
+
+        const actionRow = root.querySelector('.sc-jcEreA');
+        if (actionRow) {
+            return {parent: actionRow, before: null};
+        }
+
+        return {parent: root, before: null};
+    }
+
+    createPunishmentActionsContainer() {
+        let container = this.document.getElementById(this.TICKET_PUNISHMENT_ACTIONS_ID);
+        if (container) {
+            return container;
+        }
+
+        container = this.document.createElement('div');
+        container.id = this.TICKET_PUNISHMENT_ACTIONS_ID;
+        container.className = 'ioh-ticket-punishment-actions';
+
+        const muteButton = this.document.createElement('button');
+        muteButton.id = this.TICKET_MUTE_BUTTON_ID;
+        muteButton.type = 'button';
+        muteButton.textContent = 'Выдать мут';
+        muteButton.className = 'ioh-ticket-issue-mute';
+        muteButton.addEventListener('click', this.handleTicketMuteButtonClick);
+
+        const banButton = this.document.createElement('button');
+        banButton.id = this.TICKET_BAN_BUTTON_ID;
+        banButton.type = 'button';
+        banButton.textContent = 'Выдать бан';
+        banButton.className = 'ioh-ticket-issue-ban';
+        banButton.addEventListener('click', this.handleTicketBanButtonClick);
+
+        container.append(muteButton, banButton);
+        return container;
+    }
+
+    _ensurePunishmentActionsPlacement(scope) {
+        const insertPoint = this.findPunishmentInsertPoint(scope);
+        if (!insertPoint?.parent) {
+            return false;
+        }
+
+        const container = this.createPunishmentActionsContainer();
+        if (insertPoint.before) {
+            if (container.parentNode !== insertPoint.parent || container.nextElementSibling !== insertPoint.before) {
+                insertPoint.parent.insertBefore(container, insertPoint.before);
+            }
+        } else if (container.parentNode !== insertPoint.parent) {
+            insertPoint.parent.appendChild(container);
+        }
+
+        this._lastPunishmentScope = scope;
+        return true;
+    }
+
+    shouldShowTicketMuteButton(scope) {
+        if (!this._permissionsHydrated || !this.canIssueMute) {
+            return false;
+        }
+
+        if (!scope || !this.isOpenComplaintScope(scope)) {
+            return false;
+        }
+
+        const muteHistoryBlock = this.getBlockByHeaderScoped('История Мутов', scope);
+        if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    shouldShowTicketBanButton(scope) {
+        if (!this._permissionsHydrated || !this.canIssueBan) {
+            return false;
+        }
+
+        return Boolean(scope && this.isOpenComplaintScope(scope));
+    }
+
+    _applyPunishmentButtonsVisibility(scope) {
+        const container = this.document.getElementById(this.TICKET_PUNISHMENT_ACTIONS_ID);
+        if (!container) {
+            return;
+        }
+
+        const muteButton = this.document.getElementById(this.TICKET_MUTE_BUTTON_ID);
+        const banButton = this.document.getElementById(this.TICKET_BAN_BUTTON_ID);
+        const showMute = this.shouldShowTicketMuteButton(scope);
+        const showBan = this.shouldShowTicketBanButton(scope);
+
+        if (!showMute && !showBan) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = '';
+        if (muteButton) {
+            muteButton.style.display = showMute ? '' : 'none';
+        }
+        if (banButton) {
+            banButton.style.display = showBan ? '' : 'none';
+        }
+    }
+
+    updateTicketPunishmentButtons() {
+        if (!this.isComplaintPage()) {
+            return;
+        }
+
+        if (this.isSitePunishmentDialogOpen() && this._lastPunishmentScope?.isConnected) {
+            this._applyPunishmentButtonsVisibility(this._lastPunishmentScope);
+            return;
+        }
+
+        const scope = this.findActiveComplaintScope() || (
+            this._lastPunishmentScope?.isConnected ? this._lastPunishmentScope : null
+        );
+        const hasPermissions = this.canIssueMute || this.canIssueBan;
+
+        if (!scope) {
+            if (!hasPermissions && !this.isSitePunishmentDialogOpen()) {
+                const container = this.document.getElementById(this.TICKET_PUNISHMENT_ACTIONS_ID);
+                if (container) {
+                    container.style.display = 'none';
+                }
+            }
+            return;
+        }
+
+        this._isUpdatingPunishmentButtons = true;
+        try {
+            if (!this._ensurePunishmentActionsPlacement(scope)) {
+                return;
+            }
+
+            this._applyPunishmentButtonsVisibility(scope);
+        } finally {
+            this._isUpdatingPunishmentButtons = false;
+        }
+    }
+
+    ensureTicketPunishmentButtons() {
+        this.updateTicketPunishmentButtons();
+    }
+
+    refreshComplaintPunishmentButtons() {
+        if (!this.isComplaintPage()) {
+            return;
+        }
+
+        this.updateTicketPunishmentButtons();
+    }
+
+    refreshTicketPunishmentButtons() {
+        this.refreshComplaintPunishmentButtons();
+    }
+
+    clearTicketPunishmentButtons() {
+        this.document.getElementById(this.TICKET_PUNISHMENT_ACTIONS_ID)?.remove();
+        this._lastPunishmentScope = null;
+    }
+
+    teardownTicketPunishmentButtons() {
+        this.clearTicketPunishmentButtons();
+    }
+
+    getOffenderSteamIdForScope(scope) {
+        const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
+        return this.extractSteamIdFromField(offenderField);
+    }
+
+    getActivePunishmentScope() {
+        return this.findActiveComplaintScope() || this._lastPunishmentScope;
+    }
+
+    handleTicketMuteButtonClick() {
+        const scope = this.getActivePunishmentScope();
+        const steamId = this.getOffenderSteamIdForScope(scope);
+        void this.openSiteMuteForm(steamId);
+    }
+
+    handleTicketBanButtonClick() {
+        const scope = this.getActivePunishmentScope();
+        const steamId = this.getOffenderSteamIdForScope(scope);
+        void this.openSiteBanForm(steamId);
+    }
+
+    _invokeCachedSiteHandler(handler, type) {
+        if (typeof handler !== 'function') {
+            return false;
+        }
+
+        try {
+            handler({
+                preventDefault() {},
+                stopPropagation() {},
+                nativeEvent: new MouseEvent('click'),
+                currentTarget: null,
+                target: null
+            });
+            return true;
+        } catch (error) {
+            console.warn(`[IO Helper] Не удалось открыть форму ${type}:`, error);
+            if (type === 'ban') {
+                this._cachedOpenBanHandler = null;
+            } else {
+                this._cachedOpenMuteHandler = null;
+            }
+            return false;
+        }
+    }
+
+    openSiteMuteForm(steamId) {
+        return this.punishmentBridge.openMuteForm(steamId);
+    }
+
+    openSiteBanForm(steamId) {
+        return this.punishmentBridge.openBanForm(steamId);
+    }
+
+    prefillMuteFormSteamId(steamId) {
+        this._prefillPunishmentFormSteamId(steamId, '#mute-steamid64');
+    }
+
+    prefillBanFormSteamId(steamId) {
+        this._prefillPunishmentFormSteamId(steamId, '#ban-steamid64');
+    }
+
+    _prefillPunishmentFormSteamId(steamId, inputSelector) {
+        if (!steamId) {
+            return;
+        }
+
+        const applyValue = (input) => {
+            if (!input) {
+                return false;
+            }
+
+            if (input.value !== steamId) {
+                input.value = steamId;
+                input.dispatchEvent(new Event('input', {bubbles: true}));
+                input.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+
+            return true;
+        };
+
+        const existingInput = this.document.querySelector(`[role="dialog"] ${inputSelector}`);
+        if (applyValue(existingInput)) {
+            return;
+        }
+
+        const deadline = Date.now() + 2000;
+        const observer = new MutationObserver(() => {
+            const input = this.document.querySelector(`[role="dialog"] ${inputSelector}`);
+            if (applyValue(input)) {
+                observer.disconnect();
+                return;
+            }
+
+            if (Date.now() > deadline) {
+                observer.disconnect();
+            }
+        });
+
+        observer.observe(this.document.body, {childList: true, subtree: true});
+        setTimeout(() => observer.disconnect(), 2100);
+    }
+
+    findInfoFieldScoped(labelText, scopeEl) {
+        const root = scopeEl || this.document.body;
+        const label = Array.from(root.querySelectorAll('span, div'))
+            .find(element => !this.isExtensionUiElement(element) && element.textContent.trim() === labelText);
+
+        return label?.parentElement || null;
     }
 
     findInfoField(labelText) {
@@ -1274,6 +2430,11 @@ class TicketService {
     }
 
     async processTicketRules(textarea) {
+        if (!this.isVisibleTicketTextarea(textarea)) {
+            return;
+        }
+
+        const scope = this.getTicketScopeRoot(textarea);
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
         const reason = analysisIcons.reason;
@@ -1281,10 +2442,12 @@ class TicketService {
         const chatError = analysisIcons.chatError;
         const shield = analysisIcons.shield;
 
-        this.connectToCurrentServer();
+        if (this.settings?.features?.autoConnectServer) {
+            this.connectToCurrentServer();
+        }
 
-        const muteHistoryBlock = this.getMuteHistoryBlock();
-        const chatHistoryBlock = this.getBlockByHeader('История Чата');
+        const muteHistoryBlock = this.getBlockByHeaderScoped('История Мутов', scope);
+        const chatHistoryBlock = this.getBlockByHeaderScoped('История Чата', scope);
 
         if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${chatError}<span>Внимание:<b> У игрока уже есть активный мут!</b></span></div>`, textarea);

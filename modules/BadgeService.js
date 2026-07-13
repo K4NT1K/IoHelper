@@ -8,10 +8,14 @@ class BadgeService {
         if (!badge) {
             badge = this.document.createElement('div');
             badge.id = elementId;
-            if (targetTextarea && targetTextarea.parentNode) {
-                targetTextarea.parentNode.insertBefore(badge, targetTextarea);
-            }
         }
+
+        if (targetTextarea?.parentNode && badge.parentNode !== targetTextarea.parentNode) {
+            targetTextarea.parentNode.insertBefore(badge, targetTextarea);
+        } else if (!badge.parentNode && targetTextarea?.parentNode) {
+            targetTextarea.parentNode.insertBefore(badge, targetTextarea);
+        }
+
         badge.className = `ioh-info-badge ioh-info-badge--${variant}`;
         badge.innerHTML = innerHTML;
     }
