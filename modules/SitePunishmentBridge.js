@@ -122,11 +122,12 @@ class SitePunishmentBridge {
 
             const returned = await this._returnToTicketTab(returnContext, {closeManagementTab: false});
             if (!returned) {
-                this._debugLog('return_to_ticket_failed', {
-                    type,
-                    tabLabel: returnContext.tabLabel,
-                    pathname: returnContext.pathname
-                });
+            this._debugLog('return_to_ticket_failed', {
+                type,
+                tabLabel: returnContext.tabLabel,
+                ticketId: returnContext.ticketId,
+                pathname: returnContext.pathname
+            });
             }
 
             if (!this._isTargetDialogOpen(type)) {

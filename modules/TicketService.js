@@ -28,6 +28,7 @@ class TicketService {
         this.TICKET_PUNISHMENT_ACTIONS_ID = 'ioh-ticket-punishment-actions';
         this.TICKET_MUTE_BUTTON_ID = 'ioh-ticket-issue-mute';
         this.TICKET_BAN_BUTTON_ID = 'ioh-ticket-issue-ban';
+        this.TICKET_LIST_TAB_LABELS = ['Актуальные тикеты'];
         this.canIssueMute = false;
         this.canIssueBan = false;
         this.mutePanelReady = false;
@@ -1378,31 +1379,161 @@ class TicketService {
         return labelSpan ? labelSpan.textContent.trim() : null;
     }
 
-    findSpaTabButtonFuzzy(tabLabel) {
+    findSpaTabButtonFuzzy(tabLabel, options = {}) {
+        const {isComplaintReturn = false} = options;
+
         if (!tabLabel) {
             return null;
         }
 
         const exact = this.findSpaTabButton(tabLabel);
         if (exact) {
-            return exact;
+            const exactLabel = this._getSpaTabLabelFromButton(exact);
+            if (!isComplaintReturn || !this.isTicketListTabLabel(exactLabel)) {
+                return exact;
+            }
+        }
+
+        if (isComplaintReturn && tabLabel.toLowerCase() === 'тикет') {
+            return this.findComplaintDetailSpaTab(null);
         }
 
         const normalizedLabel = tabLabel.toLowerCase();
 
         for (const button of this._getAllSpaTabButtons()) {
             const label = this._getSpaTabLabelFromButton(button);
-            if (!label) {
+            if (!label || this.isTicketListTabLabel(label)) {
                 continue;
             }
 
             const normalized = label.toLowerCase();
-            if (normalized.includes(normalizedLabel) || normalizedLabel.includes(normalized)) {
+            if (normalized === normalizedLabel) {
+                return button;
+            }
+
+            if (normalized.startsWith(`${normalizedLabel} `) || normalized.startsWith(`${normalizedLabel}#`)) {
                 return button;
             }
         }
 
         return null;
+    }
+
+    isTicketListTabLabel(label) {
+        if (!label) {
+            return false;
+        }
+
+        const normalized = label.toLowerCase().trim();
+        return this.TICKET_LIST_TAB_LABELS.some(listLabel => {
+            const listNormalized = listLabel.toLowerCase();
+            return normalized === listNormalized || normalized.includes(listNormalized);
+        });
+    }
+
+    extractTicketIdFromComplaintScope(scopeEl) {
+        if (!scopeEl) {
+            return null;
+        }
+
+        const headers = scopeEl.querySelectorAll('h3');
+        for (const header of headers) {
+            const text = header.textContent || '';
+            const ticketMatch = text.match(/(?:тикет|ticket|жалоб)[^#]*#(\d+)/i);
+            if (ticketMatch) {
+                return ticketMatch[1];
+            }
+
+            const hashMatch = text.match(/#(\d+)/);
+            if (hashMatch && /тикет|ticket|жалоб/i.test(text)) {
+                return hashMatch[1];
+            }
+        }
+
+        return null;
+    }
+
+    extractActiveComplaintTicketId() {
+        const scope = this.findActiveComplaintScope() || this._lastPunishmentScope;
+        return this.extractTicketIdFromComplaintScope(scope);
+    }
+
+    findSpaTabByTicketId(ticketId) {
+        if (!ticketId) {
+            return null;
+        }
+
+        const id = String(ticketId);
+        return this._getAllSpaTabButtons().find(button => {
+            const label = this._getSpaTabLabelFromButton(button);
+            return label && label.includes(`#${id}`);
+        }) || null;
+    }
+
+    findComplaintDetailSpaTab(ticketId = null) {
+        if (ticketId) {
+            const byId = this.findSpaTabByTicketId(ticketId);
+            if (byId) {
+                return byId;
+            }
+        }
+
+        return this._getAllSpaTabButtons().find(button => {
+            const label = this._getSpaTabLabelFromButton(button);
+            if (!label || this.isTicketListTabLabel(label)) {
+                return false;
+            }
+
+            const normalized = label.toLowerCase();
+            return normalized === 'тикет'
+                || /^тикет\s*#\d+/.test(normalized)
+                || (normalized.startsWith('тикет ') && !normalized.includes('актуальные'));
+        }) || null;
+    }
+
+    isComplaintDetailPath(pathname, ticketId = null) {
+        const path = pathname || '';
+        if (ticketId && path.includes(String(ticketId))) {
+            return true;
+        }
+
+        return /\/(?:support\/(?:ticket|report)|tickets?|reports?)\/[\w-]+\/?$/i.test(path)
+            && !/\/(?:support\/)?(?:tickets?|reports?)\/?$/i.test(path);
+    }
+
+    isComplaintScopeRestored() {
+        return Boolean(this.findActiveComplaintScope());
+    }
+
+    waitForComplaintScopeRestored(timeoutMs = 3000) {
+        if (this.isComplaintScopeRestored()) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const deadline = Date.now() + timeoutMs;
+            const observer = new MutationObserver(() => {
+                if (this.isComplaintScopeRestored()) {
+                    observer.disconnect();
+                    resolve(true);
+                } else if (Date.now() > deadline) {
+                    observer.disconnect();
+                    resolve(false);
+                }
+            });
+
+            observer.observe(this.document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['aria-hidden', 'class', 'style']
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(this.isComplaintScopeRestored());
+            }, timeoutMs + 50);
+        });
     }
 
     findNonManagementSpaTab(excludeLabels = []) {
@@ -1412,7 +1543,9 @@ class TicketService {
 
         return this._getAllSpaTabButtons().find(button => {
             const label = this._getSpaTabLabelFromButton(button);
-            return label && !exclude.has(label.toLowerCase());
+            return label
+                && !exclude.has(label.toLowerCase())
+                && !this.isTicketListTabLabel(label);
         }) || null;
     }
 
@@ -1445,8 +1578,30 @@ class TicketService {
     }
 
     collectReturnTabContext() {
-        const activeTabButton = this.findActiveSpaTabButton();
+        const complaintScope = this.findActiveComplaintScope() || this._lastPunishmentScope;
+        const isComplaintReturn = Boolean(complaintScope && this.isOpenComplaintScope(complaintScope));
+        const ticketId = isComplaintReturn
+            ? this.extractTicketIdFromComplaintScope(complaintScope)
+            : null;
+
+        let activeTabButton = this.findActiveSpaTabButton();
+        if (!activeTabButton && isComplaintReturn) {
+            activeTabButton = this.findComplaintDetailSpaTab(ticketId);
+        }
+
         const tabLabelCandidates = this.collectSpaTabLabelCandidates();
+
+        if (ticketId) {
+            const ticketTab = this.findSpaTabByTicketId(ticketId);
+            if (ticketTab) {
+                activeTabButton = ticketTab;
+                const ticketTabLabel = this._getSpaTabLabelFromButton(ticketTab);
+                if (ticketTabLabel && !tabLabelCandidates.includes(ticketTabLabel)) {
+                    tabLabelCandidates.unshift(ticketTabLabel);
+                }
+            }
+        }
+
         const tabLabel = activeTabButton
             ? this._getSpaTabLabelFromButton(activeTabButton)
             : tabLabelCandidates[0] || null;
@@ -1456,7 +1611,9 @@ class TicketService {
             href: window.location.href,
             tabLabel,
             tabButton: activeTabButton,
-            tabLabelCandidates
+            tabLabelCandidates,
+            ticketId,
+            isComplaintReturn
         };
     }
 
@@ -1480,60 +1637,79 @@ class TicketService {
             tabButton,
             tabLabel,
             tabLabelCandidates = [],
-            pathname
+            pathname,
+            ticketId,
+            isComplaintReturn
         } = returnContext || {};
 
-        let returnedViaTab = false;
+        const tryActivateTab = async (tab) => {
+            if (!tab?.isConnected) {
+                return false;
+            }
 
-        if (tabButton?.isConnected) {
-            this.dispatchElementClick(tabButton);
-            const activeLabel = this._getSpaTabLabelFromButton(tabButton) || tabLabel;
+            this.dispatchElementClick(tab);
+            const activeLabel = this._getSpaTabLabelFromButton(tab);
             if (activeLabel) {
                 await this.waitForSpaTabActive(activeLabel, 4000);
             }
-            returnedViaTab = this.isPathnameActive(pathname)
+
+            if (isComplaintReturn) {
+                return this.waitForComplaintScopeRestored(3000);
+            }
+
+            return this.isPathnameActive(pathname)
                 || (activeLabel ? this.isSpaTabActive(activeLabel) : false);
+        };
+
+        if (await tryActivateTab(tabButton)) {
+            return true;
         }
 
-        if (!returnedViaTab) {
-            const labelsToTry = [...new Set([tabLabel, ...tabLabelCandidates].filter(Boolean))];
-            for (const label of labelsToTry) {
-                const tab = this.findSpaTabButton(label) || this.findSpaTabButtonFuzzy(label);
-                if (!tab) {
-                    continue;
-                }
-
-                this.dispatchElementClick(tab);
-                const activeLabel = this._getSpaTabLabelFromButton(tab) || label;
-                await this.waitForSpaTabActive(activeLabel, 4000);
-
-                if (this.isPathnameActive(pathname) || this.isSpaTabActive(activeLabel)) {
-                    returnedViaTab = true;
-                    break;
-                }
+        if (ticketId) {
+            const ticketTab = this.findSpaTabByTicketId(ticketId);
+            if (await tryActivateTab(ticketTab)) {
+                return true;
             }
         }
 
-        if (!returnedViaTab) {
+        const labelsToTry = [...new Set([tabLabel, ...tabLabelCandidates].filter(Boolean))];
+        for (const label of labelsToTry) {
+            const tab = this.findSpaTabButton(label)
+                || this.findSpaTabButtonFuzzy(label, {isComplaintReturn});
+            if (await tryActivateTab(tab)) {
+                return true;
+            }
+        }
+
+        if (isComplaintReturn) {
+            const complaintTab = this.findComplaintDetailSpaTab(ticketId);
+            if (await tryActivateTab(complaintTab)) {
+                return true;
+            }
+        } else {
             const tab = this.findNonManagementSpaTab(tabLabelCandidates);
-            if (tab) {
-                this.dispatchElementClick(tab);
-                const activeLabel = this._getSpaTabLabelFromButton(tab);
-                if (activeLabel) {
-                    await this.waitForSpaTabActive(activeLabel, 4000);
-                }
-                returnedViaTab = this.isPathnameActive(pathname)
-                    || (activeLabel ? this.isSpaTabActive(activeLabel) : false);
+            if (await tryActivateTab(tab)) {
+                return true;
             }
         }
 
-        if (!returnedViaTab && pathname) {
+        const canUsePathFallback = pathname && (
+            !isComplaintReturn || this.isComplaintDetailPath(pathname, ticketId)
+        );
+        if (canUsePathFallback) {
             this.navigateViaPushState(pathname);
-            await new Promise(resolve => setTimeout(resolve, 100));
-            returnedViaTab = this.isPathnameActive(pathname);
+            await new Promise(resolve => setTimeout(resolve, 150));
+
+            if (isComplaintReturn && this.isComplaintScopeRestored()) {
+                return true;
+            }
+
+            if (this.isPathnameActive(pathname)) {
+                return true;
+            }
         }
 
-        return returnedViaTab;
+        return false;
     }
 
     findActiveSpaTabLabel() {
