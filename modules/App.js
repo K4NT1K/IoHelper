@@ -30,6 +30,7 @@ class App {
         this.navigationWatcherInstalled = false;
         this._lastHref = this.window?.location?.href || '';
         this._lastTicketSectionPath = '';
+        this._lastVisibleTicketTextarea = null;
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -454,6 +455,7 @@ class App {
 
         delete this.document.body.dataset.autoConnected;
         delete this.document.body.dataset.autoConnectedFor;
+        this._lastVisibleTicketTextarea = null;
 
         this.teardownTicketChatHistoryObservers();
         this.ticketService.teardownTicketPunishmentButtons();
@@ -699,7 +701,9 @@ class App {
             if (
                 node.closest?.('.ioh-panel') ||
                 node.closest?.('.ioh-info-badge') ||
-                node.closest?.('.ioh-account-created')
+                node.closest?.('.ioh-account-created') ||
+                node.closest?.('#ioh-ticket-punishment-actions') ||
+                node.closest?.('.ioh-ticket-punishment-actions')
             ) {
                 return false;
             }
@@ -838,6 +842,26 @@ class App {
         this.ticketService.processTicketRules(textarea);
     }
 
+    _isRelevantTicketTabVisibilityMutation(mutations) {
+        for (const mutation of mutations) {
+            if (mutation.type !== 'attributes') {
+                continue;
+            }
+
+            if (!['aria-hidden', 'class', 'style'].includes(mutation.attributeName)) {
+                continue;
+            }
+
+            if (this.ticketService.isExtensionUiElement(mutation.target)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     initTicketTabVisibilityObserver() {
         if (this.ticketTabVisibilityObserver) {
             return;
@@ -856,6 +880,12 @@ class App {
                 }
 
                 const visibleTextarea = this.ticketService.findVisibleTicketResolutionTextarea();
+                if (visibleTextarea === this._lastVisibleTicketTextarea) {
+                    return;
+                }
+
+                this._lastVisibleTicketTextarea = visibleTextarea;
+
                 if (visibleTextarea && this.features.processTicketRules) {
                     this.ensureTicketChatHistoryObserver(visibleTextarea);
                     this.ticketService.resetChatAnalysisCache(visibleTextarea);
@@ -867,16 +897,11 @@ class App {
         };
 
         this.ticketTabVisibilityObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type !== 'attributes') {
-                    continue;
-                }
-
-                if (['aria-hidden', 'class', 'style'].includes(mutation.attributeName)) {
-                    scheduleVisibleTicketRefresh();
-                    return;
-                }
+            if (!this._isRelevantTicketTabVisibilityMutation(mutations)) {
+                return;
             }
+
+            scheduleVisibleTicketRefresh();
         });
 
         this.ticketTabVisibilityObserver.observe(this.document.body, {

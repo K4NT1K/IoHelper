@@ -1823,16 +1823,26 @@ class TicketService {
         const showBan = this.shouldShowTicketBanButton(scope);
 
         if (!showMute && !showBan) {
-            container.style.display = 'none';
+            if (container.style.display !== 'none') {
+                container.style.display = 'none';
+            }
             return;
         }
 
-        container.style.display = '';
+        if (container.style.display !== '') {
+            container.style.display = '';
+        }
         if (muteButton) {
-            muteButton.style.display = showMute ? '' : 'none';
+            const nextMuteDisplay = showMute ? '' : 'none';
+            if (muteButton.style.display !== nextMuteDisplay) {
+                muteButton.style.display = nextMuteDisplay;
+            }
         }
         if (banButton) {
-            banButton.style.display = showBan ? '' : 'none';
+            const nextBanDisplay = showBan ? '' : 'none';
+            if (banButton.style.display !== nextBanDisplay) {
+                banButton.style.display = nextBanDisplay;
+            }
         }
     }
 
