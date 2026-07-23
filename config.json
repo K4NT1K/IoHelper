@@ -27,7 +27,7 @@
     ],
     "reasonTriggersAutoconnect": [
       "войс", "voice", "музык", "music", "стопит", "stopit", "мешает", "препятств", "prepyatstv", "руин", "ruin",
-      "гриф", "grief", "grif", "bait", "байт", "ahk", "ахк"
+      "гриф", "grief", "grif", "bait", "байт", "ahk", "ахк", "soundpad", "саундпад"
     ],
     "reasonTriggers": [
       "крутилка", "крутилкой", "крутится", "krutilka", "krutilkoy", "spin", "hvh", "hwh", "хвх", "rage", "рейдж"
@@ -128,7 +128,7 @@
         "гондон", "gondon", "gandon", "шлюх", "шалав", "шавк", "хуйло", "бич", "мразь", "mraz", "тварь", "фрик",
         "долбоеб", "долбоёб", "долбаёб", "долбаеб", "далбаеб", "далбаёб", "далбоеб", "далбоёб", "терп", "мудак", "бляд",
         "выблядок", "ебанат", "дура", "fat", "bitch", "faggot", "retard", "daun", "dayn", "pidor", "pidr", "shlyh",
-        "shluh", "dolbaeb", "dolboeb", "cloyn", "clown", "eblan", "huesos", "tvar", "dog", "нытик", "ебен", "аутист",
+        "shluh", "dolbaeb", "dolboeb", "cloyn", "clown", "eblan", "huesos", "xuesos", "xyesos", "tvar", "dog", "нытик", "ебен", "аутист",
         "autist", "обезьян", "obezian", "obezyan", "подонок", "подонки", "podonok", "podonki", "kurwa", "педофил",
         "pedofil"
       ],
