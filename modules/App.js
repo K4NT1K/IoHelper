@@ -56,7 +56,6 @@ class App {
             document,
             durations: config.punishmentDurations
         });
-        this.optimizer = new Optimizer({window, disabledTabKeys: ['reports']});
     }
 
     start() {
@@ -81,7 +80,6 @@ class App {
             this.updateSettings(settings);
         });
 
-        this.optimizer.setEnabled(this.features.optimizeSpaTabs);
         this.initNavigationWatcher();
         this.runDOMUpdates();
         this.initTicketMountObserver();
@@ -152,7 +150,6 @@ class App {
             this.ticketService.teardownTicketPunishmentButtons();
         }
 
-        this.optimizer.setEnabled(this.features.optimizeSpaTabs);
         this.punishmentService.setEnabled(this.features.autoPunishmentDuration !== false);
         if (this.features.autoPunishmentDuration !== false) {
             this.initPunishmentFormObserver();
@@ -221,10 +218,6 @@ class App {
             this.ticketService.teardownTicketPunishmentButtons();
         }
 
-        if (!nextFeatures.manageEmptyBlocks && previousFeatures.manageEmptyBlocks !== false) {
-            this.ticketService.restoreManagedEmptyBlocks();
-        }
-
         if (!nextFeatures.translateText && previousFeatures.translateText !== false) {
             this.messageService.clearTranslationDecorations();
         }
@@ -245,8 +238,6 @@ class App {
     }
 
     initPageSpecificFeatures() {
-        this.optimizer.setEnabled(this.features.optimizeSpaTabs);
-
         if (this.features.scanSchedulePage) {
             this.moderatorService.scanSchedulePage();
         }
@@ -286,14 +277,16 @@ class App {
             this.messageService.processChatMessages();
         }
 
-        if (this.features.manageEmptyBlocks) {
-            this.ticketService.manageEmptyBlocks();
-        }
-
         if (this.features.showSteamAccountCreationDate) {
             this.ticketService.renderSteamAccountCreationDate();
         } else {
             this.ticketService.clearSteamAccountCreationDate();
+        }
+
+        if (this.features.showFaceitElo) {
+            this.ticketService.renderFaceitElo();
+        } else {
+            this.ticketService.clearFaceitElo();
         }
 
         this.ticketService.refreshComplaintPunishmentButtons();
@@ -323,18 +316,114 @@ class App {
         const textareas = this.document.querySelectorAll('textarea');
         textareas.forEach(textarea => {
             if (!this.isNotificationTextarea(textarea)) return;
-            if (!textarea.parentElement) return;
-            if (textarea.parentElement.querySelector('.ioh-panel')) return;
 
-            textarea.parentNode.insertBefore(
-                this.panelService.createPanel(
-                    this.templates.notification,
-                    textarea,
-                    'mod-notif-panel'
-                ),
-                textarea
+            this.hideSiteNotificationTemplates(textarea);
+
+            const existingPanel = this.findNotificationPanelNear(textarea);
+            if (existingPanel) {
+                if (existingPanel.previousElementSibling !== textarea) {
+                    const siteTemplates = this.findSiteNotificationTemplatesContainer(textarea);
+                    if (siteTemplates) {
+                        siteTemplates.insertAdjacentElement('beforebegin', existingPanel);
+                    } else {
+                        textarea.insertAdjacentElement('afterend', existingPanel);
+                    }
+                }
+                return;
+            }
+
+            const panel = this.panelService.createPanel(
+                this.templates.notification,
+                textarea,
+                'mod-notif-panel'
             );
+
+            const siteTemplates = this.findSiteNotificationTemplatesContainer(textarea);
+            if (siteTemplates) {
+                siteTemplates.insertAdjacentElement('beforebegin', panel);
+            } else {
+                textarea.insertAdjacentElement('afterend', panel);
+            }
         });
+    }
+
+    findNotificationPanelNear(textarea) {
+        const dialog = textarea.closest('[role="dialog"]') || textarea.parentElement;
+        if (!dialog) {
+            return null;
+        }
+
+        return dialog.querySelector('#mod-notif-panel');
+    }
+
+    getSiteNotificationChipLabels() {
+        return [
+            'Здравствуйте',
+            'Не спамьте',
+            'Не оскорбляйте',
+            'Не провоцируйте',
+            'Не мониторьте',
+            'Не препятствуйте другим',
+            'Это нарушение правил проекта',
+            'Измените никнейм',
+            'Не нарушайте правила режима'
+        ];
+    }
+
+    isSiteNotificationChipButton(button) {
+        if (!button || button.closest('.ioh-panel')) {
+            return false;
+        }
+
+        const text = (button.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text || text === 'Отправить') {
+            return false;
+        }
+
+        return this.getSiteNotificationChipLabels().some(label => text === label || text.startsWith(label));
+    }
+
+    findSiteNotificationTemplatesContainer(textarea) {
+        const dialog = textarea.closest('[role="dialog"]');
+        if (!dialog) {
+            return null;
+        }
+
+        const chipButtons = Array.from(dialog.querySelectorAll('button')).filter(button =>
+            this.isSiteNotificationChipButton(button)
+        );
+
+        if (chipButtons.length < 2) {
+            return null;
+        }
+
+        let container = chipButtons[0].parentElement;
+        while (container && container !== dialog) {
+            const chipCount = Array.from(container.children).filter(child =>
+                child.tagName === 'BUTTON' && this.isSiteNotificationChipButton(child)
+            ).length;
+
+            if (chipCount >= 2 && !container.contains(textarea)) {
+                return container;
+            }
+
+            container = container.parentElement;
+        }
+
+        return chipButtons[0].parentElement;
+    }
+
+    hideSiteNotificationTemplates(textarea) {
+        const container = this.findSiteNotificationTemplatesContainer(textarea);
+        if (!container) {
+            return;
+        }
+
+        if (container.style.display !== 'none') {
+            container.dataset.iohPrevDisplay = container.style.display || '';
+            container.style.display = 'none';
+        }
+        container.dataset.iohHiddenSiteTemplates = 'true';
     }
 
     initNotificationModalObserver() {
@@ -453,8 +542,12 @@ class App {
         if (href === this._lastHref) return;
         this._lastHref = href;
 
-        delete this.document.body.dataset.autoConnected;
-        delete this.document.body.dataset.autoConnectedFor;
+        if (!this.ticketService.isComplaintPage()) {
+            this.ticketService.clearAutoConnectedServers();
+        } else {
+            delete this.document.body.dataset.autoConnected;
+            delete this.document.body.dataset.autoConnectedFor;
+        }
         this._lastVisibleTicketTextarea = null;
 
         this.teardownTicketChatHistoryObservers();
@@ -489,7 +582,8 @@ class App {
             if (entry.debounceTimerId) {
                 clearTimeout(entry.debounceTimerId);
             }
-            entry.observer.disconnect();
+            entry.observer?.disconnect();
+            entry.waitObserver?.disconnect();
         }
         this.ticketChatHistoryObservers.clear();
         this.ticketService.resetChatAnalysisCache();
@@ -702,6 +796,7 @@ class App {
                 node.closest?.('.ioh-panel') ||
                 node.closest?.('.ioh-info-badge') ||
                 node.closest?.('.ioh-account-created') ||
+                node.closest?.('.ioh-faceit-elo') ||
                 node.closest?.('#ioh-ticket-punishment-actions') ||
                 node.closest?.('.ioh-ticket-punishment-actions')
             ) {
@@ -731,6 +826,14 @@ class App {
     }
 
     _findChatHistoryBlockScoped(scopeEl) {
+        return this._findHistoryBlockScoped(scopeEl, ['История Чата']);
+    }
+
+    _findWarningHistoryBlockScoped(scopeEl) {
+        return this._findHistoryBlockScoped(scopeEl, ['История предупреждений', 'История Предупреждений']);
+    }
+
+    _findHistoryBlockScoped(scopeEl, headerTexts) {
         const containers = [];
         if (scopeEl) {
             containers.push(scopeEl);
@@ -742,20 +845,20 @@ class App {
         containers.push(this.document.body);
 
         for (const container of containers) {
-            const headers = Array.from(container.querySelectorAll('h3'));
-            const targetHeader = headers.find(h3 => h3.textContent.includes('История Чата'));
-            if (!targetHeader) continue;
-
-            let parent = targetHeader.parentElement;
-            while (parent && parent !== this.document.body) {
-                if (parent.querySelector('table')) {
-                    return parent;
+            for (const headerText of headerTexts) {
+                const block = this.ticketService.getBlockByHeaderScoped(headerText, container);
+                if (block) {
+                    return block;
                 }
-                parent = parent.parentElement;
+
+                const card = this.ticketService.getHistorySectionCard(headerText, container);
+                if (card) {
+                    return card;
+                }
             }
         }
 
-        return this.ticketService.getBlockByHeader('История Чата');
+        return null;
     }
 
     ensureTicketChatHistoryObserver(textarea) {
@@ -766,49 +869,104 @@ class App {
         const scopeEl = textarea.closest('section, article, main, [role="main"]')
             || textarea.parentElement
             || this.document.body;
-        let chatHistoryBlock = this._findChatHistoryBlockScoped(scopeEl);
 
-        const attachObserver = (block) => {
-            if (!block) return;
-            if (this.ticketChatHistoryObservers.has(textarea)) return;
-
-            const entry = {
-                observer: null,
-                debounceTimerId: null,
-            };
-
-            const observer = new MutationObserver(() => {
-                if (!this.features.processTicketRules) return;
-                if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
-                this._debouncedProcessTicketRules(textarea);
-            });
-            entry.observer = observer;
-            entry.observer.observe(block, {childList: true, subtree: true});
-            this.ticketChatHistoryObservers.set(textarea, entry);
-
-            this._runTicketChatAnalysis(textarea);
+        const entry = {
+            observer: null,
+            waitObserver: null,
+            debounceTimerId: null,
+            chatAttached: false,
+            warningAttached: false,
         };
 
-        if (chatHistoryBlock) {
-            attachObserver(chatHistoryBlock);
+        const observer = new MutationObserver(() => {
+            if (!this.features.processTicketRules) return;
+            if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
+            this._debouncedProcessTicketRules(textarea);
+        });
+        entry.observer = observer;
+
+        const tryAttachBlocks = () => {
+            const chatHistoryBlock = this._findChatHistoryBlockScoped(scopeEl);
+            const warningHistoryBlock = this._findWarningHistoryBlockScoped(scopeEl);
+
+            if (chatHistoryBlock && !entry.chatAttached) {
+                observer.observe(chatHistoryBlock, {childList: true, subtree: true});
+                entry.chatAttached = true;
+            }
+
+            if (warningHistoryBlock && !entry.warningAttached) {
+                observer.observe(warningHistoryBlock, {childList: true, subtree: true});
+                entry.warningAttached = true;
+            }
+
+            return entry.chatAttached;
+        };
+
+        const finishWaitObserver = () => {
+            if (entry.waitObserver) {
+                entry.waitObserver.disconnect();
+                entry.waitObserver = null;
+            }
+        };
+
+        if (tryAttachBlocks()) {
+            this.ticketChatHistoryObservers.set(textarea, entry);
+            this._runTicketChatAnalysis(textarea);
+
+            if (!entry.warningAttached) {
+                const waitObserver = new MutationObserver(() => {
+                    if (!this.document.contains(textarea)) {
+                        finishWaitObserver();
+                        return;
+                    }
+
+                    tryAttachBlocks();
+                    if (entry.warningAttached) {
+                        finishWaitObserver();
+                    }
+                });
+                entry.waitObserver = waitObserver;
+                waitObserver.observe(this.document.body, {childList: true, subtree: true});
+            }
             return;
         }
 
         // Wait until chat history appears (ticket DOM can be rendered in phases).
-        const tempObserver = new MutationObserver(() => {
+        const waitObserver = new MutationObserver(() => {
             if (!this.document.contains(textarea)) {
-                tempObserver.disconnect();
+                finishWaitObserver();
                 return;
             }
 
-            const nextBlock = this._findChatHistoryBlockScoped(scopeEl);
-            if (!nextBlock) return;
+            if (!tryAttachBlocks()) return;
 
-            tempObserver.disconnect();
-            attachObserver(nextBlock);
+            finishWaitObserver();
+            if (!this.ticketChatHistoryObservers.has(textarea)) {
+                this.ticketChatHistoryObservers.set(textarea, entry);
+            }
+            this._runTicketChatAnalysis(textarea);
+
+            if (!entry.warningAttached) {
+                const warningWaitObserver = new MutationObserver(() => {
+                    if (!this.document.contains(textarea)) {
+                        warningWaitObserver.disconnect();
+                        entry.waitObserver = null;
+                        return;
+                    }
+
+                    tryAttachBlocks();
+                    if (entry.warningAttached) {
+                        warningWaitObserver.disconnect();
+                        entry.waitObserver = null;
+                    }
+                });
+                entry.waitObserver = warningWaitObserver;
+                warningWaitObserver.observe(this.document.body, {childList: true, subtree: true});
+            }
         });
-
-        tempObserver.observe(this.document.body, {childList: true, subtree: true});
+        entry.waitObserver = waitObserver;
+        this.ticketChatHistoryObservers.set(textarea, entry);
+        waitObserver.observe(this.document.body, {childList: true, subtree: true});
     }
 
     _debouncedProcessTicketRules(textarea, delayMs = 100) {
@@ -830,10 +988,6 @@ class App {
     _runTicketChatAnalysis(textarea) {
         if (!this.document.contains(textarea)) return;
         if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
-
-        if (this.features.manageEmptyBlocks) {
-            this.ticketService.manageEmptyBlocks();
-        }
 
         if (this.features.translateText) {
             this.messageService.processChatMessages();

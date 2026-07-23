@@ -76,10 +76,10 @@ function renderToggles(features) {
             help: 'Показывает дату создания Steam-аккаунта нарушителя в открытом тикете.'
         },
         {
-            key: 'manageEmptyBlocks',
-            label: 'Скрывать пустые блоки',
+            key: 'showFaceitElo',
+            label: 'Faceit ELO',
             desc: '',
-            help: 'Скрывает пустые блоки истории тикетов, банов, мутов.'
+            help: 'Показывает Faceit ELO и уровень нарушителя в открытом тикете.'
         },
         {
             key: 'translateText',
@@ -128,12 +128,6 @@ function renderToggles(features) {
             label: 'Сканировать расписание',
             desc: '',
             help: 'Обновляет базу модераторов при открытии страницы "Таймлайн" для подсветки в тикетах. Включите только если не подсветило модератора.'
-        },
-        {
-            key: 'optimizeSpaTabs',
-            label: 'Оптимизация SPA вкладок',
-            desc: 'BETA TEST',
-            help: 'Блокирует фоновые загрузки данных для неактивных вкладок SPA.'
         }
     ];
 

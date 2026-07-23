@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.5",
+  "version": "2.6",
   "description": "Улучшает функционал IO сайта",
   "background": {
     "service_worker": "background.js"
@@ -19,7 +19,7 @@
   },
   "host_permissions": [
     "https://raw.githubusercontent.com/K4NT1K/*",
-    "https://steamid.io/*"
+    "https://mobile.fastmm.win/*"
   ],
   "web_accessible_resources": [
     {
@@ -54,7 +54,6 @@
         "modules/TicketService.js",
         "modules/PunishmentService.js",
         "modules/ModeratorService.js",
-        "modules/Optimizer.js",
         "modules/App.js",
         "content.js"
       ],

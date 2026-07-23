@@ -35,9 +35,28 @@ class PanelService {
         target.dataset.iohTrackedMessages = JSON.stringify(trackedMessages);
     }
 
-    removeTrackedMessage(textValue, messageToRemove) {
+    removeTrackedMessage(textValue, messageToRemove, { inline = false } = {}) {
         if (!messageToRemove) {
             return textValue;
+        }
+
+        if (inline) {
+            let result = textValue;
+            const candidates = [
+                `. ${messageToRemove}`,
+                ` ${messageToRemove}`,
+                messageToRemove
+            ];
+
+            for (const candidate of candidates) {
+                const index = result.lastIndexOf(candidate);
+                if (index !== -1) {
+                    result = `${result.slice(0, index)}${result.slice(index + candidate.length)}`;
+                    break;
+                }
+            }
+
+            return result.replace(/\s{2,}/g, ' ').replace(/\s+\./g, '.').trim();
         }
 
         const lines = textValue.split('\n');
@@ -51,7 +70,13 @@ class PanelService {
         return lines.join('\n');
     }
 
-    normalizeTextareaValue(textValue) {
+    normalizeTextareaValue(textValue, { inline = false } = {}) {
+        if (inline) {
+            return String(textValue || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
         return textValue
             .split('\n')
             .map(line => line.trimEnd())
@@ -60,21 +85,25 @@ class PanelService {
             .trim();
     }
 
-    applyTrackedMessage(target, messageKey, nextMessage) {
+    applyTrackedMessage(target, messageKey, nextMessage, { inline = false } = {}) {
         const trackedMessages = this.readTrackedMessages(target);
         const previousMessage = trackedMessages[messageKey];
 
-        let nextValue = this.removeTrackedMessage(target.value, previousMessage);
+        let nextValue = this.removeTrackedMessage(target.value, previousMessage, { inline });
 
         if (nextMessage) {
             const trimmedValue = nextValue.trim();
-            nextValue = trimmedValue ? `${trimmedValue}\n${nextMessage}` : nextMessage;
+            if (inline) {
+                nextValue = trimmedValue ? `${trimmedValue}. ${nextMessage}` : nextMessage;
+            } else {
+                nextValue = trimmedValue ? `${trimmedValue}\n${nextMessage}` : nextMessage;
+            }
             trackedMessages[messageKey] = nextMessage;
         } else {
             delete trackedMessages[messageKey];
         }
 
-        target.value = this.normalizeTextareaValue(nextValue);
+        target.value = this.normalizeTextareaValue(nextValue, { inline });
         this.writeTrackedMessages(target, trackedMessages);
         target.dispatchEvent(new Event('input', { bubbles: true }));
     }
@@ -84,6 +113,8 @@ class PanelService {
         const panel = this.document.createElement('div');
         panel.id = panelId;
         panel.className = 'ioh-panel';
+        const inline = panelId === 'mod-notif-panel';
+
         Object.entries(templates).forEach(([name, text]) => {
             const btn = this.document.createElement('button');
             btn.className = 'ioh-panel-btn';
@@ -103,7 +134,7 @@ class PanelService {
                 clearTimeout(clickTimer);
                 clickTimer = setTimeout(() => {
                     const comment = this.buildCommentText(name, clickCount, text);
-                    this.applyTrackedMessage(target, `${panelId}:${name}`, comment);
+                    this.applyTrackedMessage(target, `${panelId}:${name}`, comment, { inline });
                     clickCount = 0;
                 }, 250);
             };

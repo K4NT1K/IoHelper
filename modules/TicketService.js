@@ -12,7 +12,9 @@ class TicketService {
         this.triggerRows = new Map();
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
         this.isCheckingServer = false;
-        this.steamAccountCreationCache = new Map();
+        this.offenderProfileCache = new Map();
+        this.offenderProfileInflight = new Map();
+        this.autoConnectedServerIps = new Set();
         this.chatSignatureByKey = new Map();
         this.globalServerCooldown = 0;
         this.offenderOffline = new Map();
@@ -196,20 +198,123 @@ class TicketService {
         return Boolean(this.document.querySelector(`[role="dialog"][data-state="open"] ${inputSelector}`));
     }
 
+    getHistoryAccordionButton(textMatch, scopeEl) {
+        const root = scopeEl || this.document.body;
+        return Array.from(root.querySelectorAll('button[aria-expanded]')).find(button => {
+            const text = (button.textContent || '').replace(/\s+/g, ' ');
+            return text.includes(textMatch);
+        }) || null;
+    }
+
+    getHistorySectionCard(textMatch, scopeEl) {
+        const accordion = this.getHistoryAccordionButton(textMatch, scopeEl);
+        if (accordion) {
+            return accordion.closest('[data-pet-surface="card"]') || accordion.parentElement || null;
+        }
+
+        const root = scopeEl || this.document.body;
+        const header = Array.from(root.querySelectorAll('h3')).find(h3 =>
+            (h3.textContent || '').includes(textMatch)
+        );
+        if (!header) {
+            return null;
+        }
+
+        return header.closest('[data-pet-surface="card"]') || header.parentElement || null;
+    }
+
+    swapChatAndWarningHistoryCards(scopeEl) {
+        const chatCard = this.getHistorySectionCard('История Чата', scopeEl);
+        const warningCard = this.getHistorySectionCard('История предупреждений', scopeEl)
+            || this.getHistorySectionCard('История Предупреждений', scopeEl);
+
+        if (!chatCard || !warningCard || chatCard === warningCard) {
+            return false;
+        }
+
+        if (
+            chatCard.dataset.iohHistorySlot === 'chat'
+            && warningCard.dataset.iohHistorySlot === 'warnings'
+            && this.document.contains(chatCard)
+            && this.document.contains(warningCard)
+        ) {
+            return false;
+        }
+
+        const chatParent = chatCard.parentNode;
+        const warningParent = warningCard.parentNode;
+        if (!chatParent || !warningParent) {
+            return false;
+        }
+
+        const marker = this.document.createElement('div');
+        marker.setAttribute('data-ioh-swap-marker', '1');
+        chatParent.insertBefore(marker, chatCard);
+        warningParent.insertBefore(chatCard, warningCard);
+        marker.parentNode.insertBefore(warningCard, marker);
+        marker.remove();
+
+        chatCard.dataset.iohHistorySlot = 'chat';
+        warningCard.dataset.iohHistorySlot = 'warnings';
+        return true;
+    }
+
+    isChatHistoryEmptyScoped(scopeEl) {
+        const accordion = this.getHistoryAccordionButton('История Чата', scopeEl);
+        if (accordion) {
+            const hasEmptyBadge = Array.from(accordion.querySelectorAll(':scope > span'))
+                .some(span => (span.textContent || '').trim() === 'Пусто');
+            if (hasEmptyBadge) {
+                return true;
+            }
+
+            const card = this.getHistorySectionCard('История Чата', scopeEl);
+            const cardText = card?.innerText || '';
+            if (cardText.includes('Чат пуст')) {
+                return true;
+            }
+
+            const rows = Array.from(card?.querySelectorAll('tbody tr, tr') || [])
+                .filter(row => row.querySelector('td'));
+            return rows.length === 0;
+        }
+
+        const chatHistoryBlock = this.getBlockByHeaderScoped('История Чата', scopeEl);
+        if (!chatHistoryBlock || chatHistoryBlock.style.display === 'none') {
+            return true;
+        }
+
+        if ((chatHistoryBlock.innerText || '').includes('Чат пуст')) {
+            return true;
+        }
+
+        const rows = Array.from(chatHistoryBlock.querySelectorAll('tbody tr, tr'))
+            .filter(row => row.querySelector('td'));
+        return rows.length === 0;
+    }
+
     getBlockByHeaderScoped(textMatch, scopeEl) {
         const root = scopeEl || this.document.body;
         const headers = Array.from(root.querySelectorAll('h3'));
         const targetHeader = headers.find(h3 => h3.textContent.includes(textMatch));
-        if (!targetHeader) {
-            return null;
+        if (targetHeader) {
+            const headerCard = targetHeader.closest('[data-pet-surface="card"]');
+            if (headerCard?.querySelector('table')) {
+                return headerCard;
+            }
+
+            let parent = targetHeader.parentElement;
+            while (parent && parent !== this.document.body) {
+                if (parent.querySelector('table')) {
+                    return parent;
+                }
+                parent = parent.parentElement;
+            }
         }
 
-        let parent = targetHeader.parentElement;
-        while (parent && parent !== this.document.body) {
-            if (parent.querySelector('table')) {
-                return parent;
-            }
-            parent = parent.parentElement;
+        const card = this.getHistorySectionCard(textMatch, scopeEl);
+        if (card?.querySelector('table')) {
+            return card;
         }
 
         return null;
@@ -253,18 +358,7 @@ class TicketService {
     }
 
     getBlockByHeader(textMatch) {
-        const headers = Array.from(this.document.querySelectorAll('h3'));
-        const targetHeader = headers.find(h3 => h3.textContent.includes(textMatch));
-        if (!targetHeader) return null;
-
-        let parent = targetHeader.parentElement;
-        while (parent && parent !== this.document.body) {
-            if (parent.querySelector('table')) {
-                return parent;
-            }
-            parent = parent.parentElement;
-        }
-        return null;
+        return this.getBlockByHeaderScoped(textMatch, this.document.body);
     }
 
     normalizeReason(reason) {
@@ -389,50 +483,10 @@ class TicketService {
         return false;
     }
 
-    manageEmptyBlocks() {
-        const headers = Array.from(this.document.querySelectorAll('h3'));
-        const cards = headers.map(h3 => {
-            let parent = h3.parentElement;
-            while (parent && parent !== this.document.body) {
-                if (parent.children.length >= 2 && parent.tagName === 'DIV') return parent;
-                parent = parent.parentElement;
-            }
-            return null;
-        }).filter(Boolean);
-
-        cards.forEach(card => {
-            if (card.id?.includes('mod-')) return;
-
-            const cardText = card.innerText;
-            if (!cardText) return;
-
-            [
-                ['История Тикетов', ['Тикетов нет', 'Не найдено']],
-                ['История Банов', ['Банов нет', 'Не найдено']],
-                ['История Мутов', ['Мутов нет', 'Не найдено']]
-            ].forEach(([title, emptyMarkers]) => {
-                if (!cardText.includes(title)) {
-                    return;
-                }
-
-                if (emptyMarkers.some(marker => cardText.includes(marker))) {
-                    card.style.display = 'none';
-                    card.dataset.iohManagedHidden = 'true';
-                } else {
-                    card.style.display = 'block';
-                    delete card.dataset.iohManagedHidden;
-                }
-            });
-        });
-    }
-
-    restoreManagedEmptyBlocks() {
-        this.document.querySelectorAll('[data-ioh-managed-hidden="true"]').forEach(card => {
-            const prev = card.dataset.iohManagedPrevDisplay;
-            card.style.display = typeof prev === 'string' ? (prev || 'block') : 'block';
-            delete card.dataset.iohManagedHidden;
-            delete card.dataset.iohManagedPrevDisplay;
-        });
+    clearAutoConnectedServers() {
+        this.autoConnectedServerIps.clear();
+        delete this.document.body.dataset.autoConnected;
+        delete this.document.body.dataset.autoConnectedFor;
     }
 
     markOffenderOffline(steamId) {
@@ -540,6 +594,51 @@ class TicketService {
         });
     }
 
+    getAutoConnectScope() {
+        const visibleTextarea = this.findVisibleTicketResolutionTextarea();
+        if (visibleTextarea) {
+            return this.getTicketScopeRoot(visibleTextarea);
+        }
+
+        return this.findActiveComplaintScope();
+    }
+
+    scopeHasInProgressStatus(scope) {
+        if (!scope) {
+            return false;
+        }
+
+        const roots = [scope];
+        const activePanel = this.findActiveComplaintScope();
+        if (activePanel && activePanel !== scope) {
+            roots.push(activePanel);
+        }
+
+        for (const root of roots) {
+            const found = Array.from(root.querySelectorAll('span')).some(span => {
+                if (span.textContent.trim() !== 'В работе') {
+                    return false;
+                }
+
+                let element = span.parentElement;
+                while (element && element !== root) {
+                    if (element.getAttribute?.('aria-hidden') === 'true') {
+                        return false;
+                    }
+                    element = element.parentElement;
+                }
+
+                return true;
+            });
+
+            if (found) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     shouldAutoConnectToServer() {
         const allowedPaths = [
             '/reports/4',
@@ -556,18 +655,19 @@ class TicketService {
             return {allowed: false, reason: 'Функция отключена'};
         }
 
-        const statusSpan = Array.from(this.document.querySelectorAll('span')).find(
-            span => span.textContent.trim() === 'В работе'
-        );
-
-        if (!statusSpan) {
-            return {allowed: false, reason: "статус 'В работе' не найден"};
+        const scope = this.getAutoConnectScope();
+        if (!scope || !this.isActiveComplaintScope(scope)) {
+            return {allowed: false, reason: 'активный тикет не найден'};
         }
 
-        const offenderField = this.findInfoField('Нарушитель');
+        if (!this.scopeHasInProgressStatus(scope)) {
+            return {allowed: false, reason: "статус 'В работе' не найден в активном тикете"};
+        }
+
+        const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
         const offenderSteamId = this.extractSteamIdFromField(offenderField);
         const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
-        const ticketConnectLink = this.findTicketServerConnectLink();
+        const ticketConnectLink = this.findTicketServerConnectLink(scope);
         const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
         const connectTarget = relocatedIp || ticketServerIp || null;
         const connectSource = relocatedIp ? 'relocated-server' : (ticketServerIp ? 'ticket-server' : null);
@@ -610,15 +710,16 @@ class TicketService {
         };
     }
 
-    findTicketServerConnectLink() {
-        const serverField = this.findInfoField('Сервер');
+    findTicketServerConnectLink(scope = null) {
+        const root = scope || this.getAutoConnectScope() || this.document;
+        const serverField = this.findInfoFieldScoped('Сервер', root);
         const valueBlock = this.findFieldValueBlock(serverField);
         const scopedLink = valueBlock?.querySelector('a[href^="steam://connect/"]');
         if (scopedLink) {
             return scopedLink;
         }
 
-        for (const link of this.document.querySelectorAll('a[href^="steam://connect/"]')) {
+        for (const link of root.querySelectorAll('a[href^="steam://connect/"]')) {
             if (link.closest('table')) {
                 continue;
             }
@@ -658,27 +759,32 @@ class TicketService {
             return;
         }
 
-        const ticketKey = window.location.pathname || window.location.href;
-        if (this.document.body.dataset.autoConnectedFor === ticketKey) {
-            console.log('[Helper] Авто-подключение уже выполнялось для этого тикета.');
+        const scope = this.getAutoConnectScope();
+        const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
+        const connectLink = relocatedIp ? null : this.findTicketServerConnectLink(scope);
+        const connectTarget = (relocatedIp || this.extractServerIpFromConnectLink(connectLink) || '').toLowerCase();
+
+        if (connectTarget && this.autoConnectedServerIps.has(connectTarget)) {
+            console.log('[Helper] Авто-подключение уже выполнялось для сервера:', connectTarget);
             return;
         }
 
-        const offenderField = this.findInfoField('Нарушитель');
-        const offenderSteamId = this.extractSteamIdFromField(offenderField);
-        const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
-
         if (relocatedIp) {
             console.log('[Helper] Авто-подключение к серверу переезда:', relocatedIp, decision.debug || '');
-            this.document.body.dataset.autoConnectedFor = ticketKey;
+            this.autoConnectedServerIps.add(connectTarget);
+            this.document.body.dataset.autoConnectedFor = connectTarget;
             this.connectToSteamServer(relocatedIp);
             return;
         }
 
-        const connectLink = this.findTicketServerConnectLink();
         if (connectLink) {
             console.log('[Helper] Авто-подключение к серверу тикета:', connectLink.href, decision.debug || '');
-            this.document.body.dataset.autoConnectedFor = ticketKey;
+            if (connectTarget) {
+                this.autoConnectedServerIps.add(connectTarget);
+                this.document.body.dataset.autoConnectedFor = connectTarget;
+            }
             connectLink.click();
         } else {
             console.log('[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.', decision.debug || '');
@@ -758,6 +864,10 @@ class TicketService {
         this.document.querySelectorAll('.ioh-account-created').forEach(node => node.remove());
     }
 
+    clearFaceitElo() {
+        this.document.querySelectorAll('.ioh-faceit-elo').forEach(node => node.remove());
+    }
+
     findTicketTablesForCards() {
         const tables = Array.from(this.document.querySelectorAll('table'));
 
@@ -810,7 +920,7 @@ class TicketService {
 
     isExtensionUiElement(element) {
         return Boolean(
-            element?.closest('.ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row')
+            element?.closest('.ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #mod-notif-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row, .ioh-account-created, .ioh-faceit-elo')
         );
     }
 
@@ -2517,109 +2627,213 @@ class TicketService {
         node.appendChild(labelSpan);
         node.appendChild(valueDiv);
 
-        field.insertAdjacentElement('afterend', node);
+        const faceitNode = field.parentNode.querySelector('.ioh-faceit-elo');
+        if (faceitNode) {
+            faceitNode.insertAdjacentElement('beforebegin', node);
+        } else {
+            field.insertAdjacentElement('afterend', node);
+        }
 
         return valueDiv;
     }
 
-    extractCreationDateFromHtml(html) {
-        const parser = new DOMParser();
-        const parsedDocument = parser.parseFromString(html, 'text/html');
-        const rowLikeNodes = parsedDocument.querySelectorAll('tr, li, p, div');
-        const labelPattern = /(created|member since|account created|registered)/i;
-        const datePatterns = [
-            /([A-Z][a-z]{2,9}\s+\d{1,2},\s+\d{4})/,
-            /(\d{1,2}\s+[A-Z][a-z]{2,9}\s+\d{4})/,
-            /(\d{4}-\d{2}-\d{2})/,
-            /(\d{2}\.\d{2}\.\d{4})/
-        ];
-
-        for (const row of rowLikeNodes) {
-            const cells = row.querySelectorAll('th, td');
-            if (cells.length >= 2 && labelPattern.test(cells[0].textContent || '')) {
-                const valueText = cells[1].textContent.replace(/\s+/g, ' ').trim();
-                if (valueText) {
-                    return valueText;
-                }
-            }
-
-            const rowText = row.textContent.replace(/\s+/g, ' ').trim();
-            if (!labelPattern.test(rowText)) {
-                continue;
-            }
-
-            for (const pattern of datePatterns) {
-                const match = rowText.match(pattern);
-                if (match) {
-                    return match[1];
-                }
-            }
+    ensureFaceitEloNode(field) {
+        let node = field.parentNode.querySelector('.ioh-faceit-elo');
+        if (node) {
+            return node.querySelector('.ioh-faceit-value');
         }
 
-        const fullText = parsedDocument.body?.textContent?.replace(/\s+/g, ' ').trim() || '';
-        if (!fullText) {
-            return null;
+        node = this.document.createElement('div');
+        node.className = field.className + ' ioh-faceit-elo';
+
+        const labelSpan = this.document.createElement('span');
+        const originalSpan = field.querySelector('span');
+        labelSpan.className = originalSpan ? originalSpan.className : '';
+        labelSpan.textContent = 'Faceit';
+
+        const valueDiv = this.document.createElement('div');
+        const originalDiv = field.querySelector('div');
+        valueDiv.className = (originalDiv ? originalDiv.className : '') + ' ioh-faceit-value';
+
+        node.appendChild(labelSpan);
+        node.appendChild(valueDiv);
+
+        const accountNode = field.parentNode.querySelector('.ioh-account-created');
+        if (accountNode) {
+            accountNode.insertAdjacentElement('afterend', node);
+        } else {
+            field.insertAdjacentElement('afterend', node);
         }
 
-        const labelIndex = fullText.search(labelPattern);
-        if (labelIndex === -1) {
-            return null;
-        }
-
-        const snippet = fullText.slice(labelIndex, labelIndex + 120);
-        for (const pattern of datePatterns) {
-            const match = snippet.match(pattern);
-            if (match) {
-                return match[1];
-            }
-        }
-
-        return null;
+        return valueDiv;
     }
 
-    fetchSteamAccountCreationDate(steamId) {
-        return new Promise((resolve, reject) => {
+    getOffenderFieldContext() {
+        const ticketTextarea = this.findVisibleTicketResolutionTextarea()
+            || this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]');
+        if (!ticketTextarea) {
+            return null;
+        }
+
+        const scope = this.getTicketScopeRoot(ticketTextarea);
+        const offenderField = this.findInfoFieldScoped('Нарушитель', scope) || this.findInfoField('Нарушитель');
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+
+        if (!offenderField || !offenderSteamId) {
+            return null;
+        }
+
+        return {offenderField, offenderSteamId};
+    }
+
+    formatSteamCreationDate(timecreated) {
+        const timestamp = Number(timecreated);
+        if (!Number.isFinite(timestamp) || timestamp <= 0) {
+            return null;
+        }
+
+        return new Date(timestamp * 1000).toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+        });
+    }
+
+    extractSkillLevelFromFastmm(faceitProfile, elo, faceitMissing = false) {
+        if (faceitMissing) {
+            return {skillLevel: null, rankIconUrl: null};
+        }
+
+        let skillLevel = null;
+        const level = Number(faceitProfile?.level);
+        if (Number.isFinite(level) && level >= 1 && level <= 10) {
+            skillLevel = String(level);
+        }
+
+        if (!skillLevel && elo) {
+            const fromElo = this.faceitEloToSkillLevel(Number(elo));
+            if (fromElo != null) {
+                skillLevel = String(fromElo);
+            }
+        }
+
+        const rankIconUrl = skillLevel
+            ? `https://mobile.fastmm.win/img/rank/faceit/level${skillLevel}.png`
+            : null;
+
+        return {skillLevel, rankIconUrl};
+    }
+
+    extractOffenderProfileData(data, source = 'fastmm') {
+        const payload = data && typeof data === 'object' ? data : {};
+        const steamProfile = payload.steam?.profile || null;
+        const faceitPayload = payload.faceit || null;
+        const faceitProfile = faceitPayload?.profile || null;
+
+        const creationDate = this.formatSteamCreationDate(steamProfile?.timecreated);
+
+        const eloRaw = faceitProfile?.elo;
+        const elo = eloRaw != null && String(eloRaw).trim() !== ''
+            ? String(eloRaw).trim()
+            : null;
+
+        let faceitMissing = Boolean(faceitPayload?.error) || !faceitProfile || !elo;
+
+        const {skillLevel, rankIconUrl} = this.extractSkillLevelFromFastmm(
+            faceitProfile,
+            elo,
+            faceitMissing
+        );
+
+        return {
+            creationDate,
+            elo: faceitMissing ? null : elo,
+            skillLevel: faceitMissing ? null : skillLevel,
+            rankIconUrl: faceitMissing ? null : rankIconUrl,
+            faceitMissing,
+            source
+        };
+    }
+
+    faceitEloToSkillLevel(elo) {
+        if (!Number.isFinite(elo) || elo <= 0) return null;
+        if (elo < 801) return 1;
+        if (elo < 951) return 2;
+        if (elo < 1101) return 3;
+        if (elo < 1251) return 4;
+        if (elo < 1401) return 5;
+        if (elo < 1551) return 6;
+        if (elo < 1701) return 7;
+        if (elo < 1851) return 8;
+        if (elo < 2001) return 9;
+        return 10;
+    }
+
+    fetchOffenderProfile(steamId, {force = false} = {}) {
+        if (!force && this.offenderProfileCache.has(steamId)) {
+            return Promise.resolve(this.offenderProfileCache.get(steamId));
+        }
+
+        if (!force && this.offenderProfileInflight.has(steamId)) {
+            return this.offenderProfileInflight.get(steamId);
+        }
+
+        const requestPromise = new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
-                {action: "fetchSteamDate", steamId: steamId},
+                {action: 'fetchOffenderProfile', steamId},
                 (response) => {
                     if (chrome.runtime.lastError) {
                         return reject(chrome.runtime.lastError);
                     }
-                    if (response && response.success) {
-                        resolve(response.data); // This is your HTML string payload to parse
-                    } else {
-                        reject(response ? response.error : "Unknown error");
+                    if (!(response && response.success)) {
+                        return reject(new Error(response ? response.error : 'Unknown error'));
                     }
+
+                    const profileData = this.extractOffenderProfileData(
+                        response.data,
+                        response.source || 'fastmm'
+                    );
+                    this.offenderProfileCache.set(steamId, profileData);
+                    resolve(profileData);
                 }
             );
+        }).finally(() => {
+            this.offenderProfileInflight.delete(steamId);
         });
+
+        this.offenderProfileInflight.set(steamId, requestPromise);
+        return requestPromise;
     }
 
-    async loadSteamAccountCreationDate(containerNode, steamId, {force = false} = {}) {
-        const valueNode = containerNode.querySelector('.ioh-account-value');
+    renderFaceitEloValue(valueNode, profileData) {
         if (!valueNode) return;
 
-        if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === 'true') {
+        valueNode.textContent = '';
+        valueNode.classList.remove('ioh-account-value--error');
+
+        if (!profileData?.elo) {
+            valueNode.textContent = '—';
             return;
         }
 
-        containerNode.dataset.steamId = steamId;
-        containerNode.dataset.loaded = 'false';
-        valueNode.textContent = 'Загрузка...';
-
-        try {
-            const htmlPayload = await this.fetchSteamAccountCreationDate(steamId);
-            const creationDate = this.extractCreationDateFromHtml(htmlPayload);
-            valueNode.classList.remove('ioh-account-value--error');
-            valueNode.textContent = creationDate ? creationDate : 'Профиль скрыт';
-            containerNode.dataset.loaded = 'true';
-        } catch (error) {
-            this.renderSteamAccountCreationError(valueNode, containerNode, steamId);
-            containerNode.dataset.loaded = 'true';
+        if (profileData.rankIconUrl) {
+            const img = this.document.createElement('img');
+            img.className = 'ioh-faceit-rank';
+            img.src = profileData.rankIconUrl;
+            img.alt = profileData.skillLevel
+                ? `FaceIt level ${profileData.skillLevel} icon`
+                : 'FaceIt level icon';
+            img.width = 18;
+            img.height = 18;
+            valueNode.appendChild(img);
         }
+
+        const eloText = this.document.createElement('span');
+        eloText.textContent = `${profileData.elo} Elo`;
+        valueNode.appendChild(eloText);
     }
 
-    renderSteamAccountCreationError(valueNode, containerNode, steamId) {
+    renderProfileFieldError(valueNode, containerNode, steamId, reloadFn) {
         valueNode.textContent = '';
         valueNode.classList.add('ioh-account-value--error');
 
@@ -2635,31 +2849,93 @@ class TicketService {
         retryBtn.addEventListener('click', () => {
             valueNode.classList.remove('ioh-account-value--error');
             containerNode.dataset.loaded = 'false';
-            this.loadSteamAccountCreationDate(containerNode, steamId, {force: true});
+            this.offenderProfileCache.delete(steamId);
+            reloadFn({force: true});
         });
 
         valueNode.appendChild(errorSpan);
         valueNode.appendChild(retryBtn);
     }
 
+    async loadSteamAccountCreationDate(containerNode, steamId, {force = false} = {}) {
+        const valueNode = containerNode.querySelector('.ioh-account-value');
+        if (!valueNode) return;
+
+        if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === 'true') {
+            return;
+        }
+
+        containerNode.dataset.steamId = steamId;
+        containerNode.dataset.loaded = 'false';
+        valueNode.textContent = 'Загрузка...';
+
+        try {
+            const profileData = await this.fetchOffenderProfile(steamId, {force});
+            valueNode.classList.remove('ioh-account-value--error');
+            // Successful fetch: missing date means hidden/unavailable profile data, not a network error.
+            valueNode.textContent = profileData.creationDate ? profileData.creationDate : 'Профиль скрыт';
+            containerNode.dataset.loaded = 'true';
+        } catch (error) {
+            this.renderProfileFieldError(
+                valueNode,
+                containerNode,
+                steamId,
+                (opts) => this.loadSteamAccountCreationDate(containerNode, steamId, opts)
+            );
+            containerNode.dataset.loaded = 'true';
+        }
+    }
+
+    async loadFaceitElo(containerNode, steamId, {force = false} = {}) {
+        const valueNode = containerNode.querySelector('.ioh-faceit-value');
+        if (!valueNode) return;
+
+        if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === 'true') {
+            return;
+        }
+
+        containerNode.dataset.steamId = steamId;
+        containerNode.dataset.loaded = 'false';
+        valueNode.textContent = 'Загрузка...';
+
+        try {
+            const profileData = await this.fetchOffenderProfile(steamId, {force});
+            // Successful fetch with no Faceit / no ELO → dash via renderFaceitEloValue.
+            this.renderFaceitEloValue(valueNode, profileData);
+            containerNode.dataset.loaded = 'true';
+        } catch (error) {
+            this.renderProfileFieldError(
+                valueNode,
+                containerNode,
+                steamId,
+                (opts) => this.loadFaceitElo(containerNode, steamId, opts)
+            );
+            containerNode.dataset.loaded = 'true';
+        }
+    }
+
     async renderSteamAccountCreationDate() {
-        const ticketTextarea = this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]');
-        if (!ticketTextarea) {
+        const context = this.getOffenderFieldContext();
+        if (!context) {
             this.clearSteamAccountCreationDate();
             return;
         }
 
-        const offenderField = this.findInfoField('Нарушитель');
-        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        const valueNode = this.ensureSteamAccountCreationNode(context.offenderField);
+        const containerNode = valueNode.closest('.ioh-account-created');
+        await this.loadSteamAccountCreationDate(containerNode, context.offenderSteamId);
+    }
 
-        if (!offenderField || !offenderSteamId) {
+    async renderFaceitElo() {
+        const context = this.getOffenderFieldContext();
+        if (!context) {
+            this.clearFaceitElo();
             return;
         }
 
-        const valueNode = this.ensureSteamAccountCreationNode(offenderField);
-        const containerNode = valueNode.closest('.ioh-account-created');
-
-        await this.loadSteamAccountCreationDate(containerNode, offenderSteamId);
+        const valueNode = this.ensureFaceitEloNode(context.offenderField);
+        const containerNode = valueNode.closest('.ioh-faceit-elo');
+        await this.loadFaceitElo(containerNode, context.offenderSteamId);
     }
 
     getKeywordExceptions(keyword) {
@@ -3044,8 +3320,17 @@ class TicketService {
         let finalDuration = rule.duration;
         let finalDurationStr = this.utils.formatDuration(rule.duration);
 
+        const toxicityCount = ruleCounters["Токсичность"] || 0;
         const insultCount = ruleCounters["Оскорбление"] || 0;
         const trollingCount = ruleCounters["Троллинг/провокация"] || 0;
+
+        if (toxicityCount > 0 || rule.name === "Токсичность") {
+            const toxicityRule = this.rules.find(r => r.name === "Токсичность");
+            finalName = "Токсичность";
+            finalDuration = toxicityRule?.duration ?? 720;
+            finalDurationStr = this.utils.formatDuration(finalDuration);
+            return {finalName, finalDuration, finalDurationStr};
+        }
 
         if (insultCount > 2 && trollingCount > 2) {
             finalName = "Токсичность";
@@ -3107,12 +3392,107 @@ class TicketService {
         };
     }
 
+    parseWarningHistoryRows(warningHistoryBlock) {
+        if (!warningHistoryBlock) {
+            return [];
+        }
+
+        const warnings = [];
+        warningHistoryBlock.querySelectorAll('tbody tr').forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 4) {
+                return;
+            }
+
+            const dateIndex = this.getColumnIndex(row, ['дата'], 1);
+            const textIndex = this.getColumnIndex(row, ['текст'], Math.min(3, cells.length - 1));
+            const warningDate = this.parseDateCell(cells[dateIndex]);
+            const warningText = (cells[textIndex]?.innerText || '').replace(/\s+/g, ' ').trim();
+
+            if (!warningDate || !warningText) {
+                return;
+            }
+
+            warnings.push({date: warningDate, text: warningText});
+        });
+
+        return warnings;
+    }
+
+    warningTextMatchesRule(text, ruleName) {
+        const lowered = String(text || '').toLowerCase();
+        const matchers = {
+            'Оскорбление': [/оскорбл/i],
+            'Троллинг/провокация': [/провоц/i],
+            'Спам в микрофон/чат': [/спам/i],
+            'Расизм / дискриминация': [/расист/i],
+            'Токсичность': [/токсич/i, /оскорбл/i],
+            'Мониторинг': [/монитор/i],
+            'Препятствие': [/препятств/i]
+        };
+
+        const patterns = matchers[ruleName];
+        if (!patterns) {
+            return false;
+        }
+
+        return patterns.some(pattern => pattern.test(lowered));
+    }
+
+    getWarningHistorySignaturePart(warningHistoryBlock) {
+        if (!warningHistoryBlock) {
+            return 'warn:0|';
+        }
+
+        const warnRows = Array.from(warningHistoryBlock.querySelectorAll('tbody tr'))
+            .filter(row => row.querySelector('td'));
+        const lastWarn = warnRows[warnRows.length - 1];
+        const warnTail = (lastWarn?.innerText || '').trim().slice(0, 220);
+        return `warn:${warnRows.length}|${warnTail}`;
+    }
+
+    getCoveringWarningWithoutNewTriggers(warningHistoryBlock, allViolations) {
+        const warnings = this.parseWarningHistoryRows(warningHistoryBlock);
+        if (!warnings.length || !allViolations?.length) {
+            return null;
+        }
+
+        let latestCoveringWarning = null;
+
+        for (const warning of warnings) {
+            const warningMs = warning.date.getTime();
+            const coversSome = allViolations.some(violation =>
+                violation?.timeMs &&
+                violation.ruleName &&
+                warningMs > violation.timeMs &&
+                this.warningTextMatchesRule(warning.text, violation.ruleName)
+            );
+
+            if (coversSome && (!latestCoveringWarning || warningMs > latestCoveringWarning.date.getTime())) {
+                latestCoveringWarning = warning;
+            }
+        }
+
+        if (!latestCoveringWarning) {
+            return null;
+        }
+
+        const latestCoveringWarningMs = latestCoveringWarning.date.getTime();
+        const hasNewTriggersAfterWarning = allViolations.some(violation =>
+            violation?.timeMs && violation.timeMs > latestCoveringWarningMs
+        );
+
+        return hasNewTriggersAfterWarning ? null : latestCoveringWarning;
+    }
+
     async processTicketRules(textarea) {
         if (!this.isVisibleTicketTextarea(textarea)) {
             return;
         }
 
         const scope = this.getTicketScopeRoot(textarea);
+        this.swapChatAndWarningHistoryCards(scope);
+
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
         const reason = analysisIcons.reason;
@@ -3126,15 +3506,17 @@ class TicketService {
 
         const muteHistoryBlock = this.getBlockByHeaderScoped('История Мутов', scope);
         const chatHistoryBlock = this.getBlockByHeaderScoped('История Чата', scope);
+        const warningHistoryBlock = this.getBlockByHeaderScoped('История предупреждений', scope)
+            || this.getBlockByHeaderScoped('История Предупреждений', scope);
 
         if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${chatError}<span>Внимание:<b> У игрока уже есть активный мут!</b></span></div>`, textarea);
+            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${chatError}<span><b> У игрока уже есть активный мут!</b></span></div>`, textarea);
             return;
         }
 
-        if (!chatHistoryBlock || chatHistoryBlock.style.display === 'none' || chatHistoryBlock.innerText.includes('Чат пуст') || chatHistoryBlock.innerText.includes('Не найдено')) {
+        if (this.isChatHistoryEmptyScoped(scope)) {
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${chatError}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
-            this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|empty-block`);
+            this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|empty-block|${this.getWarningHistorySignaturePart(warningHistoryBlock)}`);
             return;
         }
 
@@ -3160,15 +3542,15 @@ class TicketService {
             });
         }
 
-        const rows = Array.from(chatHistoryBlock.querySelectorAll('tbody tr, tr')).filter(row => row.querySelector('td'));
+        const rows = Array.from(chatHistoryBlock?.querySelectorAll('tbody tr, tr') || []).filter(row => row.querySelector('td'));
         if (rows.length === 0) {
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${chatError}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
-            this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|0|empty`);
+            this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|0|empty|${this.getWarningHistorySignaturePart(warningHistoryBlock)}`);
             return;
         }
 
         const lastRow = rows[rows.length - 1];
-        const signature = `${window.location.pathname}|${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}`;
+        const signature = `${window.location.pathname}|${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}|${this.getWarningHistorySignaturePart(warningHistoryBlock)}`;
         const cacheKey = this.getChatCacheKey(textarea);
         const prevSignature = this.chatSignatureByKey.get(cacheKey);
         if (prevSignature === signature) {
@@ -3249,7 +3631,8 @@ class TicketService {
                 keyword: strongestMatch.keyword,
                 fullMessage: messageText,
                 severity: this.getRuleSeverity(strongestMatch.rule),
-                duration: strongestMatch.rule.duration
+                duration: strongestMatch.rule.duration,
+                timeMs: msgTimeMs || null
             });
         }
 
@@ -3285,7 +3668,8 @@ class TicketService {
                         keyword: `${msgs[i].raw} (x${dupes})`,
                         fullMessage: msgs[i].raw,
                         severity: this.getRuleSeverity(spamRule),
-                        duration: spamRule?.duration ?? 0
+                        duration: spamRule?.duration ?? 0,
+                        timeMs: msgs[i].time || null
                     });
                     ruleCounters["Спам в микрофон/чат"] += dupes;
                     break;
@@ -3324,6 +3708,18 @@ class TicketService {
 
         if (allViolations.length === 0) {
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="ioh-badge-row">${shield}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
+            return;
+        }
+
+        const coveringWarning = this.getCoveringWarningWithoutNewTriggers(warningHistoryBlock, allViolations);
+        if (coveringWarning) {
+            const eyeIcon = window.Icons?.eye || '';
+            this.badgeService.updateInfoBadge(
+                'helper-suggest-badge',
+                'warning',
+                `<div class="ioh-badge-row">${chatError}<span><b> Игроку уже выдано предупреждение!</b></span><span class="ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title="">${eyeIcon}</span></div>`,
+                textarea
+            );
             return;
         }
 

@@ -6,11 +6,13 @@
    IO Helper shared utility styles
    ========================================================================== */
 
-.ioh-account-created {
+.ioh-account-created,
+.ioh-faceit-elo {
     margin-top: 4px;
 }
 
-.ioh-account-value {
+.ioh-account-value,
+.ioh-faceit-value {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -21,6 +23,13 @@
     font-weight: 600;
 
     transition: .2s;
+}
+
+.ioh-faceit-rank {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    flex-shrink: 0;
 }
 
 .ioh-account-value--error {
