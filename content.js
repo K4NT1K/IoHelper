@@ -24,6 +24,10 @@
                 config.settings.autoConnectReasons = result.helperSettings.autoConnectReasons;
             }
 
+            if (result.helperSettings?.offenderVipStatuses) {
+                config.settings.offenderVipStatuses = result.helperSettings.offenderVipStatuses;
+            }
+
             if (result.helperSettings?.reasonTriggersAutoconnect) {
                 config.settings.reasonTriggersAutoconnect = result.helperSettings.reasonTriggersAutoconnect;
             }

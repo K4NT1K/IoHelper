@@ -3030,12 +3030,30 @@ class TicketService {
         return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
     }
 
+    normalizeVipName(raw) {
+        if (raw == null) {
+            return null;
+        }
+
+        const value = String(raw).trim();
+        if (!value || /^null$/i.test(value) || /^none$/i.test(value)) {
+            return null;
+        }
+
+        return value;
+    }
+
+    extractVipName(result) {
+        return this.normalizeVipName(result?.basic?.vip_name);
+    }
+
     parseUserDataResult(result) {
         return {
             serverIp: this.extractServerIpFromUserData(result),
             lastconnect: this.extractLastConnect(result),
             serverLabel: this.extractServerLabel(result),
-            isBanned: this.extractActiveBan(result)
+            isBanned: this.extractActiveBan(result),
+            vipName: this.extractVipName(result)
         };
     }
 
@@ -3059,6 +3077,7 @@ class TicketService {
             lastconnect: data.lastconnect ?? null,
             serverLabel: data.serverLabel ?? null,
             isBanned: Boolean(data.isBanned),
+            vipName: data.vipName ?? null,
             fetchedAt: Date.now()
         });
     }
@@ -3137,6 +3156,550 @@ class TicketService {
         }
 
         row.classList.toggle('ioh-highlighted-banned', Boolean(isBanned));
+    }
+
+    getVipBadgeMeta(vipName) {
+        const normalized = this.normalizeVipName(vipName);
+        if (!normalized) {
+            return null;
+        }
+
+        const isLite = normalized.toLowerCase() === 'lite';
+        return {
+            label: normalized,
+            variant: isLite ? 'lite' : 'gold',
+            iconUrl: isLite
+                ? 'https://cloud.cybershoke.net/img/icons/blue-corona.svg'
+                : 'https://cloud.cybershoke.net/img/icons/corona.svg'
+        };
+    }
+
+    isVipStatusAllowed(vipName) {
+        const normalized = this.normalizeVipName(vipName);
+        if (!normalized) {
+            return false;
+        }
+
+        const allowed = this.settings.offenderVipStatuses
+            || ['prospect', 'coach', 'talent', 'pro', 'legend'];
+        const statusKey = normalized.toLowerCase();
+        return allowed.some(status => String(status).toLowerCase() === statusKey);
+    }
+
+    clearVipNickColor(nameButton) {
+        if (!nameButton) {
+            return;
+        }
+
+        nameButton.style.removeProperty('color');
+        nameButton.querySelectorAll('*').forEach(node => {
+            if (node.style) {
+                node.style.removeProperty('color');
+            }
+        });
+    }
+
+    applyVipNickColor(nameButton, color) {
+        if (!nameButton || !color) {
+            return;
+        }
+
+        nameButton.style.setProperty('color', color, 'important');
+        nameButton.querySelectorAll('*').forEach(node => {
+            if (node.style) {
+                node.style.setProperty('color', color, 'important');
+            }
+        });
+    }
+
+    removeOffenderVipBadge(offenderLink) {
+        const cell = offenderLink?.closest('td');
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const scope = cell || ctx?.textColumn || offenderLink?.parentElement;
+
+        scope?.querySelectorAll('.ioh-vip-badge').forEach(badge => badge.remove());
+
+        // Clean every name-row in the cell (also recovers from older wrong avatar wraps).
+        cell?.querySelectorAll('.ioh-vip-name-row').forEach(row => {
+            row.classList.remove('ioh-vip-nick--gold', 'ioh-vip-nick--lite');
+            row.style.removeProperty('--ioh-vip-color');
+            this.clearVipNickColor(row.querySelector(':scope > button'));
+            this.unwrapVipNameRow(row);
+        });
+
+        // Restore icons if an older build relocated them.
+        this.restoreLegacyMovedVipIcons(scope);
+        cell?.querySelectorAll('.ioh-vip-steamid-row').forEach(row => this.unwrapSteamIdRow(row));
+
+        ctx?.textColumn?.classList.remove('ioh-has-vip-badge');
+        ctx?.offenderRoot?.classList.remove('ioh-offender-with-vip');
+        cell?.querySelectorAll('.ioh-offender-icons-empty').forEach(el => {
+            el.classList.remove('ioh-offender-icons-empty');
+        });
+        cell?.classList.remove('ioh-offender-vip-cell');
+
+        if (offenderLink) {
+            delete offenderLink.dataset.iohVipName;
+        }
+    }
+
+    clearOffenderVipBadges() {
+        const links = this.document.querySelectorAll(
+            'a[href*="cybershoke.net/"][data-ioh-vip-name], a[href*="cybershoke.net/"][data-ioh-vip-source]'
+        );
+        links.forEach(link => {
+            this.removeOffenderVipBadge(link);
+        });
+        this.document.querySelectorAll('.ioh-vip-badge').forEach(badge => badge.remove());
+        this.document.querySelectorAll('.ioh-vip-name-row').forEach(row => {
+            row.classList.remove('ioh-vip-nick--gold', 'ioh-vip-nick--lite');
+            row.style.removeProperty('--ioh-vip-color');
+            this.clearVipNickColor(row.querySelector(':scope > button'));
+            this.unwrapVipNameRow(row);
+        });
+        this.restoreLegacyMovedVipIcons(this.document);
+        this.document.querySelectorAll('.ioh-vip-steamid-row').forEach(row => this.unwrapSteamIdRow(row));
+        this.document.querySelectorAll('.ioh-has-vip-badge').forEach(el => el.classList.remove('ioh-has-vip-badge'));
+        this.document.querySelectorAll('.ioh-offender-with-vip').forEach(el => el.classList.remove('ioh-offender-with-vip'));
+        this.document.querySelectorAll('.ioh-offender-icons-empty').forEach(el => el.classList.remove('ioh-offender-icons-empty'));
+        this.document.querySelectorAll('.ioh-offender-vip-cell').forEach(el => el.classList.remove('ioh-offender-vip-cell'));
+    }
+
+    refreshOffenderVipBadges() {
+        const links = this.document.querySelectorAll('a[href*="cybershoke.net/"][data-ioh-vip-source]');
+        links.forEach(link => {
+            this.applyOffenderVipBadge(link, link.dataset.iohVipSource);
+        });
+    }
+
+    /**
+     * Nick/text/icons from SteamID link ancestry (ModeratorService pattern).
+     * Avoid cell.querySelector('button') — that can hit the avatar button.
+     */
+    resolveOffenderVipContext(offenderLink) {
+        if (!offenderLink) {
+            return null;
+        }
+
+        // Same starting point as ModeratorService.insertModeratorBadge
+        let idContainer = offenderLink.closest('div');
+        if (idContainer?.classList.contains('ioh-vip-steamid-row')) {
+            idContainer = idContainer.parentElement;
+        }
+        if (idContainer?.classList.contains('ioh-vip-name-row')) {
+            idContainer = idContainer.parentElement;
+        }
+
+        const textColumn = idContainer?.parentElement;
+        if (!textColumn || !idContainer) {
+            return null;
+        }
+
+        const offenderRoot = textColumn.parentElement;
+        const nameRow = textColumn.querySelector(':scope > .ioh-vip-name-row')
+            || idContainer.parentElement?.querySelector(':scope > .ioh-vip-name-row');
+
+        // Prefer nick button inside text column, but never inside the steamid container.
+        let nameButton = nameRow?.querySelector('button') || null;
+        if (!nameButton) {
+            nameButton = Array.from(textColumn.querySelectorAll('button')).find(btn => (
+                !idContainer.contains(btn)
+                && textColumn.contains(btn)
+            )) || null;
+        }
+
+        const iconsColumn = this.resolveOffenderIconsColumn(offenderRoot, textColumn);
+
+        return {
+            idContainer,
+            textColumn,
+            offenderRoot,
+            nameButton,
+            nameRow: nameButton?.closest('.ioh-vip-name-row') || nameRow || null,
+            iconsColumn
+        };
+    }
+
+    resolveOffenderIconsColumn(offenderRoot, textColumn) {
+        if (!offenderRoot || !textColumn) {
+            return null;
+        }
+
+        const siblings = Array.from(offenderRoot.children).filter(child => child !== textColumn);
+        if (!siblings.length) {
+            return null;
+        }
+
+        const withIcons = siblings.find(child => (
+            child.querySelector('img[alt*="Prime" i]')
+            || child.querySelector('button use[href*="lc-copy"], button use[href*="copy"]')
+        ));
+        if (withIcons) {
+            return withIcons;
+        }
+
+        // Avatar + icons: take last non-text sibling only when there are ≥2.
+        if (siblings.length >= 2) {
+            return siblings[siblings.length - 1];
+        }
+
+        return null;
+    }
+
+    findOffenderNameButton(offenderLink) {
+        return this.resolveOffenderVipContext(offenderLink)?.nameButton || null;
+    }
+
+    isPrimeStatusImg(img) {
+        if (!img || img.tagName !== 'IMG') {
+            return false;
+        }
+        if (img.closest('.ioh-vip-badge')) {
+            return false;
+        }
+        return /prime/i.test(img.getAttribute('alt') || '');
+    }
+
+    isCopyControl(el) {
+        if (!el || el.tagName !== 'BUTTON') {
+            return false;
+        }
+        return Boolean(
+            el.querySelector('use[href*="lc-copy"], use[href*="copy"], use[xlink\\:href*="lc-copy"]')
+        );
+    }
+
+    /**
+     * Lift a node to the direct child of `stopParent` (or leave as-is).
+     */
+    liftToChildOf(node, stopParent) {
+        if (!node || !stopParent) {
+            return node;
+        }
+
+        let el = node;
+        while (el.parentElement && el.parentElement !== stopParent) {
+            el = el.parentElement;
+        }
+        return el;
+    }
+
+    findOffenderPrimeIcon(ctx) {
+        if (!ctx) {
+            return null;
+        }
+
+        const slotted = ctx.nameRow?.querySelector(':scope > .ioh-vip-prime-slot')
+            || ctx.textColumn?.querySelector('.ioh-vip-prime-slot');
+        if (slotted) {
+            return slotted;
+        }
+
+        if (ctx.iconsColumn) {
+            const fromCol = Array.from(ctx.iconsColumn.children).find(child => (
+                this.isPrimeStatusImg(child)
+                || child.querySelector?.('img[alt*="Prime" i]')
+            ));
+            return fromCol || ctx.iconsColumn.firstElementChild || null;
+        }
+
+        const nickParent = ctx.nameRow?.parentElement
+            || ctx.nameButton?.parentElement
+            || ctx.textColumn;
+        if (!nickParent) {
+            return null;
+        }
+
+        const img = Array.from(nickParent.querySelectorAll('img[alt*="Prime" i]'))
+            .find(candidate => this.isPrimeStatusImg(candidate));
+        if (!img) {
+            return null;
+        }
+
+        // Prefer the wrapper that sits beside the nick row / nick button.
+        if (ctx.nameRow && img.parentElement === nickParent) {
+            return img;
+        }
+        return this.liftToChildOf(img, nickParent);
+    }
+
+    findOffenderCopyControl(ctx, offenderLink, primeEl = null) {
+        if (!ctx) {
+            return null;
+        }
+
+        const slotted = ctx.idContainer?.querySelector('.ioh-vip-copy-slot')
+            || ctx.textColumn?.querySelector('.ioh-vip-copy-slot')
+            || offenderLink?.closest('td')?.querySelector('.ioh-vip-copy-slot');
+        if (slotted) {
+            return slotted;
+        }
+
+        const searchRoots = [
+            ctx.idContainer,
+            offenderLink?.parentElement,
+            ctx.textColumn,
+            ctx.iconsColumn
+        ].filter(Boolean);
+
+        for (const root of searchRoots) {
+            const btn = Array.from(root.querySelectorAll('button')).find(candidate => (
+                this.isCopyControl(candidate)
+                && candidate !== ctx.nameButton
+            ));
+            if (btn) {
+                // Move the button itself (or its direct icons-col wrapper if that is only the button).
+                if (ctx.iconsColumn?.contains(btn) && btn.parentElement === ctx.iconsColumn) {
+                    return btn;
+                }
+                if (ctx.idContainer?.contains(btn) || offenderLink?.parentElement?.contains(btn)) {
+                    return btn;
+                }
+                return btn;
+            }
+        }
+
+        if (ctx.iconsColumn) {
+            const last = ctx.iconsColumn.lastElementChild;
+            if (last && last !== primeEl) {
+                return last;
+            }
+        }
+
+        return null;
+    }
+
+    storeVipIconRestore(el) {
+        if (!el || el.__iohVipIconRestore) {
+            return;
+        }
+
+        el.__iohVipIconRestore = {
+            parent: el.parentElement,
+            next: el.nextSibling
+        };
+    }
+
+    restoreLegacyMovedVipIcons(scope) {
+        const roots = [];
+        if (scope) {
+            roots.push(scope);
+        }
+        roots.push(this.document);
+
+        roots.forEach(root => {
+            root.querySelectorAll?.('.ioh-vip-prime-slot, .ioh-vip-copy-slot').forEach(el => {
+                const restore = el.__iohVipIconRestore || el.__iohVipPrimeRestore;
+                el.classList.remove('ioh-vip-prime-slot', 'ioh-vip-copy-slot');
+                if (restore?.parent?.isConnected) {
+                    restore.parent.insertBefore(el, restore.next);
+                }
+                delete el.__iohVipIconRestore;
+                delete el.__iohVipPrimeRestore;
+            });
+        });
+    }
+
+    ensureSteamIdRow(offenderLink) {
+        if (!offenderLink?.parentElement) {
+            return null;
+        }
+
+        if (offenderLink.parentElement.classList.contains('ioh-vip-steamid-row')) {
+            return offenderLink.parentElement;
+        }
+
+        const parent = offenderLink.parentElement;
+        const row = this.document.createElement('div');
+        row.className = 'ioh-vip-steamid-row';
+        parent.insertBefore(row, offenderLink);
+        row.appendChild(offenderLink);
+        return row;
+    }
+
+    unwrapSteamIdRow(node) {
+        const row = node?.classList?.contains('ioh-vip-steamid-row') ? node : null;
+        if (!row?.parentNode) {
+            return;
+        }
+
+        const parent = row.parentNode;
+        while (row.firstChild) {
+            parent.insertBefore(row.firstChild, row);
+        }
+        row.remove();
+    }
+
+    /**
+     * Prime goes with nick+badge; copy stays beside SteamID.
+     * Finds icons by content (icons column OR inline nick/steam siblings).
+     */
+    arrangeVipRowIcons(nameRow, offenderLink, ctx) {
+        if (!nameRow || !offenderLink || !ctx) {
+            return;
+        }
+
+        const prime = this.findOffenderPrimeIcon({...ctx, nameRow});
+        const copy = this.findOffenderCopyControl({...ctx, nameRow}, offenderLink, prime);
+
+        if (prime && !nameRow.contains(prime)) {
+            this.storeVipIconRestore(prime);
+            prime.classList.add('ioh-vip-prime-slot');
+            nameRow.appendChild(prime);
+        } else if (prime && nameRow.contains(prime)) {
+            prime.classList.add('ioh-vip-prime-slot');
+            if (prime.nextSibling) {
+                nameRow.appendChild(prime);
+            }
+        }
+
+        if (copy && copy !== prime) {
+            const steamRow = this.ensureSteamIdRow(offenderLink);
+            if (steamRow && !steamRow.contains(copy)) {
+                this.storeVipIconRestore(copy);
+                copy.classList.add('ioh-vip-copy-slot');
+                steamRow.appendChild(copy);
+            } else if (steamRow?.contains(copy)) {
+                copy.classList.add('ioh-vip-copy-slot');
+            }
+        }
+
+        const iconsColumn = ctx.iconsColumn;
+        if (iconsColumn && !iconsColumn.childElementCount) {
+            iconsColumn.classList.add('ioh-offender-icons-empty');
+        }
+    }
+
+    ensureVipNameRow(nameButton, textColumn) {
+        if (!nameButton?.parentNode) {
+            return null;
+        }
+
+        if (textColumn && !textColumn.contains(nameButton)) {
+            return null;
+        }
+
+        if (nameButton.parentElement.classList.contains('ioh-vip-name-row')) {
+            return nameButton.parentElement;
+        }
+
+        const parent = nameButton.parentNode;
+        const row = this.document.createElement('div');
+        row.className = 'ioh-vip-name-row';
+        parent.insertBefore(row, nameButton);
+        row.appendChild(nameButton);
+
+        while (row.nextSibling?.classList?.contains('ioh-admin-icon')) {
+            row.appendChild(row.nextSibling);
+        }
+
+        return row;
+    }
+
+    unwrapVipNameRow(row) {
+        if (!row?.classList?.contains('ioh-vip-name-row') || !row.parentNode) {
+            return;
+        }
+
+        this.restoreLegacyMovedVipIcons(row);
+
+        const parent = row.parentNode;
+        while (row.firstChild) {
+            parent.insertBefore(row.firstChild, row);
+        }
+        row.remove();
+    }
+
+    applyOffenderVipBadge(offenderLink, vipName) {
+        if (!offenderLink) {
+            return;
+        }
+
+        const normalized = this.normalizeVipName(vipName);
+        if (normalized) {
+            offenderLink.dataset.iohVipSource = normalized;
+        } else {
+            delete offenderLink.dataset.iohVipSource;
+        }
+
+        const showBadge = this.settings.features?.showOffenderVipBadge !== false
+            && this.settings.features?.trackOffenderServer
+            && this.isVipStatusAllowed(normalized);
+        const meta = showBadge ? this.getVipBadgeMeta(normalized) : null;
+
+        if (!meta) {
+            this.removeOffenderVipBadge(offenderLink);
+            return;
+        }
+
+        if (offenderLink.dataset.iohVipName === meta.label) {
+            const cell = offenderLink.closest('td');
+            const existing = cell?.querySelector('.ioh-vip-badge');
+            if (existing) {
+                const ctx = this.resolveOffenderVipContext(offenderLink);
+                const nameRow = ctx?.nameRow
+                    || existing.closest('.ioh-vip-name-row')
+                    || null;
+                const needsArrange = nameRow && (
+                    !cell?.querySelector('.ioh-vip-copy-slot')
+                    || (this.findOffenderPrimeIcon(ctx) && !cell?.querySelector('.ioh-vip-prime-slot'))
+                );
+                if (needsArrange && ctx) {
+                    this.arrangeVipRowIcons(nameRow, offenderLink, ctx);
+                }
+                return;
+            }
+        }
+
+        this.removeOffenderVipBadge(offenderLink);
+
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        if (!ctx?.textColumn) {
+            return;
+        }
+
+        const badge = this.document.createElement('span');
+        badge.className = `ioh-vip-badge ioh-vip-badge--${meta.variant}`;
+
+        const icon = this.document.createElement('img');
+        icon.src = meta.iconUrl;
+        icon.alt = '';
+
+        const label = this.document.createElement('span');
+        label.textContent = meta.label;
+
+        badge.appendChild(icon);
+        badge.appendChild(label);
+
+        const vipColor = meta.variant === 'lite' ? '#32a0ef' : '#feb611';
+        const nameButton = ctx.nameButton;
+        let nameRow = null;
+
+        if (nameButton) {
+            nameRow = this.ensureVipNameRow(nameButton, ctx.textColumn);
+            if (nameRow) {
+                nameRow.classList.remove('ioh-vip-nick--gold', 'ioh-vip-nick--lite');
+                nameRow.classList.add(`ioh-vip-nick--${meta.variant}`);
+                nameRow.style.setProperty('--ioh-vip-color', vipColor);
+                this.applyVipNickColor(nameButton, vipColor);
+                nameRow.appendChild(badge);
+            } else {
+                this.applyVipNickColor(nameButton, vipColor);
+                nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
+                nameRow = nameButton.closest('.ioh-vip-name-row');
+            }
+        } else {
+            ctx.idContainer?.appendChild(badge);
+        }
+
+        if (nameRow) {
+            this.arrangeVipRowIcons(nameRow, offenderLink, ctx);
+        }
+
+        ctx.textColumn.classList.add('ioh-has-vip-badge');
+        ctx.offenderRoot?.classList.add('ioh-offender-with-vip');
+        offenderLink.closest('td')?.classList.add('ioh-offender-vip-cell');
+        offenderLink.dataset.iohVipName = meta.label;
     }
 
     async fetchUserData(steamId) {
@@ -3281,8 +3844,10 @@ class TicketService {
                 }
 
                 const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
+                const offenderLinkToUpdate = targetRow.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
                 this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
                 this.applyOffenderBanHighlight(targetRow, userData.isBanned);
+                this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
             }
         } catch (e) {
             console.error(e);

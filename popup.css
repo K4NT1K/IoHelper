@@ -209,6 +209,73 @@ h1 {
     margin-top: 16px;
 }
 
+.settings-accordion {
+    margin-bottom: 9px;
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+    overflow: visible;
+}
+
+.settings-accordion__header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 650;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--spring);
+}
+
+.settings-accordion__header:hover {
+    background: var(--glass-hover);
+    border-radius: var(--radius-md);
+}
+
+.settings-accordion__chevron {
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--subtext);
+    border-bottom: 2px solid var(--subtext);
+    transform: rotate(45deg);
+    transition: transform var(--spring);
+    flex-shrink: 0;
+}
+
+.settings-accordion.is-open .settings-accordion__chevron {
+    transform: rotate(225deg);
+    margin-top: 4px;
+}
+
+.settings-accordion__body {
+    padding: 0 12px 12px;
+    border-top: 1px solid transparent;
+    overflow: visible;
+}
+
+.settings-accordion.is-open .settings-accordion__body {
+    border-top-color: var(--stroke);
+    padding-top: 12px;
+}
+
+.toggle-grid--nested {
+    margin-bottom: 10px;
+}
+
+.settings-accordion__body .number-card {
+    margin-top: 2px;
+}
+
+.settings-accordion__body .section-hint--spaced {
+    margin-top: 12px;
+}
+
 .section-title {
     font-size: 12px;
     font-weight: 720;
@@ -402,7 +469,8 @@ h1 {
     position: absolute;
     left: 0;
     bottom: calc(100% + 10px);
-    width: 198px;
+    width: max-content;
+    max-width: 260px;
     padding: 9px 10px;
     color: var(--text);
     font-size: 11px;
@@ -423,7 +491,7 @@ h1 {
     transform: translateY(6px) scale(0.96);
     transform-origin: 0 100%;
     transition: var(--spring);
-    z-index: 30;
+    z-index: 80;
 }
 
 .toggle-item:nth-child(even) .info-tooltip {

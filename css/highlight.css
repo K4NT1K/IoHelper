@@ -162,6 +162,153 @@ svg.ioh-admin-icon {
 /*    color: rgba(148, 163, 184, 0.9);*/
 /*    white-space: nowrap;*/
 /*}*/
+
+td:has(.ioh-vip-badge),
+td.ioh-offender-vip-cell {
+    min-width: 0 !important;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.ioh-offender-with-vip {
+    display: flex !important;
+    align-items: center !important;
+    width: max-content !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow: hidden;
+}
+
+.ioh-has-vip-badge {
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: auto !important;
+    overflow: hidden !important;
+}
+
+.ioh-has-vip-badge > div {
+    justify-content: flex-start !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+}
+
+.ioh-offender-icons-empty {
+    display: none !important;
+}
+
+.ioh-vip-steamid-row {
+    display: inline-flex !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    gap: 4px !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    vertical-align: middle;
+}
+
+.ioh-vip-name-row {
+    --ioh-vip-color: #feb611;
+    display: inline-flex !important;
+    align-items: center;
+    flex-wrap: nowrap;
+    justify-content: flex-start !important;
+    gap: 4px;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: fit-content !important;
+    box-sizing: border-box;
+    vertical-align: middle;
+    position: relative;
+    z-index: 2;
+    overflow: hidden;
+}
+
+.ioh-vip-name-row.ioh-vip-nick--lite {
+    --ioh-vip-color: #32a0ef;
+}
+
+.ioh-vip-name-row > button,
+.ioh-vip-name-row > button * {
+    color: var(--ioh-vip-color) !important;
+}
+
+.ioh-vip-name-row > button {
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.ioh-vip-prime-slot {
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+}
+
+.ioh-vip-copy-slot {
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+@keyframes ioh-vip-badge-enter {
+    from {
+        opacity: 0;
+        transform: translateY(3px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.ioh-vip-badge {
+    --ioh-vip-color: #feb611;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 2px;
+    padding: 1px 6px 1px 4px;
+    border: 1px solid var(--ioh-vip-color);
+    border-radius: 5px;
+    color: var(--ioh-vip-color);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    white-space: nowrap;
+    flex: 0 0 auto !important;
+    flex-shrink: 0;
+    transform-origin: left center;
+    animation: ioh-vip-badge-enter 0.4s ease both;
+    transition: 0.3s;
+}
+
+.ioh-vip-badge--lite {
+    --ioh-vip-color: #32a0ef;
+}
+
+.ioh-vip-badge img {
+    width: 10px;
+    height: 10px;
+    display: block;
+    flex-shrink: 0;
+}
+
+.ioh-vip-badge > span {
+    flex-shrink: 0;
+}
+
 @keyframes ioh-status-pulse {
     0%, 100% {
         box-shadow:

@@ -228,6 +228,26 @@ class App {
             clearInterval(this.ipTrackInterval);
             this.ipTrackInterval = null;
         }
+
+        if (
+            (!nextFeatures.trackOffenderServer && previousFeatures.trackOffenderServer)
+            || (!nextFeatures.showOffenderVipBadge && previousFeatures.showOffenderVipBadge !== false)
+        ) {
+            this.ticketService.clearOffenderVipBadges();
+        }
+
+        const vipStatusesChanged = JSON.stringify(previousSettings?.offenderVipStatuses || [])
+            !== JSON.stringify(nextSettings.offenderVipStatuses || []);
+        const vipBadgeReenabled = !previousFeatures.showOffenderVipBadge
+            && nextFeatures.showOffenderVipBadge !== false;
+
+        if (
+            nextFeatures.trackOffenderServer
+            && nextFeatures.showOffenderVipBadge !== false
+            && (vipStatusesChanged || vipBadgeReenabled)
+        ) {
+            this.ticketService.refreshOffenderVipBadges();
+        }
     }
 
     runDOMUpdates() {

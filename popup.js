@@ -8,13 +8,114 @@ const autoConnectReasonsContainer = document.getElementById('autoConnectReasonsC
 const autoConnectTriggersContainer = document.getElementById('autoConnectTriggersContainer');
 const autoConnectTriggerInput = document.getElementById('autoConnectTriggerInput');
 const addAutoConnectTriggerBtn = document.getElementById('addAutoConnectTriggerBtn');
-// const ticketAgeInput = document.getElementById('ticketAgeLimit');
+const offenderVipStatusesContainer = document.getElementById('offenderVipStatusesContainer');
 const addBtn = document.getElementById('addTriggerBtn');
 const resetBtn = document.getElementById('resetDefaultsBtn');
 const toast = document.getElementById('toastMsg');
 
 let currentSettings = {};
 let defaultSettings = {};
+
+const FEATURE_GROUPS = [
+    {
+        id: 'tracker',
+        entries: [
+            {
+                key: 'trackOffenderServer',
+                label: 'Трекер нарушителей',
+                desc: '',
+                help: 'Отслеживает текущий сервер нарушителя в таблице жалоб и загружает данные игрока для связанных функций.'
+            },
+            {
+                key: 'showOffenderVipBadge',
+                label: 'Статус нарушителя',
+                desc: '',
+                help: 'Показывает бейдж статуса рядом с ником нарушителя в таблице жалоб: PREMIUM, TALENT, PRO и тд. Работает вместе с трекером нарушителей.'
+            }
+        ]
+    },
+    {
+        id: 'highlight',
+        entries: [
+            {
+                key: 'highlightDuplicateServers',
+                label: 'Дубликаты серверов',
+                desc: '',
+                help: 'Выделяет жалобы, пришедшие с одного сервера.'
+            },
+            {
+                key: 'highlightComplaintTriggers',
+                label: 'Подсветка триггеров жалоб',
+                desc: '',
+                help: 'Подсвечивает слова из списка триггеров в причине жалобы.'
+            },
+            {
+                key: 'highlightNewAccounts',
+                label: 'Подсветка новых аккаунтов',
+                desc: '',
+                help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
+            }
+        ]
+    },
+    {
+        id: 'ticket',
+        entries: [
+            {
+                key: 'processTicketRules',
+                label: 'Анализ чата',
+                desc: '',
+                help: 'Анализирует историю чата в тикете и показывает подсказку по нарушению и наказанию.'
+            },
+            {
+                key: 'showSteamAccountCreationDate',
+                label: 'Дата создания Steam-аккаунта',
+                desc: '',
+                help: 'Показывает дату создания Steam-аккаунта нарушителя в открытом тикете.'
+            },
+            {
+                key: 'showFaceitElo',
+                label: 'Faceit ELO',
+                desc: '',
+                help: 'Показывает Faceit ELO и уровень нарушителя в открытом тикете.'
+            },
+            {
+                key: 'translateText',
+                label: 'Перевод сообщений',
+                desc: '',
+                help: 'Переводит нерусские сообщения в истории чата при наведении на них курсором.'
+            },
+            {
+                key: 'autoConnectServer',
+                label: 'Автоподключение к серверу',
+                desc: '',
+                help: 'Автоматически подключает вас к серверу указанному в тикете.'
+            }
+        ]
+    },
+    {
+        id: 'other',
+        entries: [
+            {
+                key: 'autoPunishmentDuration',
+                label: 'Автоподстановка срока наказания',
+                desc: '',
+                help: 'Автоматически выбирает срок при выборе причины в формах мута и бана. Учитывает X2-опции сайта.'
+            },
+            {
+                key: 'squareTickets',
+                label: 'Квадратные тикеты',
+                desc: 'BETA TEST',
+                help: 'Удобнее пользоваться сайтом мониторам с книжной ориентацией.'
+            },
+            {
+                key: 'scanSchedulePage',
+                label: 'Сканировать расписание',
+                desc: '',
+                help: 'На странице расписания проходит все дни Пн–Вс, для обновления списка модераторов.'
+            }
+        ]
+    }
+];
 
 const storage = {
     get(keys, callback) {
@@ -54,125 +155,78 @@ function showToast(message, duration = 2000) {
     toast._timer = setTimeout(() => toast.classList.remove('show'), duration);
 }
 
+function createToggleItem(features, {key, label, desc, help}) {
+    const item = document.createElement('div');
+    item.className = 'toggle-item';
+
+    const copyWrap = document.createElement('div');
+    copyWrap.className = 'toggle-copy';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'toggle-label';
+    labelSpan.textContent = label;
+    const descEl = document.createElement('small');
+    descEl.textContent = desc;
+    labelSpan.appendChild(descEl);
+
+    const helpDot = document.createElement('span');
+    helpDot.className = 'info-dot';
+    helpDot.tabIndex = 0;
+    helpDot.setAttribute('aria-label', help);
+    helpDot.textContent = 'i';
+
+    const tooltip = document.createElement('span');
+    tooltip.className = 'info-tooltip';
+    tooltip.textContent = help;
+    helpDot.appendChild(tooltip);
+
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'switch-ios';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.addEventListener('change', saveCurrentSettings);
+    input.checked = features[key] !== undefined ? features[key] : true;
+    input.dataset.feature = key;
+    const slider = document.createElement('span');
+    slider.className = 'slider';
+
+    switchLabel.appendChild(input);
+    switchLabel.appendChild(slider);
+    copyWrap.appendChild(labelSpan);
+    copyWrap.appendChild(helpDot);
+    item.appendChild(copyWrap);
+    item.appendChild(switchLabel);
+    return item;
+}
+
 function renderToggles(features) {
-    featureTogglesEl.innerHTML = '';
-    const entries = [
-        {
-            key: 'processTicketRules',
-            label: 'Анализ чата',
-            desc: '',
-            help: 'Анализирует историю чата в тикете и показывает подсказку по нарушению и наказанию.'
-        },
-        {
-            key: 'autoPunishmentDuration',
-            label: 'Автоподстановка срока наказания',
-            desc: '',
-            help: 'Автоматически выбирает срок при выборе причины в формах мута и бана. Учитывает X2-опции сайта.'
-        },
-        {
-            key: 'showSteamAccountCreationDate',
-            label: 'Дата создания Steam-аккаунта',
-            desc: '',
-            help: 'Показывает дату создания Steam-аккаунта нарушителя в открытом тикете.'
-        },
-        {
-            key: 'showFaceitElo',
-            label: 'Faceit ELO',
-            desc: '',
-            help: 'Показывает Faceit ELO и уровень нарушителя в открытом тикете.'
-        },
-        {
-            key: 'translateText',
-            label: 'Перевод сообщений',
-            desc: '',
-            help: 'Переводит нерусские сообщения в истории чата при наведении на них курсором.'
-        },
-        {
-            key: 'autoConnectServer',
-            label: 'Автоподключение к серверу',
-            desc: '',
-            help: 'Автоматически подключает вас к серверу указанному в тикете.'
-        },
-        {
-            key: 'squareTickets',
-            label: 'Квадратные тикеты',
-            desc: 'BETA TEST',
-            help: 'Удобнее пользоваться сайтом мониторам с книжной ориентацией.'
-        },
-        {
-            key: 'trackOffenderServer',
-            label: 'Трекер серверов нарушителей',
-            desc: '',
-            help: 'Включает отслеживание текущего сервера игрока.'
-        },
-        {
-            key: 'highlightDuplicateServers',
-            label: 'Дубликаты серверов',
-            desc: '',
-            help: 'Выделяет жалобы, пришедшие с одного сервера.'
-        },
-        {
-            key: 'highlightComplaintTriggers',
-            label: 'Подсветка триггеров жалоб',
-            desc: '',
-            help: 'Подсвечивает слова из списка триггеров в причине жалобы.'
-        },
-        {
-            key: 'highlightNewAccounts',
-            label: 'Подсветка новых аккаунтов',
-            desc: '',
-            help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
-        },
-        {
-            key: 'scanSchedulePage',
-            label: 'Сканировать расписание',
-            desc: '',
-            help: 'Обновляет базу модераторов при открытии страницы "Таймлайн" для подсветки в тикетах. Включите только если не подсветило модератора.'
+    FEATURE_GROUPS.forEach(group => {
+        const container = featureTogglesEl.querySelector(`[data-toggle-group="${group.id}"]`);
+        if (!container) {
+            return;
         }
-    ];
 
-    entries.forEach(({key, label, desc, help}) => {
-        const item = document.createElement('div');
-        item.className = 'toggle-item';
+        container.innerHTML = '';
+        group.entries.forEach(entry => {
+            container.appendChild(createToggleItem(features, entry));
+        });
+    });
+}
 
-        const copyWrap = document.createElement('div');
-        copyWrap.className = 'toggle-copy';
+function initAccordions() {
+    featureTogglesEl.querySelectorAll('.settings-accordion').forEach(accordion => {
+        const header = accordion.querySelector('.settings-accordion__header');
+        const body = accordion.querySelector('.settings-accordion__body');
+        if (!header || !body || header.dataset.bound === 'true') {
+            return;
+        }
 
-        const labelSpan = document.createElement('span');
-        labelSpan.className = 'toggle-label';
-        labelSpan.textContent = label;
-        const descEl = document.createElement('small');
-        descEl.textContent = desc;
-        labelSpan.appendChild(descEl);
-
-        const helpDot = document.createElement('span');
-        helpDot.className = 'info-dot';
-        helpDot.tabIndex = 0;
-        helpDot.setAttribute('aria-label', help);
-        helpDot.textContent = 'i';
-
-        const tooltip = document.createElement('span');
-        tooltip.className = 'info-tooltip';
-        tooltip.textContent = help;
-        helpDot.appendChild(tooltip);
-
-        const switchLabel = document.createElement('label');
-        switchLabel.className = 'switch-ios';
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.addEventListener('change', saveCurrentSettings);
-        input.checked = features[key] !== undefined ? features[key] : true;
-        input.dataset.feature = key;
-        const slider = document.createElement('span');
-        slider.className = 'slider';
-
-        switchLabel.appendChild(input);
-        switchLabel.appendChild(slider);
-        copyWrap.appendChild(labelSpan);
-        copyWrap.appendChild(helpDot);
-        item.appendChild(copyWrap);
-        item.appendChild(switchLabel);
-        featureTogglesEl.appendChild(item);
+        header.dataset.bound = 'true';
+        header.addEventListener('click', () => {
+            const isOpen = accordion.classList.toggle('is-open');
+            header.setAttribute('aria-expanded', String(isOpen));
+            body.hidden = !isOpen;
+        });
     });
 }
 
@@ -195,6 +249,32 @@ function renderAutoConnectReasons(options, selectedReasons) {
         label.appendChild(input);
         label.appendChild(text);
         autoConnectReasonsContainer.appendChild(label);
+    });
+}
+
+function renderOffenderVipStatuses(options, selectedStatuses) {
+    if (!offenderVipStatusesContainer) {
+        return;
+    }
+
+    offenderVipStatusesContainer.innerHTML = '';
+
+    options.forEach(status => {
+        const label = document.createElement('label');
+        label.className = 'reason-checkbox';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = status;
+        input.checked = selectedStatuses.includes(status);
+        input.addEventListener('change', saveCurrentSettings);
+
+        const text = document.createElement('span');
+        text.textContent = status;
+
+        label.appendChild(input);
+        label.appendChild(text);
+        offenderVipStatusesContainer.appendChild(label);
     });
 }
 
@@ -243,7 +323,7 @@ function renderTriggers(triggers) {
 }
 
 function loadSettingsToUI(settings) {
-    const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"]');
+    const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"][data-feature]');
 
     checkboxes.forEach(cb => {
         cb.checked = settings.features[cb.dataset.feature]
@@ -256,11 +336,14 @@ function loadSettingsToUI(settings) {
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
     currentSettings.reasonTriggersAutoconnect = [...(settings.reasonTriggersAutoconnect || [])];
     trackIntervalInput.value = settings.trackOffenderInterval;
-    // ticketAgeInput.value = settings.ticketAgeLimit;
 
     renderAutoConnectReasons(
         defaultSettings.complaintReasonOptions || [],
         settings.autoConnectReasons || defaultSettings.autoConnectReasons || []
+    );
+    renderOffenderVipStatuses(
+        defaultSettings.offenderVipStatusOptions || [],
+        settings.offenderVipStatuses || defaultSettings.offenderVipStatuses || []
     );
     renderAutoConnectTriggers(
         settings.reasonTriggersAutoconnect || defaultSettings.reasonTriggersAutoconnect || []
@@ -269,19 +352,16 @@ function loadSettingsToUI(settings) {
 }
 
 function collectSettingsFromUI() {
-
     const features = {};
 
     featureTogglesEl
-        .querySelectorAll('input[type="checkbox"]')
+        .querySelectorAll('input[type="checkbox"][data-feature]')
         .forEach(cb => {
             features[cb.dataset.feature] = cb.checked;
         });
 
     return {
-
         features,
-
         newAccountHours: Math.max(
             parseInt(hoursInput.value, 10) || 1,
             1
@@ -291,17 +371,15 @@ function collectSettingsFromUI() {
             0
         ),
         trackOffenderInterval: Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1),
-        // ticketAgeLimit: Math.max(parseInt(ticketAgeInput.value, 10) || 0, 0),
-
         autoConnectReasons: Array.from(
             autoConnectReasonsContainer.querySelectorAll('input[type="checkbox"]:checked')
         ).map(input => input.value),
-
+        offenderVipStatuses: Array.from(
+            offenderVipStatusesContainer.querySelectorAll('input[type="checkbox"]:checked')
+        ).map(input => input.value),
         reasonTriggers: [...currentSettings.reasonTriggers],
         reasonTriggersAutoconnect: [...currentSettings.reasonTriggersAutoconnect]
-
     };
-
 }
 
 function saveSettings(settings) {
@@ -321,6 +399,7 @@ async function loadSettings() {
 
     defaultSettings = structuredClone(config.settings);
     renderToggles(defaultSettings.features);
+    initAccordions();
 
     storage.get(["helperSettings"], ({helperSettings}) => {
         currentSettings = structuredClone(defaultSettings);
@@ -347,6 +426,9 @@ async function loadSettings() {
             currentSettings.autoConnectReasons =
                 helperSettings.autoConnectReasons ??
                 currentSettings.autoConnectReasons;
+            currentSettings.offenderVipStatuses =
+                helperSettings.offenderVipStatuses ??
+                currentSettings.offenderVipStatuses;
             currentSettings.reasonTriggersAutoconnect =
                 helperSettings.reasonTriggersAutoconnect ??
                 currentSettings.reasonTriggersAutoconnect;
@@ -354,7 +436,6 @@ async function loadSettings() {
 
         loadSettingsToUI(currentSettings);
     });
-
 }
 
 addBtn.addEventListener('click', () => {
@@ -371,7 +452,6 @@ addBtn.addEventListener('click', () => {
     triggerInput.focus();
 });
 
-// Добавление по Enter
 triggerInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
@@ -406,7 +486,6 @@ autoConnectTriggerInput.addEventListener('keydown', (e) => {
 hoursInput.addEventListener('change', saveCurrentSettings);
 refreshIntervalInput.addEventListener('change', saveCurrentSettings);
 trackIntervalInput.addEventListener('input', saveCurrentSettings);
-// ticketAgeInput.addEventListener('input', saveCurrentSettings);
 
 resetBtn.addEventListener("click", () => {
     if (!confirm("Сбросить все настройки?"))
@@ -423,7 +502,6 @@ resetBtn.addEventListener("click", () => {
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
-
     await loadSettings();
 
     document.querySelector(".header-version").textContent =
