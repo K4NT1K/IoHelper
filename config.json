@@ -10,6 +10,7 @@
       "showFaceitElo": true,
       "autoPunishmentDuration": true,
       "trackOffenderServer": false,
+      "showOffenderVipBadge": false,
       "autoConnectServer": false,
       "scanSchedulePage": false,
       "squareTickets": false
@@ -30,6 +31,12 @@
     ],
     "reasonTriggers": [
       "крутилка", "крутилкой", "крутится", "krutilka", "krutilkoy", "spin", "hvh", "hwh", "хвх", "rage", "рейдж"
+    ],
+    "offenderVipStatusOptions": [
+      "premium", "lite", "prospect", "coach", "talent", "pro", "legend"
+    ],
+    "offenderVipStatuses": [
+      "prospect", "coach", "talent", "pro", "legend"
     ]
   },
   "templates": {
@@ -173,10 +180,6 @@
     "syn": [
       "sync"
     ],
-    "бот": [
-      "работ",
-      "робот"
-    ],
     "sin": [
       "missing"
     ],
@@ -199,19 +202,16 @@
       "friz"
     ],
     "ez": [
-      "bez",
-      "nez"
+      "bez", "nez"
     ],
     "лох": [
       "плох", "глох", "блох"
     ],
     "bot": [
-      "aimbot",
-      "robot"
+      "aimbot", "robot", "rabot"
     ],
     "бот": [
-      "аимбот",
-      "робот"
+      "аимбот", "робот", "работ"
     ],
     "фрик": [
       "африк"
