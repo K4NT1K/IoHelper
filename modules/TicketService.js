@@ -4197,7 +4197,7 @@ class TicketService {
         }
 
         const scope = this.getTicketScopeRoot(textarea);
-
+        this.swapChatAndWarningHistoryCards(scope);
 
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
