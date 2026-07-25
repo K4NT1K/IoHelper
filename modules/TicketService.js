@@ -241,67 +241,6 @@ class TicketService {
         return this.findCardSurface(header) || null;
     }
 
-    swapChatAndWarningHistoryCards(scopeEl) {
-        const chatCard = this.getHistorySectionCard('История Чата', scopeEl);
-        const warningCard = this.getHistorySectionCard('История предупреждений', scopeEl)
-            || this.getHistorySectionCard('История Предупреждений', scopeEl);
-
-        if (!chatCard || !warningCard || chatCard === warningCard) {
-            return false;
-        }
-
-        if (chatCard.contains(warningCard) || warningCard.contains(chatCard)) {
-            return false;
-        }
-
-        if (!this.document.contains(chatCard) || !this.document.contains(warningCard)) {
-            return false;
-        }
-
-        if (
-            chatCard.dataset.iohHistorySlot === 'chat'
-            && warningCard.dataset.iohHistorySlot === 'warnings'
-        ) {
-            return false;
-        }
-
-        const chatParent = chatCard.parentNode;
-        const warningParent = warningCard.parentNode;
-        if (!chatParent || !warningParent) {
-            return false;
-        }
-
-        if (chatCard.parentNode !== chatParent || warningCard.parentNode !== warningParent) {
-            return false;
-        }
-
-        const marker = this.document.createElement('div');
-        marker.setAttribute('data-ioh-swap-marker', '1');
-
-        try {
-            chatParent.insertBefore(marker, chatCard);
-            if (warningCard.parentNode !== warningParent || !this.document.contains(warningCard)) {
-                marker.remove();
-                return false;
-            }
-            warningParent.insertBefore(chatCard, warningCard);
-            if (!marker.parentNode || !this.document.contains(marker)) {
-                return false;
-            }
-            marker.parentNode.insertBefore(warningCard, marker);
-            marker.remove();
-        } catch {
-            if (marker.parentNode) {
-                marker.remove();
-            }
-            return false;
-        }
-
-        chatCard.dataset.iohHistorySlot = 'chat';
-        warningCard.dataset.iohHistorySlot = 'warnings';
-        return true;
-    }
-
     isChatHistoryEmptyScoped(scopeEl) {
         const accordion = this.getHistoryAccordionButton('История Чата', scopeEl);
         if (accordion) {
@@ -4197,7 +4136,6 @@ class TicketService {
         }
 
         const scope = this.getTicketScopeRoot(textarea);
-        this.swapChatAndWarningHistoryCards(scope);
 
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
