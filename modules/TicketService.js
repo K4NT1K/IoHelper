@@ -227,11 +227,7 @@ class TicketService {
     getHistorySectionCard(textMatch, scopeEl) {
         const accordion = this.getHistoryAccordionButton(textMatch, scopeEl);
         if (accordion) {
-            const accordionSurface = this.findCardSurface(accordion);
-            if (accordionSurface) {
-                return accordionSurface;
-            }
-            return accordion.parentElement || null;
+            return this.findCardSurface(accordion) || null;
         }
 
         const root = scopeEl || this.document.body;
@@ -242,20 +238,7 @@ class TicketService {
             return null;
         }
 
-        const bySurface = this.findCardSurface(header);
-        if (bySurface?.querySelector('table')) {
-            return bySurface;
-        }
-
-        let parent = header.parentElement;
-        while (parent && parent !== this.document.body) {
-            if (parent.querySelector?.('table')) {
-                return parent;
-            }
-            parent = parent.parentElement;
-        }
-
-        return bySurface || header.parentElement || null;
+        return this.findCardSurface(header) || null;
     }
 
     swapChatAndWarningHistoryCards(scopeEl) {
@@ -267,11 +250,17 @@ class TicketService {
             return false;
         }
 
+        if (chatCard.contains(warningCard) || warningCard.contains(chatCard)) {
+            return false;
+        }
+
+        if (!this.document.contains(chatCard) || !this.document.contains(warningCard)) {
+            return false;
+        }
+
         if (
             chatCard.dataset.iohHistorySlot === 'chat'
             && warningCard.dataset.iohHistorySlot === 'warnings'
-            && this.document.contains(chatCard)
-            && this.document.contains(warningCard)
         ) {
             return false;
         }
@@ -282,12 +271,31 @@ class TicketService {
             return false;
         }
 
+        if (chatCard.parentNode !== chatParent || warningCard.parentNode !== warningParent) {
+            return false;
+        }
+
         const marker = this.document.createElement('div');
         marker.setAttribute('data-ioh-swap-marker', '1');
-        chatParent.insertBefore(marker, chatCard);
-        warningParent.insertBefore(chatCard, warningCard);
-        marker.parentNode.insertBefore(warningCard, marker);
-        marker.remove();
+
+        try {
+            chatParent.insertBefore(marker, chatCard);
+            if (warningCard.parentNode !== warningParent || !this.document.contains(warningCard)) {
+                marker.remove();
+                return false;
+            }
+            warningParent.insertBefore(chatCard, warningCard);
+            if (!marker.parentNode || !this.document.contains(marker)) {
+                return false;
+            }
+            marker.parentNode.insertBefore(warningCard, marker);
+            marker.remove();
+        } catch {
+            if (marker.parentNode) {
+                marker.remove();
+            }
+            return false;
+        }
 
         chatCard.dataset.iohHistorySlot = 'chat';
         warningCard.dataset.iohHistorySlot = 'warnings';
@@ -4189,7 +4197,7 @@ class TicketService {
         }
 
         const scope = this.getTicketScopeRoot(textarea);
-        this.swapChatAndWarningHistoryCards(scope);
+
 
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
