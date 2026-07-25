@@ -236,6 +236,10 @@ class App {
             this.ticketService.clearOffenderVipBadges();
         }
 
+        if (!nextFeatures.trackOffenderServer && previousFeatures.trackOffenderServer) {
+            this.ticketService.clearOffenderProfileVerification();
+        }
+
         const vipStatusesChanged = JSON.stringify(previousSettings?.offenderVipStatuses || [])
             !== JSON.stringify(nextSettings.offenderVipStatuses || []);
         const vipBadgeReenabled = !previousFeatures.showOffenderVipBadge
@@ -247,6 +251,10 @@ class App {
             && (vipStatusesChanged || vipBadgeReenabled)
         ) {
             this.ticketService.refreshOffenderVipBadges();
+        }
+
+        if (!previousFeatures.trackOffenderServer && nextFeatures.trackOffenderServer) {
+            this.ticketService.refreshOffenderProfileVerification();
         }
     }
 

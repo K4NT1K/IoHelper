@@ -206,10 +206,32 @@ class TicketService {
         }) || null;
     }
 
+    findCardSurface(el) {
+        let node = el;
+        while (node && node !== this.document.body) {
+            if (node.getAttribute?.('data-pet-surface') === 'card') {
+                return node;
+            }
+            if (node.attributes) {
+                for (const attr of node.attributes) {
+                    if (attr.name.startsWith('data-') && attr.value === 'card') {
+                        return node;
+                    }
+                }
+            }
+            node = node.parentElement;
+        }
+        return null;
+    }
+
     getHistorySectionCard(textMatch, scopeEl) {
         const accordion = this.getHistoryAccordionButton(textMatch, scopeEl);
         if (accordion) {
-            return accordion.closest('[data-pet-surface="card"]') || accordion.parentElement || null;
+            const accordionSurface = this.findCardSurface(accordion);
+            if (accordionSurface) {
+                return accordionSurface;
+            }
+            return accordion.parentElement || null;
         }
 
         const root = scopeEl || this.document.body;
@@ -220,7 +242,20 @@ class TicketService {
             return null;
         }
 
-        return header.closest('[data-pet-surface="card"]') || header.parentElement || null;
+        const bySurface = this.findCardSurface(header);
+        if (bySurface?.querySelector('table')) {
+            return bySurface;
+        }
+
+        let parent = header.parentElement;
+        while (parent && parent !== this.document.body) {
+            if (parent.querySelector?.('table')) {
+                return parent;
+            }
+            parent = parent.parentElement;
+        }
+
+        return bySurface || header.parentElement || null;
     }
 
     swapChatAndWarningHistoryCards(scopeEl) {
@@ -3047,13 +3082,18 @@ class TicketService {
         return this.normalizeVipName(result?.basic?.vip_name);
     }
 
+    extractProfileVerified(result) {
+        return Boolean(result?.verification?.profile);
+    }
+
     parseUserDataResult(result) {
         return {
             serverIp: this.extractServerIpFromUserData(result),
             lastconnect: this.extractLastConnect(result),
             serverLabel: this.extractServerLabel(result),
             isBanned: this.extractActiveBan(result),
-            vipName: this.extractVipName(result)
+            vipName: this.extractVipName(result),
+            profileVerified: this.extractProfileVerified(result)
         };
     }
 
@@ -3078,6 +3118,7 @@ class TicketService {
             serverLabel: data.serverLabel ?? null,
             isBanned: Boolean(data.isBanned),
             vipName: data.vipName ?? null,
+            profileVerified: Boolean(data.profileVerified),
             fetchedAt: Date.now()
         });
     }
@@ -3270,6 +3311,94 @@ class TicketService {
         links.forEach(link => {
             this.applyOffenderVipBadge(link, link.dataset.iohVipSource);
         });
+    }
+
+    removeOffenderProfileVerification(offenderLink) {
+        const cell = offenderLink?.closest('td');
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const scope = cell || ctx?.textColumn || offenderLink?.parentElement;
+
+        scope?.querySelectorAll('.ioh-profile-verified').forEach(el => el.remove());
+
+        if (offenderLink) {
+            delete offenderLink.dataset.iohProfileVerified;
+        }
+    }
+
+    clearOffenderProfileVerification() {
+        this.document.querySelectorAll(
+            'a[href*="cybershoke.net/"][data-ioh-profile-verified], a[href*="cybershoke.net/"][data-ioh-profile-verified-source]'
+        ).forEach(link => {
+            this.removeOffenderProfileVerification(link);
+        });
+        this.document.querySelectorAll('.ioh-profile-verified').forEach(el => el.remove());
+    }
+
+    refreshOffenderProfileVerification() {
+        this.document.querySelectorAll('a[href*="cybershoke.net/"][data-ioh-profile-verified-source]').forEach(link => {
+            this.applyOffenderProfileVerification(link, true);
+        });
+    }
+
+    applyOffenderProfileVerification(offenderLink, profileVerified) {
+        if (!offenderLink) {
+            return;
+        }
+
+        if (profileVerified) {
+            offenderLink.dataset.iohProfileVerifiedSource = '1';
+        } else {
+            delete offenderLink.dataset.iohProfileVerifiedSource;
+        }
+
+        const show = this.settings.features?.trackOffenderServer
+            && Boolean(profileVerified);
+
+        if (!show) {
+            this.removeOffenderProfileVerification(offenderLink);
+            return;
+        }
+
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const nameButton = ctx?.nameButton;
+        if (!nameButton?.parentNode) {
+            return;
+        }
+
+        const nameRow = nameButton.closest('.ioh-vip-name-row');
+        const insertParent = nameRow || nameButton.parentElement;
+        const existingOurs = insertParent?.querySelector(':scope > .ioh-profile-verified')
+            || ctx?.textColumn?.querySelector('.ioh-profile-verified');
+        if (existingOurs) {
+            offenderLink.dataset.iohProfileVerified = '1';
+            return;
+        }
+
+        // Do not stack on top of moderator/verification icons already next to the nick.
+        const existingAdmin = insertParent?.querySelector(':scope > .ioh-admin-icon')
+            || (nameButton.nextElementSibling?.classList?.contains('ioh-admin-icon')
+                ? nameButton.nextElementSibling
+                : null);
+        if (existingAdmin) {
+            offenderLink.dataset.iohProfileVerified = '1';
+            return;
+        }
+
+        const iconSvg = window.Icons?.verification;
+        if (!iconSvg) {
+            return;
+        }
+
+        const template = this.document.createElement('template');
+        template.innerHTML = iconSvg.trim();
+        const badge = template.content.firstElementChild;
+        if (!badge) {
+            return;
+        }
+
+        badge.classList.add('ioh-admin-icon', 'ioh-profile-verified');
+        nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
+        offenderLink.dataset.iohProfileVerified = '1';
     }
 
     /**
@@ -3589,7 +3718,10 @@ class TicketService {
         parent.insertBefore(row, nameButton);
         row.appendChild(nameButton);
 
-        while (row.nextSibling?.classList?.contains('ioh-admin-icon')) {
+        while (
+            row.nextSibling?.classList?.contains('ioh-admin-icon')
+            || row.nextSibling?.classList?.contains('ioh-profile-verified')
+        ) {
             row.appendChild(row.nextSibling);
         }
 
@@ -3848,6 +3980,7 @@ class TicketService {
                 this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
                 this.applyOffenderBanHighlight(targetRow, userData.isBanned);
                 this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
+                this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
             }
         } catch (e) {
             console.error(e);

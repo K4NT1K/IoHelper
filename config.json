@@ -3,7 +3,7 @@
     "features": {
       "highlightComplaintTriggers": true,
       "highlightNewAccounts": true,
-      "highlightDuplicateServers": true,
+      "highlightDuplicateServers": false,
       "processTicketRules": true,
       "translateText": true,
       "showSteamAccountCreationDate": true,
