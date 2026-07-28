@@ -118,25 +118,37 @@ class MessageService {
     }
 
     highlightNewAccounts(row) {
-        if (row.querySelector('.ioh-new-account-hours')) {
+        const match = row.innerText.match(/CYBERSHOKE:\s*(\d+)ч/i);
+        const existingHighlight = row.querySelector('.ioh-new-account-hours');
+
+        if (!match) {
+            if (existingHighlight) {
+                existingHighlight.replaceWith(this.document.createTextNode(existingHighlight.textContent || ''));
+            }
             return;
         }
 
-        const match = row.innerText.match(/CYBERSHOKE:\s*(\d+)ч/i);
-        if (match) {
-            const hours = parseInt(match[1], 10);
+        const hours = parseInt(match[1], 10);
 
-            if (hours < this.settings.newAccountHours) {
-                const allDivs = row.querySelectorAll('div');
-                allDivs.forEach(div => {
-                    if (div.innerText.includes('CYBERSHOKE:') && !div.querySelector('.cs-hours-span')) {
-                        div.innerHTML = div.innerHTML.replace(/(CYBERSHOKE:\s*)(\d+ч)/i, (match, p1, p2) => {
-                            return `${p1}<span class="cs-hours-span ioh-new-account-hours">${p2}</span>`;
-                        });
-                    }
+        if (hours >= this.settings.newAccountHours) {
+            if (existingHighlight) {
+                existingHighlight.replaceWith(this.document.createTextNode(existingHighlight.textContent || ''));
+            }
+            return;
+        }
+
+        if (existingHighlight) {
+            return;
+        }
+
+        const allDivs = row.querySelectorAll('div');
+        allDivs.forEach(div => {
+            if (div.innerText.includes('CYBERSHOKE:') && !div.querySelector('.cs-hours-span')) {
+                div.innerHTML = div.innerHTML.replace(/(CYBERSHOKE:\s*)(\d+ч)/i, (match, p1, p2) => {
+                    return `${p1}<span class="cs-hours-span ioh-new-account-hours">${p2}</span>`;
                 });
             }
-        }
+        });
     }
 
     clearNewAccountHighlights() {

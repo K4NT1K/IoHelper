@@ -773,27 +773,51 @@ class TicketService {
         }
     }
 
-    findCurrentServerHeader() {
-        return Array.from(this.document.querySelectorAll('h3'))
-            .find(h => h.textContent?.includes('Текущий сервер'));
+    findCurrentServerHeader(scopeEl = null) {
+        const scope = scopeEl || this.findActiveComplaintScope();
+        if (!scope) {
+            return null;
+        }
+
+        return Array.from(scope.querySelectorAll('h3'))
+            .find(h => (
+                h.textContent?.includes('Текущий сервер')
+                && this._isElementVisible(h)
+            )) || null;
     }
 
-    hasCurrentServerSection() {
-        return Boolean(this.findCurrentServerHeader());
+    hasCurrentServerSection(scopeEl = null) {
+        return Boolean(this.findCurrentServerHeader(scopeEl));
     }
 
     findCurrentServerRefreshButton(header = this.findCurrentServerHeader()) {
         if (!header) return null;
 
+        const scopeRoot = header.closest('section, article, main, [role="main"]') || header.parentElement;
         let container = header.parentElement;
         for (let depth = 0; depth < 8 && container; depth++) {
             const refreshButton = Array.from(container.querySelectorAll('button'))
-                .find(btn => btn.textContent?.includes('Обновить'));
+                .find(btn => (
+                    btn.textContent?.includes('Обновить')
+                    && (!scopeRoot || scopeRoot.contains(btn))
+                    && this._isElementVisible(btn)
+                ));
             if (refreshButton) return refreshButton;
             container = container.parentElement;
         }
 
         return null;
+    }
+
+    getCurrentServerRefreshTicketKey() {
+        const scope = this.findActiveComplaintScope();
+        if (!scope) {
+            return null;
+        }
+
+        const ticketId = this.extractActiveComplaintTicketId();
+        const path = window.location.pathname || window.location.href;
+        return `${path}|${ticketId || 'active'}`;
     }
 
     stopCurrentServerRefresh() {
@@ -836,6 +860,14 @@ class TicketService {
 
         refreshButton.click();
         return true;
+    }
+
+    refreshActiveCurrentServerIfAvailable() {
+        if (!this.findActiveComplaintScope()) {
+            return false;
+        }
+
+        return this.refreshCurrentServerNowIfAvailable();
     }
 
     clearTicketRuleBadge() {

@@ -27,6 +27,8 @@ class App {
         this.notificationModalDebounceId = null;
         this.ticketTabVisibilityObserver = null;
         this.ticketTabVisibilityDebounceId = null;
+        this.visibilityCatchUpInstalled = false;
+        this.visibilityCatchUpDebounceId = null;
         this.navigationWatcherInstalled = false;
         this._lastHref = this.window?.location?.href || '';
         this._lastTicketSectionPath = '';
@@ -91,6 +93,7 @@ class App {
         this.initPunishmentFormObserver();
         this.ticketService.initMuteIssueFeature();
         this.initTicketTabVisibilityObserver();
+        this.initVisibilityCatchUpListener();
 
         this.handleTrackOffenderLoop();
     }
@@ -323,9 +326,9 @@ class App {
     initCurrentServerFeatures() {
         this.moderatorService.highlightSavedModerators();
 
-        const ticketKey = window.location.pathname || window.location.href;
+        const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
 
-        if (!this.ticketService.hasCurrentServerSection()) {
+        if (!ticketKey || !this.ticketService.hasCurrentServerSection()) {
             this.ticketService.stopCurrentServerRefresh();
             return;
         }
@@ -335,6 +338,43 @@ class App {
             this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
         } else {
             this.ticketService.stopCurrentServerRefresh();
+        }
+    }
+
+    initVisibilityCatchUpListener() {
+        if (this.visibilityCatchUpInstalled) {
+            return;
+        }
+
+        this.visibilityCatchUpInstalled = true;
+
+        const scheduleCatchUp = () => {
+            if (this.document.visibilityState === 'hidden') {
+                return;
+            }
+
+            if (this.visibilityCatchUpDebounceId) {
+                clearTimeout(this.visibilityCatchUpDebounceId);
+            }
+
+            this.visibilityCatchUpDebounceId = setTimeout(() => {
+                this.visibilityCatchUpDebounceId = null;
+                this._handlePageReturnCatchUp();
+            }, 80);
+        };
+
+        this.document.addEventListener('visibilitychange', scheduleCatchUp);
+        this.window.addEventListener('focus', scheduleCatchUp);
+        this.window.addEventListener('pageshow', scheduleCatchUp);
+    }
+
+    _handlePageReturnCatchUp() {
+        if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers) {
+            this._reapplyTicketRowHighlights();
+        }
+
+        if (this.settings.serverRefreshInterval > 0) {
+            this.initCurrentServerFeatures();
         }
     }
 
@@ -1062,19 +1102,24 @@ class App {
                 }
 
                 const visibleTextarea = this.ticketService.findVisibleTicketResolutionTextarea();
-                if (visibleTextarea === this._lastVisibleTicketTextarea) {
-                    return;
-                }
-
+                const textareaChanged = visibleTextarea !== this._lastVisibleTicketTextarea;
                 this._lastVisibleTicketTextarea = visibleTextarea;
 
-                if (visibleTextarea && this.features.processTicketRules) {
+                if (visibleTextarea && this.features.processTicketRules && textareaChanged) {
                     this.ensureTicketChatHistoryObserver(visibleTextarea);
                     this.ticketService.resetChatAnalysisCache(visibleTextarea);
                     this._runTicketChatAnalysis(visibleTextarea);
                 }
 
                 this.ticketService.refreshComplaintPunishmentButtons();
+
+                if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers) {
+                    this._reapplyTicketRowHighlights();
+                }
+
+                if (this.settings.serverRefreshInterval > 0) {
+                    this.initCurrentServerFeatures();
+                }
             }, 120);
         };
 
