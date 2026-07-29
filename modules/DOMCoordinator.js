@@ -4,6 +4,7 @@ class DOMCoordinator {
         this.document = app.document;
         this.bodyObserver = null;
         this.bodyDebounceId = null;
+        this._ticketMountedLeadingFlushed = false;
         this.pendingDispatch = {
             notification: false,
             ticketMounted: false,
@@ -49,6 +50,7 @@ class DOMCoordinator {
             clearTimeout(this.bodyDebounceId);
             this.bodyDebounceId = null;
         }
+        this._ticketMountedLeadingFlushed = false;
         this.resetPendingDispatch();
     }
 
@@ -253,16 +255,24 @@ class DOMCoordinator {
     }
 
     scheduleBodyDispatch() {
+        const leadingTicketFlush = this.pendingDispatch.ticketMounted && !this._ticketMountedLeadingFlushed;
+
         if (this.bodyDebounceId) {
             clearTimeout(this.bodyDebounceId);
         }
 
-        const debounceMs = this.app.isReviewingComplaint?.() ? 500 : 150;
+        if (leadingTicketFlush) {
+            this._ticketMountedLeadingFlushed = true;
+            this.flushBodyDispatch();
+        }
 
         this.bodyDebounceId = setTimeout(() => {
             this.bodyDebounceId = null;
-            this.flushBodyDispatch();
-        }, debounceMs);
+            this._ticketMountedLeadingFlushed = false;
+            if (this.hasPendingBodyWork()) {
+                this.flushBodyDispatch();
+            }
+        }, 150);
     }
 
     flushBodyDispatch() {

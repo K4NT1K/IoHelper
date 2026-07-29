@@ -156,10 +156,7 @@ class App {
     }
 
     isReviewingComplaint() {
-        const hasOpenTicket = Boolean(
-            this.ticketService.findVisibleTicketResolutionTextarea()
-            || this.ticketService.findActiveComplaintScope()
-        );
+        const hasOpenTicket = this.ticketService.hasOpenComplaintTicketSignal();
 
         if (this._forceNotReviewing) {
             if (!hasOpenTicket) {
@@ -250,7 +247,9 @@ class App {
 
         try {
             const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1000;
-            await this.ticketService.checkOffendersServers(cacheIntervalMs);
+            await this.ticketService.checkOffendersServers(cacheIntervalMs, {
+                singleRowPerPass: this.isReviewingComplaint()
+            });
         } catch (err) {
             console.error(err);
         }
@@ -402,19 +401,20 @@ class App {
     initCurrentServerFeatures() {
         this.moderatorService.highlightSavedModerators();
 
+        const hasOpenTicket = this.ticketService.hasOpenComplaintTicketSignal();
         const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
 
-        if (!ticketKey) {
+        if (!hasOpenTicket || this.settings.serverRefreshInterval <= 0) {
             this.ticketService.stopCurrentServerRefresh();
             return;
         }
 
-        if (this.settings.serverRefreshInterval > 0) {
-            this.ticketService.refreshCurrentServerNowIfAvailable();
-            this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
-        } else {
-            this.ticketService.stopCurrentServerRefresh();
+        if (!ticketKey) {
+            return;
         }
+
+        this.ticketService.refreshCurrentServerNowIfAvailable();
+        this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
     }
 
     initVisibilityCatchUpListener() {

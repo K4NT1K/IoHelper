@@ -803,14 +803,27 @@ class TicketService {
     }
 
     getCurrentServerRefreshTicketKey() {
-        const scope = this.findActiveComplaintScope();
-        if (!scope) {
+        if (!this.hasOpenComplaintTicketSignal()) {
             return null;
         }
 
         const ticketId = this.extractActiveComplaintTicketId();
         const path = window.location.pathname || window.location.href;
         return `${path}|${ticketId || 'active'}`;
+    }
+
+    hasOpenComplaintTicketSignal() {
+        if (this.findActiveComplaintScope()) {
+            return true;
+        }
+
+        if (this.findCloseTicketButton()) {
+            return true;
+        }
+
+        return Boolean(
+            this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]')
+        );
     }
 
     stopCurrentServerRefresh() {
@@ -3928,7 +3941,7 @@ class TicketService {
         this.clearOffenderOffline(targetSteamId);
     }
 
-    async checkOffendersServers(cacheIntervalMs = null) {
+    async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false } = {}) {
         if (!window.location.href.includes('/support/reports') &&
             !window.location.href.includes('/support/tickets')) {
             return;
@@ -4038,6 +4051,10 @@ class TicketService {
                 this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
                 this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
                 targetRow.dataset.lastIpCheck = Date.now().toString();
+
+                if (singleRowPerPass) {
+                    break;
+                }
             }
         } catch (e) {
             console.error(e);
