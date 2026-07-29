@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "Улучшает функционал IO сайта",
   "background": {
     "service_worker": "background.js"
   },
   "permissions": [
-    "storage",
-    "activeTab"
+    "storage"
   ],
   "icons": {
     "128": "icons/icon128.png"
@@ -19,7 +18,8 @@
   },
   "host_permissions": [
     "https://raw.githubusercontent.com/K4NT1K/*",
-    "https://mobile.fastmm.win/*"
+    "https://mobile.fastmm.win/*",
+    "https://translate.googleapis.com/*"
   ],
   "web_accessible_resources": [
     {
@@ -54,6 +54,7 @@
         "modules/TicketService.js",
         "modules/PunishmentService.js",
         "modules/ModeratorService.js",
+        "modules/DOMCoordinator.js",
         "modules/App.js",
         "content.js"
       ],

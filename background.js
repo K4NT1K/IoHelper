@@ -34,7 +34,7 @@ async function fetchOffenderProfileJson(steamId) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'fetchOffenderProfile' || request.action === 'fetchSteamDate') {
+    if (request.action === 'fetchOffenderProfile') {
         const steamId = request.steamId;
 
         (async () => {

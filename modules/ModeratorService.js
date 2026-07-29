@@ -263,32 +263,48 @@ class ModeratorService {
         return result;
     }
 
+    normalizeNick(name) {
+        if (!name || typeof name !== 'string') {
+            return '';
+        }
+
+        let nick = name.replace(/\s+/g, ' ').trim();
+        while (/^аватар игрока\s+/i.test(nick)) {
+            nick = nick.replace(/^аватар игрока\s+/i, '').trim();
+        }
+
+        return nick;
+    }
+
     extractNickFromSteamidNode(node, steamId) {
-        const img = node.querySelector('img[alt]');
-        if (img) {
-            const alt = (img.getAttribute('alt') || '').trim();
-            if (this.isValidNick(alt, steamId)) {
-                return alt;
-            }
-        }
-
-        const title = (node.closest('[title]')?.getAttribute('title') || '').trim();
-        if (this.isValidNick(title, steamId)) {
-            return title;
-        }
-
         const roleLinks = node.querySelectorAll('[role="link"]');
         for (const el of roleLinks) {
-            const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+            const text = this.normalizeNick(el.textContent || '');
             if (this.isValidNick(text, steamId) && !/^\d{1,2}:\d{2}/.test(text)) {
                 return text;
             }
         }
 
-        const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
-        const withoutTime = text.replace(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g, '').trim();
+        const withoutTime = this.normalizeNick(
+            (node.textContent || '').replace(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g, '')
+        );
         if (this.isValidNick(withoutTime, steamId)) {
             return withoutTime;
+        }
+
+        const title = this.normalizeNick(
+            node.closest('[title]')?.getAttribute('title') || ''
+        );
+        if (this.isValidNick(title, steamId)) {
+            return title;
+        }
+
+        const img = node.querySelector('img[alt]');
+        if (img) {
+            const alt = this.normalizeNick(img.getAttribute('alt') || '');
+            if (this.isValidNick(alt, steamId)) {
+                return alt;
+            }
         }
 
         return null;
@@ -297,17 +313,9 @@ class ModeratorService {
     extractNickFromProfileLink(link, steamId) {
         const span = link.querySelector('span');
         if (span) {
-            const text = (span.textContent || '').replace(/\s+/g, ' ').trim();
+            const text = this.normalizeNick(span.textContent || '');
             if (this.isValidNick(text, steamId)) {
                 return text;
-            }
-        }
-
-        const img = link.querySelector('img[alt]');
-        if (img) {
-            const alt = (img.getAttribute('alt') || '').trim();
-            if (this.isValidNick(alt, steamId)) {
-                return alt;
             }
         }
 
@@ -315,23 +323,31 @@ class ModeratorService {
         if (card) {
             const nickLink = Array.from(card.querySelectorAll('a[href*="/moderator/profile/"]'))
                 .find((a) => {
-                    const text = (a.textContent || '').replace(/\s+/g, ' ').trim();
+                    const text = this.normalizeNick(a.textContent || '');
                     return this.isValidNick(text, steamId);
                 });
             if (nickLink) {
-                return (nickLink.textContent || '').replace(/\s+/g, ' ').trim();
+                return this.normalizeNick(nickLink.textContent || '');
             }
 
             const imgAlt = card.querySelector('img[alt]');
             if (imgAlt) {
-                const alt = (imgAlt.getAttribute('alt') || '').trim();
+                const alt = this.normalizeNick(imgAlt.getAttribute('alt') || '');
                 if (this.isValidNick(alt, steamId)) {
                     return alt;
                 }
             }
         }
 
-        const text = (link.textContent || '').replace(/\s+/g, ' ').trim();
+        const img = link.querySelector('img[alt]');
+        if (img) {
+            const alt = this.normalizeNick(img.getAttribute('alt') || '');
+            if (this.isValidNick(alt, steamId)) {
+                return alt;
+            }
+        }
+
+        const text = this.normalizeNick(link.textContent || '');
         if (this.isValidNick(text, steamId)) {
             return text;
         }
@@ -348,7 +364,7 @@ class ModeratorService {
             return false;
         }
 
-        const trimmed = name.trim();
+        const trimmed = this.normalizeNick(name);
         if (trimmed.length < 1) {
             return false;
         }
@@ -361,11 +377,39 @@ class ModeratorService {
             return false;
         }
 
+        if (/^аватар игрока$/i.test(trimmed)) {
+            return false;
+        }
+
         return true;
     }
 
+    async loadBaselineModerators() {
+        try {
+            const response = await fetch(ConfigService.DEFAULT_CONFIG_URL, { cache: 'no-cache' });
+            if (response.ok) {
+                const remote = await response.json();
+                console.log('[IO HELPER] Baseline Tier загружен с GitHub.');
+                return this.normalizeModerators(remote.moderators);
+            }
+        } catch (e) {
+            console.log('[IO HELPER] GitHub baseline недоступен, пробуем bundled config.');
+        }
+
+        try {
+            const bundled = await fetch(this.chrome.runtime.getURL('config.json')).then(r => r.json());
+            console.log('[IO HELPER] Baseline Tier загружен из bundled config.json.');
+            return this.normalizeModerators(bundled.moderators);
+        } catch (e) {
+            console.log('[IO HELPER] Bundled config недоступен для baseline.');
+            return null;
+        }
+    }
+
     applyTierDiffAndReport(scheduleModerators) {
-        return new Promise((resolve) => {
+        return new Promise(async (resolve) => {
+            const baselineModerators = await this.loadBaselineModerators();
+
             this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
                 if (!helperConfig) {
                     console.log('[IO HELPER] helperConfig не найден в storage.');
@@ -374,7 +418,13 @@ class ModeratorService {
                 }
 
                 const moderators = this.normalizeModerators(helperConfig.moderators);
-                const oldTier = { ...(moderators.Tier || {}) };
+                const oldTier = baselineModerators
+                    ? { ...(baselineModerators.Tier || {}) }
+                    : { ...(moderators.Tier || {}) };
+
+                if (!baselineModerators) {
+                    console.log('[IO HELPER] Baseline недоступен — diff против local helperConfig.Tier.');
+                }
 
                 const added = {};
                 const removed = {};
@@ -505,12 +555,26 @@ class ModeratorService {
         return true;
     }
 
+    _findCurrentServerSection() {
+        const header = Array.from(this.document.querySelectorAll('h3'))
+            .find(h => h.textContent?.includes('Текущий сервер'));
+
+        if (!header) {
+            return null;
+        }
+
+        return header.closest('section, article, [role="tabpanel"]') || header.parentElement;
+    }
+
     highlightSavedModerators() {
         this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
             const moderators = helperConfig?.moderators || {};
             if (Object.keys(moderators).length === 0) return;
 
-            const links = this.document.querySelectorAll('a[href*="cybershoke.net/"]');
+            const section = this._findCurrentServerSection();
+            if (!section) return;
+
+            const links = section.querySelectorAll('a[href*="cybershoke.net/"]');
 
             links.forEach(link => {
                 const match = link.href.match(/cybershoke\.net\/(\d+)/);

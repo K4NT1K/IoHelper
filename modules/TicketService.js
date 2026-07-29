@@ -1,9 +1,8 @@
 class TicketService {
-    constructor({document, utils, badgeService, panelService, settings, rules, muteExceptions = {}, chrome = null}) {
+    constructor({document, utils, badgeService, settings, rules, muteExceptions = {}, chrome = null}) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
-        this.panelService = panelService;
         this.settings = settings;
         this.rules = rules;
         this.muteExceptions = muteExceptions;
@@ -122,10 +121,6 @@ class TicketService {
         return /\/support\/(ticket|report)\b|\/ticket\/|\/reports?\//i.test(path);
     }
 
-    isTicketPage() {
-        return this.isComplaintPage();
-    }
-
     isOpenComplaintScope(scopeEl) {
         if (!scopeEl) {
             return false;
@@ -137,10 +132,6 @@ class TicketService {
         );
 
         return Boolean(hasOffender || hasPlayerInfo);
-    }
-
-    isOpenTicketScope(scopeEl) {
-        return this.isOpenComplaintScope(scopeEl);
     }
 
     isActiveComplaintScope(scopeEl) {
@@ -163,10 +154,6 @@ class TicketService {
         return true;
     }
 
-    isActiveTicketScope(scopeEl) {
-        return this.isActiveComplaintScope(scopeEl);
-    }
-
     findActiveComplaintScope() {
         const hiddenFalsePanels = this.document.querySelectorAll('[aria-hidden="false"]');
         for (const panel of hiddenFalsePanels) {
@@ -183,10 +170,6 @@ class TicketService {
         }
 
         return null;
-    }
-
-    findActiveTicketScope() {
-        return this.findActiveComplaintScope();
     }
 
     isSitePunishmentDialogOpen() {
@@ -333,10 +316,6 @@ class TicketService {
 
     getRuleSeverity(rule) {
         return rule?.severity ?? rule?.duration ?? 0;
-    }
-
-    getMuteHistoryBlock() {
-        return this.getBlockByHeader('История Мутов');
     }
 
     getBlockByHeader(textMatch) {
@@ -862,14 +841,6 @@ class TicketService {
         return true;
     }
 
-    refreshActiveCurrentServerIfAvailable() {
-        if (!this.findActiveComplaintScope()) {
-            return false;
-        }
-
-        return this.refreshCurrentServerNowIfAvailable();
-    }
-
     clearTicketRuleBadge() {
         this.document.getElementById('helper-suggest-badge')?.remove();
     }
@@ -882,28 +853,35 @@ class TicketService {
         this.document.querySelectorAll('.ioh-faceit-elo').forEach(node => node.remove());
     }
 
-    findTicketTablesForCards() {
+    findComplaintQueueTables() {
         const tables = Array.from(this.document.querySelectorAll('table'));
 
-        // Demo + real tickets tables share the same Russian columns.
-        return tables.filter(table => {
-            const thTexts = Array.from(table.querySelectorAll('thead th'))
-                .map(th => (th.textContent || '').trim());
+        return tables.filter(table => this.isComplaintQueueTable(table));
+    }
 
-            if (thTexts.length < 6) return false;
+    isComplaintQueueTable(table) {
+        const thTexts = Array.from(table.querySelectorAll('thead th'))
+            .map(th => (th.textContent || '').trim());
 
-            const hasTime = thTexts.some(t => t.includes('Время'));
-            const hasServer = thTexts.some(t => t.includes('Сервер'));
-            const hasSender = thTexts.some(t => t.includes('Отправитель'));
-            const hasOffender = thTexts.some(t => t.includes('Нарушитель'));
-            const hasReason = thTexts.some(t => t.includes('Причина'));
+        if (thTexts.length < 6) {
+            return false;
+        }
 
-            return hasTime && hasServer && hasSender && hasOffender && hasReason;
-        });
+        const hasTime = thTexts.some(t => t.includes('Время'));
+        const hasServer = thTexts.some(t => t.includes('Сервер'));
+        const hasSender = thTexts.some(t => t.includes('Отправитель'));
+        const hasOffender = thTexts.some(t => t.includes('Нарушитель'));
+        const hasReason = thTexts.some(t => t.includes('Причина'));
+
+        return hasTime && hasServer && hasSender && hasOffender && hasReason;
+    }
+
+    findTicketTablesForCards() {
+        return this.findComplaintQueueTables();
     }
 
     renderSquareTicketCards() {
-        const tables = this.findTicketTablesForCards();
+        const tables = this.findComplaintQueueTables();
 
         tables.forEach(table => {
             const headerCells = Array.from(table.querySelectorAll('thead th'));
@@ -2259,19 +2237,6 @@ class TicketService {
         });
     }
 
-    teardownMuteIssueFeature() {
-        if (this._punishmentPermissionDebounceId) {
-            clearTimeout(this._punishmentPermissionDebounceId);
-            this._punishmentPermissionDebounceId = null;
-        }
-
-        this._cancelPermissionRevoke('mute');
-        this._cancelPermissionRevoke('ban');
-
-        this._punishmentPermissionObserver?.disconnect();
-        this._punishmentPermissionObserver = null;
-    }
-
     findCloseTicketButton(scopeEl) {
         const root = scopeEl || this.document.body;
         return Array.from(root.querySelectorAll('button')).find(
@@ -2837,8 +2802,8 @@ class TicketService {
             img.alt = profileData.skillLevel
                 ? `FaceIt level ${profileData.skillLevel} icon`
                 : 'FaceIt level icon';
-            img.width = 18;
-            img.height = 18;
+            img.width = 22;
+            img.height = 22;
             valueNode.appendChild(img);
         }
 
@@ -2996,15 +2961,15 @@ class TicketService {
         return [];
     }
 
-    isBanActive(ban) {
-        if (Number(ban?.type) !== 4) {
+    isPunishmentActive(entry, type) {
+        if (Number(entry?.type) !== type) {
             return false;
         }
 
         const now = Math.floor(Date.now() / 1000);
-        const end = Number(ban?.end);
-        const created = Number(ban?.created);
-        const length = Number(ban?.length);
+        const end = Number(entry?.end);
+        const created = Number(entry?.created);
+        const length = Number(entry?.length);
 
         if (Number.isFinite(end) && end > now) {
             return true;
@@ -3017,6 +2982,14 @@ class TicketService {
         return false;
     }
 
+    isBanActive(ban) {
+        return this.isPunishmentActive(ban, 4);
+    }
+
+    isMuteActive(mute) {
+        return this.isPunishmentActive(mute, 3);
+    }
+
     extractActiveBan(result) {
         const bans = this.extractBansList(result);
         if (!bans.length) {
@@ -3024,6 +2997,15 @@ class TicketService {
         }
 
         return bans.some(ban => this.isBanActive(ban));
+    }
+
+    extractActiveMute(result) {
+        const bans = this.extractBansList(result);
+        if (!bans.length) {
+            return false;
+        }
+
+        return bans.some(entry => this.isMuteActive(entry));
     }
 
     extractServerIpFromUserData(result) {
@@ -3071,6 +3053,7 @@ class TicketService {
             lastconnect: this.extractLastConnect(result),
             serverLabel: this.extractServerLabel(result),
             isBanned: this.extractActiveBan(result),
+            isMuted: this.extractActiveMute(result),
             vipName: this.extractVipName(result),
             profileVerified: this.extractProfileVerified(result)
         };
@@ -3096,6 +3079,7 @@ class TicketService {
             lastconnect: data.lastconnect ?? null,
             serverLabel: data.serverLabel ?? null,
             isBanned: Boolean(data.isBanned),
+            isMuted: Boolean(data.isMuted),
             vipName: data.vipName ?? null,
             profileVerified: Boolean(data.profileVerified),
             fetchedAt: Date.now()
@@ -3170,12 +3154,72 @@ class TicketService {
         }
     }
 
-    applyOffenderBanHighlight(row, isBanned) {
+    getComplaintReasonFromRow(row) {
+        if (!row) {
+            return '';
+        }
+
+        const cells = row.querySelectorAll('td');
+        if (!cells.length) {
+            return '';
+        }
+
+        const reasonIndex = this.getColumnIndex(row, ['причина'], 5);
+        const reasonCell = cells[reasonIndex];
+        if (!reasonCell) {
+            return '';
+        }
+
+        const parsedCategory = this.utils.parseComplaintCell(reasonCell).category;
+        if (parsedCategory) {
+            return parsedCategory;
+        }
+
+        const firstDiv = reasonCell.querySelector(':scope > div > div, :scope > div');
+        if (firstDiv?.textContent?.trim()) {
+            return firstDiv.textContent.trim();
+        }
+
+        const rawText = reasonCell.innerText?.trim() || '';
+        return rawText.split('\n')[0]?.trim() || rawText;
+    }
+
+    isMuteHighlightComplaintReason(reason) {
+        const normalized = this.normalizeReason(reason);
+        if (!normalized) {
+            return false;
+        }
+
+        const allowedReasons = [
+            'Нарушение правил',
+            'Спам',
+            'Мониторинг',
+            'Попрошайничество'
+        ];
+
+        return allowedReasons.some(item => this.normalizeReason(item) === normalized);
+    }
+
+    applyOffenderPunishmentHighlight(row, userData) {
         if (!row) {
             return;
         }
 
-        row.classList.toggle('ioh-highlighted-banned', Boolean(isBanned));
+        const highlightBan = Boolean(userData?.isBanned);
+        let highlightMute = false;
+
+        if (!highlightBan && userData?.isMuted) {
+            highlightMute = this.isMuteHighlightComplaintReason(
+                this.getComplaintReasonFromRow(row)
+            );
+        }
+
+        row.classList.toggle('ioh-highlighted-banned', highlightBan);
+        row.classList.toggle('ioh-highlighted-muted', highlightMute);
+    }
+
+    applyOffenderBanHighlight(row, isBanned) {
+        this.applyOffenderPunishmentHighlight(row, {isBanned: Boolean(isBanned)});
     }
 
     getVipBadgeMeta(vipName) {
@@ -3639,27 +3683,27 @@ class TicketService {
     }
 
     /**
-     * Prime goes with nick+badge; copy stays beside SteamID.
-     * Finds icons by content (icons column OR inline nick/steam siblings).
+     * Keep Prime in the site icons column (do not pull it into the nick row).
+     * Copy stays beside SteamID so it does not travel with the icons rail.
      */
     arrangeVipRowIcons(nameRow, offenderLink, ctx) {
         if (!nameRow || !offenderLink || !ctx) {
             return;
         }
 
+        // Undo older builds that relocated Prime next to the nick.
+        nameRow.querySelectorAll('.ioh-vip-prime-slot').forEach(el => {
+            const restore = el.__iohVipIconRestore || el.__iohVipPrimeRestore;
+            el.classList.remove('ioh-vip-prime-slot');
+            if (restore?.parent?.isConnected) {
+                restore.parent.insertBefore(el, restore.next);
+            }
+            delete el.__iohVipIconRestore;
+            delete el.__iohVipPrimeRestore;
+        });
+
         const prime = this.findOffenderPrimeIcon({...ctx, nameRow});
         const copy = this.findOffenderCopyControl({...ctx, nameRow}, offenderLink, prime);
-
-        if (prime && !nameRow.contains(prime)) {
-            this.storeVipIconRestore(prime);
-            prime.classList.add('ioh-vip-prime-slot');
-            nameRow.appendChild(prime);
-        } else if (prime && nameRow.contains(prime)) {
-            prime.classList.add('ioh-vip-prime-slot');
-            if (prime.nextSibling) {
-                nameRow.appendChild(prime);
-            }
-        }
 
         if (copy && copy !== prime) {
             const steamRow = this.ensureSteamIdRow(offenderLink);
@@ -3675,6 +3719,8 @@ class TicketService {
         const iconsColumn = ctx.iconsColumn;
         if (iconsColumn && !iconsColumn.childElementCount) {
             iconsColumn.classList.add('ioh-offender-icons-empty');
+        } else {
+            iconsColumn?.classList.remove('ioh-offender-icons-empty');
         }
     }
 
@@ -3751,12 +3797,14 @@ class TicketService {
                 const nameRow = ctx?.nameRow
                     || existing.closest('.ioh-vip-name-row')
                     || null;
-                const needsArrange = nameRow && (
-                    !cell?.querySelector('.ioh-vip-copy-slot')
-                    || (this.findOffenderPrimeIcon(ctx) && !cell?.querySelector('.ioh-vip-prime-slot'))
-                );
-                if (needsArrange && ctx) {
-                    this.arrangeVipRowIcons(nameRow, offenderLink, ctx);
+                // Restore icons if an older build relocated Prime/copy; do not rearrange.
+                if (nameRow && ctx) {
+                    this.restoreLegacyMovedVipIcons(nameRow);
+                    this.restoreLegacyMovedVipIcons(cell);
+                    cell?.querySelectorAll('.ioh-vip-steamid-row').forEach(row => this.unwrapSteamIdRow(row));
+                    cell?.querySelectorAll('.ioh-offender-icons-empty').forEach(el => {
+                        el.classList.remove('ioh-offender-icons-empty');
+                    });
                 }
                 return;
             }
@@ -3793,7 +3841,7 @@ class TicketService {
                 nameRow.classList.add(`ioh-vip-nick--${meta.variant}`);
                 nameRow.style.setProperty('--ioh-vip-color', vipColor);
                 this.applyVipNickColor(nameButton, vipColor);
-                nameRow.appendChild(badge);
+                nameRow.insertBefore(badge, nameRow.firstChild);
             } else {
                 this.applyVipNickColor(nameButton, vipColor);
                 nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
@@ -3804,7 +3852,14 @@ class TicketService {
         }
 
         if (nameRow) {
-            this.arrangeVipRowIcons(nameRow, offenderLink, ctx);
+            // Undo older builds that moved Prime/copy; keep site icon layout untouched.
+            this.restoreLegacyMovedVipIcons(nameRow);
+            this.restoreLegacyMovedVipIcons(ctx.textColumn);
+            ctx.textColumn?.querySelectorAll('.ioh-vip-steamid-row').forEach(row => this.unwrapSteamIdRow(row));
+            ctx.iconsColumn?.classList.remove('ioh-offender-icons-empty');
+            offenderLink.closest('td')?.querySelectorAll('.ioh-offender-icons-empty').forEach(el => {
+                el.classList.remove('ioh-offender-icons-empty');
+            });
         }
 
         ctx.textColumn.classList.add('ioh-has-vip-badge');
@@ -3878,11 +3933,15 @@ class TicketService {
         try {
             while (this.settings.features.trackOffenderServer) {
                 if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
-                    break;
+                    const waitMs = this.globalServerCooldown - Date.now();
+                    await new Promise(resolve => setTimeout(resolve, waitMs));
+                    continue;
                 }
 
                 const rows = this.document.querySelectorAll('table tbody tr');
-                if (!rows.length) break;
+                if (!rows.length) {
+                    break;
+                }
 
                 let targetRow = null;
                 let targetIp = null;
@@ -3930,19 +3989,20 @@ class TicketService {
                     }
                 }
 
-                if (!targetRow) break;
-
-                targetRow.dataset.lastIpCheck = Date.now().toString();
+                if (!targetRow) {
+                    break;
+                }
 
                 let userData = this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
                 if (!userData) {
-                    await new Promise(resolve => setTimeout(resolve, 334));
+                    await new Promise(resolve => setTimeout(resolve, 340));
 
                     const response = await this.fetchUserData(targetSteamId);
 
                     if (response.status === 429) {
-                        this.globalServerCooldown = Date.now() + 2000;
-                        break;
+                        this.globalServerCooldown = Date.now() + 660;
+                        await new Promise(resolve => setTimeout(resolve, 660));
+                        continue;
                     }
 
                     if (!response.ok) {
@@ -3957,9 +4017,10 @@ class TicketService {
                 const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
                 const offenderLinkToUpdate = targetRow.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
                 this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
-                this.applyOffenderBanHighlight(targetRow, userData.isBanned);
+                this.applyOffenderPunishmentHighlight(targetRow, userData);
                 this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
                 this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
+                targetRow.dataset.lastIpCheck = Date.now().toString();
             }
         } catch (e) {
             console.error(e);

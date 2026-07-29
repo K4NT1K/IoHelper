@@ -1,9 +1,15 @@
 class MessageService {
+    static CYBERSHOKE_HOURS_RE = /CYBERSHOKE:\s*(\d+)ч/i;
+    static DUPLICATE_SERVER_COLOR_COUNT = 7;
+
     constructor({ document, utils, badgeService, settings }) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
         this.settings = settings;
+        this.ticketService = null;
+        this.hoursWatchObservers = new WeakMap();
+        this.HOURS_WATCH_TTL_MS = 30000;
     }
 
     decorateMessageCell(messageCell) {
@@ -56,8 +62,38 @@ class MessageService {
         messageCell.addEventListener('mouseleave', restore);
     }
 
+    _findChatHistoryBlock() {
+        for (const header of this.document.querySelectorAll('h3, h2')) {
+            const text = header.textContent || '';
+            if (text.includes('История Чата') && !text.includes('История Тикетов')) {
+                const block = header.closest('section, article, [role="tabpanel"], .card') || header.parentElement;
+                if (block) {
+                    return block;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    _isComplaintQueuePage() {
+        const href = window.location.href;
+        return href.includes('/support/tickets') || href.includes('/support/reports');
+    }
+
+    _getComplaintQueueRows() {
+        if (!this._isComplaintQueuePage()) {
+            return [];
+        }
+
+        return this.document.querySelectorAll('table tbody tr');
+    }
+
     processChatMessages() {
-        const chatHistoryBlock = Array.from(this.document.querySelectorAll('div, .card, .block')).find(el => el.innerText && el.innerText.includes('История Чата') && !el.innerText.includes('История Тикетов'));
+        const scope = this.document.body;
+        const chatHistoryBlock = this.ticketService?.getBlockByHeaderScoped('История Чата', scope)
+            || this.ticketService?.getHistorySectionCard('История Чата', scope)
+            || this._findChatHistoryBlock();
         if (!chatHistoryBlock) return;
         const rows = Array.from(chatHistoryBlock.querySelectorAll('tbody tr, tr')).filter(row => row.querySelector('td'));
         rows.forEach(row => {
@@ -67,7 +103,7 @@ class MessageService {
     }
 
     highlightComplaintTriggers(targetRow) {
-        const rows = targetRow ? [targetRow] : this.document.querySelectorAll('tr');
+        const rows = targetRow ? [targetRow] : this._getComplaintQueueRows();
 
         rows.forEach(row => {
             if (row.querySelector('th') || row.dataset.triggersChecked) return;
@@ -117,65 +153,171 @@ class MessageService {
         });
     }
 
-    highlightNewAccounts(row) {
-        const match = row.innerText.match(/CYBERSHOKE:\s*(\d+)ч/i);
-        const existingHighlight = row.querySelector('.ioh-new-account-hours');
-
-        if (!match) {
-            if (existingHighlight) {
-                existingHighlight.replaceWith(this.document.createTextNode(existingHighlight.textContent || ''));
-            }
+    releaseHoursWatch(row) {
+        const entry = this.hoursWatchObservers.get(row);
+        if (!entry) {
             return;
         }
+
+        entry.observer.disconnect();
+        clearTimeout(entry.timeoutId);
+        this.hoursWatchObservers.delete(row);
+    }
+
+    releaseAllHoursWatches() {
+        this.document.querySelectorAll('table tbody tr').forEach(row => this.releaseHoursWatch(row));
+    }
+
+    ensureHoursWatch(row) {
+        if (!row?.closest?.('tbody') || this.hoursWatchObservers.has(row)) {
+            return;
+        }
+
+        const observer = new MutationObserver(() => {
+            if (!MessageService.CYBERSHOKE_HOURS_RE.test(row.innerText || '')) {
+                return;
+            }
+
+            this.releaseHoursWatch(row);
+            this.highlightNewAccounts(row);
+        });
+
+        const timeoutId = setTimeout(() => this.releaseHoursWatch(row), this.HOURS_WATCH_TTL_MS);
+
+        this.hoursWatchObservers.set(row, { observer, timeoutId });
+        observer.observe(row, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    }
+
+    _clearRowHoursState(row) {
+        delete row.dataset.iohNewAccountHours;
+    }
+
+    _setRowHoursState(row, hours) {
+        row.dataset.iohNewAccountHours = String(hours);
+    }
+
+    _clearRowHoursHighlight(row) {
+        row.querySelectorAll('.ioh-new-account-hours').forEach(span => {
+            span.classList.remove('ioh-new-account-hours');
+        });
+        this._clearRowHoursState(row);
+    }
+
+    _markHoursHighlight(span) {
+        if (span.classList.contains('ioh-new-account-hours')) {
+            return;
+        }
+
+        span.classList.add('ioh-new-account-hours');
+    }
+
+    _applyRowHoursHighlight(row) {
+        row.querySelectorAll('div').forEach(div => {
+            if (!div.innerText.includes('CYBERSHOKE:')) {
+                return;
+            }
+
+            const existingSpan = div.querySelector('.cs-hours-span');
+            if (existingSpan) {
+                this._markHoursHighlight(existingSpan);
+                return;
+            }
+
+            const html = div.innerHTML;
+            const newHtml = html.replace(/(CYBERSHOKE:\s*)(\d+ч)/i, (fullMatch, prefix, hoursText) => {
+                if (fullMatch.includes('ioh-new-account-hours')) {
+                    return fullMatch;
+                }
+
+                return `${prefix}<span class="cs-hours-span ioh-new-account-hours">${hoursText}</span>`;
+            });
+
+            if (newHtml !== html) {
+                div.innerHTML = newHtml;
+            }
+        });
+    }
+
+    highlightNewAccounts(row) {
+        if (!row?.querySelector) {
+            return;
+        }
+
+        const match = (row.innerText || '').match(MessageService.CYBERSHOKE_HOURS_RE);
+
+        if (!match) {
+            this.ensureHoursWatch(row);
+            return;
+        }
+
+        this.releaseHoursWatch(row);
 
         const hours = parseInt(match[1], 10);
 
         if (hours >= this.settings.newAccountHours) {
-            if (existingHighlight) {
-                existingHighlight.replaceWith(this.document.createTextNode(existingHighlight.textContent || ''));
-            }
+            this._clearRowHoursHighlight(row);
             return;
         }
 
-        if (existingHighlight) {
-            return;
-        }
+        this._setRowHoursState(row, hours);
+        this._applyRowHoursHighlight(row);
+    }
 
-        const allDivs = row.querySelectorAll('div');
-        allDivs.forEach(div => {
-            if (div.innerText.includes('CYBERSHOKE:') && !div.querySelector('.cs-hours-span')) {
-                div.innerHTML = div.innerHTML.replace(/(CYBERSHOKE:\s*)(\d+ч)/i, (match, p1, p2) => {
-                    return `${p1}<span class="cs-hours-span ioh-new-account-hours">${p2}</span>`;
-                });
-            }
-        });
+    syncNewAccountHighlights() {
+        const apply = () => {
+            this._getComplaintQueueRows().forEach(row => this.highlightNewAccounts(row));
+        };
+
+        apply();
+        requestAnimationFrame(apply);
+        setTimeout(apply, 150);
     }
 
     clearNewAccountHighlights() {
-        this.document.querySelectorAll('.cs-hours-span.ioh-new-account-hours').forEach(span => {
-            span.replaceWith(this.document.createTextNode(span.textContent || ''));
+        this.document.querySelectorAll('.ioh-new-account-hours').forEach(span => {
+            span.classList.remove('ioh-new-account-hours');
         });
+        this.document.querySelectorAll('tr[data-ioh-new-account-hours]').forEach(row => {
+            delete row.dataset.iohNewAccountHours;
+        });
+        this.releaseAllHoursWatches();
     }
 
     reapplyNewAccountHighlights() {
         this.clearNewAccountHighlights();
+        if (this._isComplaintQueuePage()) {
+            this.syncNewAccountHighlights();
+            return;
+        }
+
         this.document.querySelectorAll('table tbody tr').forEach(row => {
             this.highlightNewAccounts(row);
         });
     }
 
-    highlightDuplicateServerIps(targetRow) {
-        const rows = targetRow
-            ? [targetRow]
-            : Array.from(this.document.querySelectorAll('tr'));
+    highlightDuplicateServerIps() {
+        this.clearDuplicateServerHighlights();
 
         const serverMap = new Map();
 
-        this.document.querySelectorAll('tr').forEach(row => {
+        this.document.querySelectorAll('table tbody tr').forEach(row => {
+            if (row.querySelector('th')) {
+                return;
+            }
+
             const serverLink = row.querySelector('a[href^="steam://connect/"]');
-            if (!serverLink) return;
+            if (!serverLink) {
+                return;
+            }
 
             const serverIp = serverLink.textContent.trim();
+            if (!serverIp) {
+                return;
+            }
 
             if (!serverMap.has(serverIp)) {
                 serverMap.set(serverIp, []);
@@ -184,42 +326,30 @@ class MessageService {
             serverMap.get(serverIp).push(row);
         });
 
-        rows.forEach(row => {
-            if (row.querySelector('th') || row.dataset.duplicateServerChecked) {
-                return;
+        let colorIndex = 0;
+
+        for (const rows of serverMap.values()) {
+            if (rows.length < 2) {
+                continue;
             }
 
-            const serverLink = row.querySelector('a[href^="steam://connect/"]');
+            const dupColor = String(colorIndex % MessageService.DUPLICATE_SERVER_COLOR_COUNT);
+            colorIndex += 1;
 
-            if (serverLink) {
-                const serverIp = serverLink.textContent.trim();
-                const duplicates = serverMap.get(serverIp);
-
-                if (duplicates && duplicates.length > 1) {
-                    duplicates.forEach(duplicateRow => {
-                        duplicateRow.classList.add(
-                            'ioh-duplicate-server'
-                        );
-
-                        duplicateRow.dataset.duplicateServerChecked = 'true';
-                    });
-                } else {
-                    row.dataset.duplicateServerChecked = 'true';
-                }
-            }
-        });
+            rows.forEach(row => {
+                row.classList.add('ioh-duplicate-server');
+                row.dataset.iohDupColor = dupColor;
+                row.dataset.duplicateServerChecked = 'true';
+            });
+        }
     }
 
     clearDuplicateServerHighlights() {
         this.document
-            .querySelectorAll('.ioh-duplicate-server')
+            .querySelectorAll('.ioh-duplicate-server, tr[data-duplicate-server-checked], tr[data-ioh-dup-color]')
             .forEach(row => {
                 row.classList.remove('ioh-duplicate-server');
-            });
-
-        this.document
-            .querySelectorAll('tr[data-duplicate-server-checked]')
-            .forEach(row => {
+                delete row.dataset.iohDupColor;
                 delete row.dataset.duplicateServerChecked;
             });
     }

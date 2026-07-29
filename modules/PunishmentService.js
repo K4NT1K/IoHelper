@@ -36,26 +36,6 @@ class PunishmentService {
 
         this.teardown();
         this.scanDialogs();
-
-        this.observer = new MutationObserver((mutations) => {
-            if (!this.enabled) {
-                return;
-            }
-
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes || []) {
-                    if (this.isRelevantNode(node)) {
-                        this.scheduleScan();
-                        return;
-                    }
-                }
-            }
-        });
-
-        this.observer.observe(this.document.body, {
-            childList: true,
-            subtree: true
-        });
     }
 
     teardown() {
@@ -326,10 +306,6 @@ class PunishmentService {
         }
     }
 
-    scheduleMuteDurationRestore(reasonSelect, timeSelect) {
-        this.scheduleDurationRestore(reasonSelect, timeSelect);
-    }
-
     observeMuteTimeOptions(reasonSelect, timeSelect) {
         if (this.boundMuteTimeObservers.has(timeSelect)) {
             return;
@@ -338,11 +314,11 @@ class PunishmentService {
         this.boundMuteTimeObservers.add(timeSelect);
 
         const observer = new MutationObserver(() => {
-            this.scheduleMuteDurationRestore(reasonSelect, timeSelect);
+            this.scheduleDurationRestore(reasonSelect, timeSelect);
         });
 
         observer.observe(timeSelect, { childList: true, subtree: true });
-        this.scheduleMuteDurationRestore(reasonSelect, timeSelect);
+        this.scheduleDurationRestore(reasonSelect, timeSelect);
     }
 
     handleReasonChange(event) {
