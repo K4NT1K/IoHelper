@@ -257,10 +257,12 @@ class DOMCoordinator {
             clearTimeout(this.bodyDebounceId);
         }
 
+        const debounceMs = this.app.isReviewingComplaint?.() ? 500 : 150;
+
         this.bodyDebounceId = setTimeout(() => {
             this.bodyDebounceId = null;
             this.flushBodyDispatch();
-        }, 150);
+        }, debounceMs);
     }
 
     flushBodyDispatch() {

@@ -563,7 +563,19 @@ class ModeratorService {
             return null;
         }
 
-        return header.closest('section, article, [role="tabpanel"]') || header.parentElement;
+        let container = header.parentElement;
+        for (let depth = 0; depth < 8 && container; depth++) {
+            if (
+                container.querySelector('table')
+                && container.querySelector('a[href*="cybershoke.net/"]')
+            ) {
+                return container;
+            }
+            container = container.parentElement;
+        }
+
+        return header.closest('main, [role="main"], section, article, [role="tabpanel"]')
+            || header.parentElement;
     }
 
     highlightSavedModerators() {

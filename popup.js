@@ -4,6 +4,7 @@ const refreshIntervalInput = document.getElementById('serverRefreshInterval');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const trackIntervalInput = document.getElementById('trackOffenderInterval');
+const trackIntervalWhileReviewingInput = document.getElementById('trackOffenderIntervalWhileReviewing');
 const autoConnectReasonsContainer = document.getElementById('autoConnectReasonsContainer');
 const autoConnectTriggersContainer = document.getElementById('autoConnectTriggersContainer');
 const autoConnectTriggerInput = document.getElementById('autoConnectTriggerInput');
@@ -336,6 +337,7 @@ function loadSettingsToUI(settings) {
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
     currentSettings.reasonTriggersAutoconnect = [...(settings.reasonTriggersAutoconnect || [])];
     trackIntervalInput.value = settings.trackOffenderInterval;
+    trackIntervalWhileReviewingInput.value = settings.trackOffenderIntervalWhileReviewing ?? 30;
 
     renderAutoConnectReasons(
         defaultSettings.complaintReasonOptions || [],
@@ -370,7 +372,11 @@ function collectSettingsFromUI() {
             parseInt(refreshIntervalInput.value, 10) || 0,
             0
         ),
-        trackOffenderInterval: Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1),
+        trackOffenderInterval: Math.min(60, Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1)),
+        trackOffenderIntervalWhileReviewing: Math.min(
+            60,
+            Math.max(parseInt(trackIntervalWhileReviewingInput.value, 10) || 1, 1)
+        ),
         autoConnectReasons: Array.from(
             autoConnectReasonsContainer.querySelectorAll('input[type="checkbox"]:checked')
         ).map(input => input.value),
@@ -486,6 +492,7 @@ autoConnectTriggerInput.addEventListener('keydown', (e) => {
 hoursInput.addEventListener('change', saveCurrentSettings);
 refreshIntervalInput.addEventListener('change', saveCurrentSettings);
 trackIntervalInput.addEventListener('input', saveCurrentSettings);
+trackIntervalWhileReviewingInput.addEventListener('input', saveCurrentSettings);
 
 resetBtn.addEventListener("click", () => {
     if (!confirm("Сбросить все настройки?"))

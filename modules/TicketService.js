@@ -753,16 +753,30 @@ class TicketService {
     }
 
     findCurrentServerHeader(scopeEl = null) {
-        const scope = scopeEl || this.findActiveComplaintScope();
-        if (!scope) {
-            return null;
-        }
+        const headers = scopeEl
+            ? scopeEl.querySelectorAll('h3')
+            : this.document.querySelectorAll('h3');
 
-        return Array.from(scope.querySelectorAll('h3'))
-            .find(h => (
-                h.textContent?.includes('Текущий сервер')
-                && this._isElementVisible(h)
-            )) || null;
+        return Array.from(headers).find(h => {
+            if (!h.textContent?.includes('Текущий сервер')) {
+                return false;
+            }
+            if (!this._isElementVisible(h)) {
+                return false;
+            }
+            if (scopeEl) {
+                return true;
+            }
+
+            let ancestor = h.parentElement;
+            while (ancestor) {
+                if (ancestor.getAttribute?.('aria-hidden') === 'true') {
+                    return false;
+                }
+                ancestor = ancestor.parentElement;
+            }
+            return true;
+        }) || null;
     }
 
     hasCurrentServerSection(scopeEl = null) {
@@ -3914,7 +3928,7 @@ class TicketService {
         this.clearOffenderOffline(targetSteamId);
     }
 
-    async checkOffendersServers() {
+    async checkOffendersServers(cacheIntervalMs = null) {
         if (!window.location.href.includes('/support/reports') &&
             !window.location.href.includes('/support/tickets')) {
             return;
@@ -3927,7 +3941,10 @@ class TicketService {
         }
 
         this.isCheckingServer = true;
-        const CACHE_INTERVAL = 5000;
+        const CACHE_INTERVAL = Math.max(
+            Number(cacheIntervalMs) || ((this.settings.trackOffenderInterval || 5) * 1000),
+            1000
+        );
         const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1000;
 
         try {

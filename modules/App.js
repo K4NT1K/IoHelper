@@ -18,6 +18,10 @@ class App {
         this._lastHref = this.window?.location?.href || '';
         this._lastTicketSectionPath = '';
         this._lastVisibleTicketTextarea = null;
+        this._wasReviewingComplaint = false;
+        this._forceNotReviewing = false;
+        this._closeTicketReviewButton = null;
+        this._closeTicketReviewHandler = null;
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -131,9 +135,14 @@ class App {
     handleTrackOffenderLoop(previousSettings = null) {
         const isEnabled = this.features.trackOffenderServer;
         const currentInterval = this.settings.trackOffenderInterval || 5;
+        const currentReviewInterval = this.settings.trackOffenderIntervalWhileReviewing || 30;
         const prevInterval = previousSettings?.trackOffenderInterval;
+        const prevReviewInterval = previousSettings?.trackOffenderIntervalWhileReviewing;
 
-        if (!isEnabled || (prevInterval !== undefined && prevInterval !== currentInterval)) {
+        const intervalChanged = prevInterval !== undefined && prevInterval !== currentInterval;
+        const reviewIntervalChanged = prevReviewInterval !== undefined && prevReviewInterval !== currentReviewInterval;
+
+        if (!isEnabled || intervalChanged || reviewIntervalChanged) {
             if (this.ipTrackTimeoutId) {
                 clearTimeout(this.ipTrackTimeoutId);
                 this.ipTrackTimeoutId = null;
@@ -146,6 +155,90 @@ class App {
         }
     }
 
+    isReviewingComplaint() {
+        const hasOpenTicket = Boolean(
+            this.ticketService.findVisibleTicketResolutionTextarea()
+            || this.ticketService.findActiveComplaintScope()
+        );
+
+        if (this._forceNotReviewing) {
+            if (!hasOpenTicket) {
+                this._forceNotReviewing = false;
+            }
+            return false;
+        }
+
+        return hasOpenTicket;
+    }
+
+    getOffenderTrackIntervalSec() {
+        return this.isReviewingComplaint()
+            ? (this.settings.trackOffenderIntervalWhileReviewing || 30)
+            : (this.settings.trackOffenderInterval || 5);
+    }
+
+    syncReviewingComplaintTracking() {
+        const next = this.isReviewingComplaint();
+
+        if (next) {
+            this.ensureCloseTicketReviewListener();
+        }
+
+        if (this._wasReviewingComplaint === next) {
+            return;
+        }
+
+        const exitedReview = this._wasReviewingComplaint && !next;
+        this._wasReviewingComplaint = next;
+
+        if (!this.features.trackOffenderServer) {
+            if (!next) {
+                this.teardownCloseTicketReviewListener();
+            }
+            return;
+        }
+
+        if (this.ipTrackTimeoutId) {
+            clearTimeout(this.ipTrackTimeoutId);
+            this.ipTrackTimeoutId = null;
+        }
+
+        if (exitedReview) {
+            this.teardownCloseTicketReviewListener();
+            void (async () => {
+                await this.runOffenderTrackingPass();
+                this.scheduleNextOffenderInterval();
+            })();
+            return;
+        }
+
+        this.scheduleNextOffenderInterval();
+    }
+
+    ensureCloseTicketReviewListener() {
+        const scope = this.ticketService.findActiveComplaintScope() || this.document.body;
+        const button = this.ticketService.findCloseTicketButton(scope);
+        if (!button || button === this._closeTicketReviewButton) {
+            return;
+        }
+
+        this.teardownCloseTicketReviewListener();
+        this._closeTicketReviewButton = button;
+        this._closeTicketReviewHandler = () => {
+            this._forceNotReviewing = true;
+            this.syncReviewingComplaintTracking();
+        };
+        button.addEventListener('click', this._closeTicketReviewHandler);
+    }
+
+    teardownCloseTicketReviewListener() {
+        if (this._closeTicketReviewButton && this._closeTicketReviewHandler) {
+            this._closeTicketReviewButton.removeEventListener('click', this._closeTicketReviewHandler);
+        }
+        this._closeTicketReviewButton = null;
+        this._closeTicketReviewHandler = null;
+    }
+
     async runOffenderTrackingPass() {
         if (!this.features.trackOffenderServer) {
             return;
@@ -156,7 +249,8 @@ class App {
         }
 
         try {
-            await this.ticketService.checkOffendersServers();
+            const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1000;
+            await this.ticketService.checkOffendersServers(cacheIntervalMs);
         } catch (err) {
             console.error(err);
         }
@@ -167,7 +261,7 @@ class App {
             return;
         }
 
-        const intervalMs = (this.settings.trackOffenderInterval || 5) * 1000;
+        const intervalMs = this.getOffenderTrackIntervalSec() * 1000;
 
         this.ipTrackTimeoutId = setTimeout(async () => {
             this.ipTrackTimeoutId = null;
@@ -205,7 +299,8 @@ class App {
             this.messageService.clearTranslationDecorations();
         }
 
-        const intervalChanged = previousSettings?.trackOffenderInterval !== nextSettings.trackOffenderInterval;
+        const intervalChanged = previousSettings?.trackOffenderInterval !== nextSettings.trackOffenderInterval
+            || previousSettings?.trackOffenderIntervalWhileReviewing !== nextSettings.trackOffenderIntervalWhileReviewing;
 
         if ((!nextFeatures.trackOffenderServer || intervalChanged) && this.ipTrackTimeoutId) {
             clearTimeout(this.ipTrackTimeoutId);
@@ -301,6 +396,7 @@ class App {
         }
 
         this.ticketService.refreshComplaintPunishmentButtons();
+        this.syncReviewingComplaintTracking();
     }
 
     initCurrentServerFeatures() {
@@ -308,7 +404,7 @@ class App {
 
         const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
 
-        if (!ticketKey || !this.ticketService.hasCurrentServerSection()) {
+        if (!ticketKey) {
             this.ticketService.stopCurrentServerRefresh();
             return;
         }
@@ -542,6 +638,8 @@ class App {
             delete this.document.body.dataset.autoConnectedFor;
         }
         this._lastVisibleTicketTextarea = null;
+        this._forceNotReviewing = false;
+        this.teardownCloseTicketReviewListener();
 
         this.teardownTicketChatHistoryObservers();
         this.ticketService.teardownTicketPunishmentButtons();
@@ -553,6 +651,7 @@ class App {
         this.runDOMUpdates();
         this.initCurrentServerFeatures();
         this.domCoordinator.init();
+        this.syncReviewingComplaintTracking();
 
         void this.ticketService.scanModeratorPunishmentPermissions();
 
@@ -571,6 +670,10 @@ class App {
         const visibleTextarea = this.ticketService.findVisibleTicketResolutionTextarea();
         const textareaChanged = visibleTextarea !== this._lastVisibleTicketTextarea;
         this._lastVisibleTicketTextarea = visibleTextarea;
+
+        if (visibleTextarea && textareaChanged) {
+            this._forceNotReviewing = false;
+        }
 
         if (visibleTextarea && this.features.processTicketRules && textareaChanged) {
             this.ensureTicketChatHistoryObserver(visibleTextarea);
@@ -594,6 +697,8 @@ class App {
         if (this.settings.serverRefreshInterval > 0) {
             this.initCurrentServerFeatures();
         }
+
+        this.syncReviewingComplaintTracking();
     }
 
     teardownTicketChatHistoryObservers() {

@@ -18,6 +18,7 @@
     "newAccountHours": 7,
     "serverRefreshInterval": 15,
     "trackOffenderInterval": 5,
+    "trackOffenderIntervalWhileReviewing": 30,
     "ticketAgeLimit": 0,
     "autoConnectReasons": [
       "Читерство", "Мониторинг", "Багоюз"
