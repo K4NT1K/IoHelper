@@ -765,12 +765,9 @@ class TicketService {
                 return true;
             }
 
-            let ancestor = h.parentElement;
-            while (ancestor) {
-                if (ancestor.getAttribute?.('aria-hidden') === 'true') {
-                    return false;
-                }
-                ancestor = ancestor.parentElement;
+            const hiddenRoot = h.closest('[aria-hidden]');
+            if (hiddenRoot?.getAttribute('aria-hidden') === 'true') {
+                return false;
             }
             return true;
         }) || null;
@@ -791,52 +788,24 @@ class TicketService {
     findCurrentServerRefreshButton(header = this.findCurrentServerHeaderInDom()) {
         if (!header) return null;
 
-        const hasAriaHiddenAncestor = (el) => {
-            let ancestor = el;
-            while (ancestor) {
-                if (ancestor.getAttribute?.('aria-hidden') === 'true') {
-                    return true;
-                }
-                ancestor = ancestor.parentElement;
-            }
-            return false;
-        };
-
-        const isRefreshControl = (btn) => {
-            if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+        const isRefreshButton = (btn) => {
+            if (!btn || btn.disabled) {
                 return false;
             }
             if (btn.closest('table')) {
                 return false;
             }
-            if (hasAriaHiddenAncestor(btn)) {
-                return false;
-            }
-
-            const hasRefreshIcon = Boolean(
-                btn.querySelector('use[href="#lc-refresh-cw"], use[href*="refresh"]')
-            );
-            const hasRefreshText = Boolean(btn.textContent?.includes('Обновить'));
-            return hasRefreshIcon || hasRefreshText;
+            return (btn.textContent || '').includes('Обновить');
         };
 
-        const findRefreshIn = (root) => {
-            if (!root) return null;
-            return Array.from(root.querySelectorAll('button')).find(isRefreshControl) || null;
-        };
-
-        const card = this.findCardSurface(header);
-        const cardButton = findRefreshIn(card);
-        if (cardButton) {
-            return cardButton;
-        }
-
-        const scopeRoot = header.closest('section, article, main, [role="main"]') || header.parentElement;
+        // Header row: h3 and «Обновить» are siblings under the same parent.
         let container = header.parentElement;
-        for (let depth = 0; depth < 8 && container; depth++) {
+        for (let depth = 0; depth < 3 && container; depth++) {
             const refreshButton = Array.from(container.querySelectorAll('button'))
-                .find(btn => isRefreshControl(btn) && (!scopeRoot || scopeRoot.contains(btn)));
-            if (refreshButton) return refreshButton;
+                .find(isRefreshButton);
+            if (refreshButton) {
+                return refreshButton;
+            }
             container = container.parentElement;
         }
 
@@ -848,14 +817,12 @@ class TicketService {
             return false;
         }
 
-        const view = this.window || window;
-        const eventInit = { bubbles: true, cancelable: true, view };
-
-        btn.dispatchEvent(new PointerEvent('pointerdown', eventInit));
-        btn.dispatchEvent(new PointerEvent('pointerup', eventInit));
-        btn.dispatchEvent(new MouseEvent('click', eventInit));
-        btn.click();
-        return true;
+        try {
+            btn.click();
+            return true;
+        } catch (_) {
+            return false;
+        }
     }
 
     getCurrentServerRefreshTicketKey() {

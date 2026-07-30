@@ -183,6 +183,25 @@ class DOMCoordinator {
 
             for (const mutation of mutations) {
                 if (mutation.type === 'attributes') {
+                    if (mutation.attributeName !== 'aria-hidden') {
+                        continue;
+                    }
+
+                    const target = mutation.target;
+                    if (!target || target.nodeType !== 1) {
+                        continue;
+                    }
+                    if (this.app.ticketService.isExtensionUiElement(target)) {
+                        continue;
+                    }
+                    if (target.getAttribute('aria-hidden') === 'true') {
+                        continue;
+                    }
+
+                    if (this.isCurrentServerNode(target)) {
+                        this.pendingDispatch.currentServer = true;
+                        this.pendingDispatch.currentServerMods = true;
+                    }
                     continue;
                 }
 
@@ -210,7 +229,9 @@ class DOMCoordinator {
 
         this.bodyObserver.observe(this.document.body, {
             childList: true,
-            subtree: true
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['aria-hidden']
         });
     }
 
@@ -472,6 +493,13 @@ class DOMCoordinator {
 
         this.document.querySelectorAll('[role="tabpanel"]').forEach(panel => {
             if (panel.closest('section, article, main, [role="main"]')) {
+                roots.add(panel);
+            }
+        });
+
+        // Open complaint overlay is often an aria-hidden=false panel outside <main>.
+        this.document.querySelectorAll('[aria-hidden="false"]').forEach(panel => {
+            if (this.isCurrentServerNode(panel) || this.isRelevantTicketMountNode(panel)) {
                 roots.add(panel);
             }
         });
