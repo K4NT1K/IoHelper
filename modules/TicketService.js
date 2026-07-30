@@ -752,16 +752,13 @@ class TicketService {
         }
     }
 
-    findCurrentServerHeader(scopeEl = null) {
+    findCurrentServerHeaderInDom(scopeEl = null) {
         const headers = scopeEl
             ? scopeEl.querySelectorAll('h3')
             : this.document.querySelectorAll('h3');
 
         return Array.from(headers).find(h => {
             if (!h.textContent?.includes('Текущий сервер')) {
-                return false;
-            }
-            if (!this._isElementVisible(h)) {
                 return false;
             }
             if (scopeEl) {
@@ -779,12 +776,34 @@ class TicketService {
         }) || null;
     }
 
+    findCurrentServerHeader(scopeEl = null) {
+        const header = this.findCurrentServerHeaderInDom(scopeEl);
+        if (!header || !this._isElementVisible(header)) {
+            return null;
+        }
+        return header;
+    }
+
     hasCurrentServerSection(scopeEl = null) {
-        return Boolean(this.findCurrentServerHeader(scopeEl));
+        return Boolean(this.findCurrentServerHeaderInDom(scopeEl));
     }
 
     findCurrentServerRefreshButton(header = this.findCurrentServerHeader()) {
         if (!header) return null;
+
+        const findRefreshIn = (root) => {
+            if (!root) return null;
+            return Array.from(root.querySelectorAll('button')).find(btn => (
+                btn.textContent?.includes('Обновить')
+                && this._isElementVisible(btn)
+            )) || null;
+        };
+
+        const card = this.findCardSurface(header);
+        const cardButton = findRefreshIn(card);
+        if (cardButton) {
+            return cardButton;
+        }
 
         const scopeRoot = header.closest('section, article, main, [role="main"]') || header.parentElement;
         let container = header.parentElement;
