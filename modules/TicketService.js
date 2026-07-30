@@ -19,7 +19,6 @@ class TicketService {
         this.offenderOffline = new Map();
         this.offenderRelocated = new Map();
         this.userDataCache = new Map();
-        this._currentServerRefreshTicketKey = null;
         this._currentServerRefreshSeconds = null;
         this.LEFT_OFFENDER_TTL_MS = 8 * 60 * 1000;
 
@@ -773,14 +772,6 @@ class TicketService {
         }) || null;
     }
 
-    findCurrentServerHeader(scopeEl = null) {
-        const header = this.findCurrentServerHeaderInDom(scopeEl);
-        if (!header || !this._isElementVisible(header)) {
-            return null;
-        }
-        return header;
-    }
-
     hasCurrentServerSection(scopeEl = null) {
         return Boolean(this.findCurrentServerHeaderInDom(scopeEl));
     }
@@ -798,7 +789,6 @@ class TicketService {
             return (btn.textContent || '').includes('Обновить');
         };
 
-        // Header row: h3 and «Обновить» are siblings under the same parent.
         let container = header.parentElement;
         for (let depth = 0; depth < 3 && container; depth++) {
             const refreshButton = Array.from(container.querySelectorAll('button'))
@@ -812,48 +802,15 @@ class TicketService {
         return null;
     }
 
-    clickCurrentServerRefreshButton(btn) {
-        if (!btn) {
-            return false;
-        }
-
-        try {
-            btn.click();
-            return true;
-        } catch (_) {
-            return false;
-        }
-    }
-
-    getCurrentServerRefreshTicketKey() {
-        const path = window.location.pathname || window.location.href;
-        return `${path}|current-server`;
-    }
-
-    hasOpenComplaintTicketSignal() {
-        if (this.findActiveComplaintScope()) {
-            return true;
-        }
-
-        if (this.findCloseTicketButton()) {
-            return true;
-        }
-
-        return Boolean(
-            this.document.querySelector('textarea[placeholder*="Опишите детали закрытия"]')
-        );
-    }
-
     stopCurrentServerRefresh() {
         if (this.currentServerRefreshInterval) {
             clearInterval(this.currentServerRefreshInterval);
             this.currentServerRefreshInterval = null;
         }
-        this._currentServerRefreshTicketKey = null;
         this._currentServerRefreshSeconds = null;
     }
 
-    ensureCurrentServerRefresh(ticketKey, seconds) {
+    ensureCurrentServerRefresh(seconds) {
         const normalizedSeconds = Number(seconds);
         if (!Number.isFinite(normalizedSeconds) || normalizedSeconds <= 0) {
             this.stopCurrentServerRefresh();
@@ -861,15 +818,13 @@ class TicketService {
         }
 
         if (
-            this._currentServerRefreshTicketKey === ticketKey &&
-            this._currentServerRefreshSeconds === normalizedSeconds &&
             this.currentServerRefreshInterval
+            && this._currentServerRefreshSeconds === normalizedSeconds
         ) {
             return;
         }
 
         this.stopCurrentServerRefresh();
-        this._currentServerRefreshTicketKey = ticketKey;
         this._currentServerRefreshSeconds = normalizedSeconds;
         this.refreshCurrentServerNowIfAvailable();
         this.currentServerRefreshInterval = setInterval(() => {
@@ -879,14 +834,22 @@ class TicketService {
 
     refreshCurrentServerNowIfAvailable() {
         const header = this.findCurrentServerHeaderInDom();
-        if (!header) return false;
-
-        const refreshButton = this.findCurrentServerRefreshButton(header);
-        if (!refreshButton || refreshButton.disabled || refreshButton.getAttribute('aria-disabled') === 'true') {
+        if (!header) {
+            this.stopCurrentServerRefresh();
             return false;
         }
 
-        return this.clickCurrentServerRefreshButton(refreshButton);
+        const refreshButton = this.findCurrentServerRefreshButton(header);
+        if (!refreshButton || refreshButton.disabled) {
+            return false;
+        }
+
+        try {
+            refreshButton.click();
+            return true;
+        } catch (_) {
+            return false;
+        }
     }
 
     clearTicketRuleBadge() {

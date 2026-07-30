@@ -104,6 +104,9 @@ class App {
 
         if (previousSettings.serverRefreshInterval !== settings.serverRefreshInterval) {
             this.ticketService.stopCurrentServerRefresh();
+            if (this.settings.serverRefreshInterval > 0) {
+                this.initCurrentServerFeatures();
+            }
         }
 
         if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
@@ -369,19 +372,17 @@ class App {
     }
 
     initCurrentServerFeatures() {
-        this.moderatorService.highlightSavedModerators();
-
         if (this.settings.serverRefreshInterval <= 0) {
             this.ticketService.stopCurrentServerRefresh();
             return;
         }
 
         if (!this.ticketService.hasCurrentServerSection()) {
+            this.ticketService.stopCurrentServerRefresh();
             return;
         }
 
-        const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
-        this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
+        this.ticketService.ensureCurrentServerRefresh(this.settings.serverRefreshInterval);
     }
 
     initVisibilityCatchUpListener() {
@@ -421,10 +422,6 @@ class App {
             } else {
                 this._getHighlightTargetRows().forEach(row => this.messageService.highlightNewAccounts(row));
             }
-        }
-
-        if (this.settings.serverRefreshInterval > 0) {
-            this.initCurrentServerFeatures();
         }
     }
 
@@ -614,7 +611,6 @@ class App {
         this.ticketService.stopCurrentServerRefresh();
 
         this.runDOMUpdates();
-        this.initCurrentServerFeatures();
         this.domCoordinator.init();
         this.syncOffenderTrackingForPage();
 
@@ -653,10 +649,6 @@ class App {
             } else {
                 this._getHighlightTargetRows().forEach(row => this.messageService.highlightNewAccounts(row));
             }
-        }
-
-        if (this.settings.serverRefreshInterval > 0) {
-            this.initCurrentServerFeatures();
         }
 
         this.syncOffenderTrackingForPage();
