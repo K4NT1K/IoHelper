@@ -788,15 +788,29 @@ class TicketService {
         return Boolean(this.findCurrentServerHeaderInDom(scopeEl));
     }
 
-    findCurrentServerRefreshButton(header = this.findCurrentServerHeader()) {
+    findCurrentServerRefreshButton(header = this.findCurrentServerHeaderInDom()) {
         if (!header) return null;
+
+        const isUsableRefreshButton = (btn) => {
+            if (!btn || btn.disabled) {
+                return false;
+            }
+            if (!btn.textContent?.includes('Обновить')) {
+                return false;
+            }
+            let ancestor = btn;
+            while (ancestor) {
+                if (ancestor.getAttribute?.('aria-hidden') === 'true') {
+                    return false;
+                }
+                ancestor = ancestor.parentElement;
+            }
+            return true;
+        };
 
         const findRefreshIn = (root) => {
             if (!root) return null;
-            return Array.from(root.querySelectorAll('button')).find(btn => (
-                btn.textContent?.includes('Обновить')
-                && this._isElementVisible(btn)
-            )) || null;
+            return Array.from(root.querySelectorAll('button')).find(isUsableRefreshButton) || null;
         };
 
         const card = this.findCardSurface(header);
@@ -810,9 +824,8 @@ class TicketService {
         for (let depth = 0; depth < 8 && container; depth++) {
             const refreshButton = Array.from(container.querySelectorAll('button'))
                 .find(btn => (
-                    btn.textContent?.includes('Обновить')
+                    isUsableRefreshButton(btn)
                     && (!scopeRoot || scopeRoot.contains(btn))
-                    && this._isElementVisible(btn)
                 ));
             if (refreshButton) return refreshButton;
             container = container.parentElement;
@@ -822,9 +835,8 @@ class TicketService {
     }
 
     getCurrentServerRefreshTicketKey() {
-        const ticketId = this.extractActiveComplaintTicketId();
         const path = window.location.pathname || window.location.href;
-        return `${path}|${ticketId || 'server'}`;
+        return `${path}|current-server`;
     }
 
     hasOpenComplaintTicketSignal() {
@@ -867,13 +879,14 @@ class TicketService {
         this.stopCurrentServerRefresh();
         this._currentServerRefreshTicketKey = ticketKey;
         this._currentServerRefreshSeconds = seconds;
+        this.refreshCurrentServerNowIfAvailable();
         this.currentServerRefreshInterval = setInterval(() => {
             this.refreshCurrentServerNowIfAvailable();
         }, seconds * 1000);
     }
 
     refreshCurrentServerNowIfAvailable() {
-        const header = this.findCurrentServerHeader();
+        const header = this.findCurrentServerHeaderInDom();
         if (!header) return false;
 
         const refreshButton = this.findCurrentServerRefreshButton(header);

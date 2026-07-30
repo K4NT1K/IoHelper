@@ -381,7 +381,6 @@ class App {
         }
 
         const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
-        this.ticketService.refreshCurrentServerNowIfAvailable();
         this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
     }
 
