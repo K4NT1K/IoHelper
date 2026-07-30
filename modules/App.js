@@ -18,10 +18,7 @@ class App {
         this._lastHref = this.window?.location?.href || '';
         this._lastTicketSectionPath = '';
         this._lastVisibleTicketTextarea = null;
-        this._wasReviewingComplaint = false;
-        this._forceNotReviewing = false;
-        this._closeTicketReviewButton = null;
-        this._closeTicketReviewHandler = null;
+        this._wasOnComplaintDetail = this.isComplaintDetailPage();
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -44,7 +41,8 @@ class App {
         this.moderatorService = new ModeratorService({document, chrome});
         this.punishmentService = new PunishmentService({
             document,
-            durations: config.punishmentDurations
+            durations: config.punishmentDurations,
+            utils: this.utils
         });
         this.domCoordinator = new DOMCoordinator(this);
         this.messageService.ticketService = this.ticketService;
@@ -155,43 +153,40 @@ class App {
         }
     }
 
-    isReviewingComplaint() {
-        const hasOpenTicket = this.ticketService.hasOpenComplaintTicketSignal();
+    isComplaintQueuePage() {
+        const path = this.window.location.pathname || '';
+        return /\/support\/(tickets|reports)\b/i.test(path);
+    }
 
-        if (this._forceNotReviewing) {
-            if (!hasOpenTicket) {
-                this._forceNotReviewing = false;
-            }
+    isComplaintDetailPage() {
+        const path = this.window.location.pathname || '';
+        if (/\/support\/(tickets|reports)\b/i.test(path)) {
             return false;
         }
+        return /\/ticket\/|\/reports?\//i.test(path);
+    }
 
-        return hasOpenTicket;
+    isReviewingComplaint() {
+        return this.isComplaintDetailPage();
     }
 
     getOffenderTrackIntervalSec() {
-        return this.isReviewingComplaint()
+        return this.isComplaintDetailPage()
             ? (this.settings.trackOffenderIntervalWhileReviewing || 30)
             : (this.settings.trackOffenderInterval || 5);
     }
 
-    syncReviewingComplaintTracking() {
-        const next = this.isReviewingComplaint();
+    syncOffenderTrackingForPage() {
+        const next = this.isComplaintDetailPage();
 
-        if (next) {
-            this.ensureCloseTicketReviewListener();
-        }
-
-        if (this._wasReviewingComplaint === next) {
+        if (this._wasOnComplaintDetail === next) {
             return;
         }
 
-        const exitedReview = this._wasReviewingComplaint && !next;
-        this._wasReviewingComplaint = next;
+        const exitedDetail = this._wasOnComplaintDetail && !next;
+        this._wasOnComplaintDetail = next;
 
         if (!this.features.trackOffenderServer) {
-            if (!next) {
-                this.teardownCloseTicketReviewListener();
-            }
             return;
         }
 
@@ -200,8 +195,7 @@ class App {
             this.ipTrackTimeoutId = null;
         }
 
-        if (exitedReview) {
-            this.teardownCloseTicketReviewListener();
+        if (exitedDetail) {
             void (async () => {
                 await this.runOffenderTrackingPass();
                 this.scheduleNextOffenderInterval();
@@ -210,30 +204,6 @@ class App {
         }
 
         this.scheduleNextOffenderInterval();
-    }
-
-    ensureCloseTicketReviewListener() {
-        const scope = this.ticketService.findActiveComplaintScope() || this.document.body;
-        const button = this.ticketService.findCloseTicketButton(scope);
-        if (!button || button === this._closeTicketReviewButton) {
-            return;
-        }
-
-        this.teardownCloseTicketReviewListener();
-        this._closeTicketReviewButton = button;
-        this._closeTicketReviewHandler = () => {
-            this._forceNotReviewing = true;
-            this.syncReviewingComplaintTracking();
-        };
-        button.addEventListener('click', this._closeTicketReviewHandler);
-    }
-
-    teardownCloseTicketReviewListener() {
-        if (this._closeTicketReviewButton && this._closeTicketReviewHandler) {
-            this._closeTicketReviewButton.removeEventListener('click', this._closeTicketReviewHandler);
-        }
-        this._closeTicketReviewButton = null;
-        this._closeTicketReviewHandler = null;
     }
 
     async runOffenderTrackingPass() {
@@ -248,7 +218,7 @@ class App {
         try {
             const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1000;
             await this.ticketService.checkOffendersServers(cacheIntervalMs, {
-                singleRowPerPass: this.isReviewingComplaint()
+                singleRowPerPass: this.isComplaintDetailPage()
             });
         } catch (err) {
             console.error(err);
@@ -395,24 +365,22 @@ class App {
         }
 
         this.ticketService.refreshComplaintPunishmentButtons();
-        this.syncReviewingComplaintTracking();
+        this.syncOffenderTrackingForPage();
     }
 
     initCurrentServerFeatures() {
         this.moderatorService.highlightSavedModerators();
 
-        const hasOpenTicket = this.ticketService.hasOpenComplaintTicketSignal();
-        const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
-
-        if (!hasOpenTicket || this.settings.serverRefreshInterval <= 0) {
+        if (this.settings.serverRefreshInterval <= 0) {
             this.ticketService.stopCurrentServerRefresh();
             return;
         }
 
-        if (!ticketKey) {
+        if (!this.ticketService.hasCurrentServerSection()) {
             return;
         }
 
+        const ticketKey = this.ticketService.getCurrentServerRefreshTicketKey();
         this.ticketService.refreshCurrentServerNowIfAvailable();
         this.ticketService.ensureCurrentServerRefresh(ticketKey, this.settings.serverRefreshInterval);
     }
@@ -638,8 +606,6 @@ class App {
             delete this.document.body.dataset.autoConnectedFor;
         }
         this._lastVisibleTicketTextarea = null;
-        this._forceNotReviewing = false;
-        this.teardownCloseTicketReviewListener();
 
         this.teardownTicketChatHistoryObservers();
         this.ticketService.teardownTicketPunishmentButtons();
@@ -651,7 +617,7 @@ class App {
         this.runDOMUpdates();
         this.initCurrentServerFeatures();
         this.domCoordinator.init();
-        this.syncReviewingComplaintTracking();
+        this.syncOffenderTrackingForPage();
 
         void this.ticketService.scanModeratorPunishmentPermissions();
 
@@ -670,10 +636,6 @@ class App {
         const visibleTextarea = this.ticketService.findVisibleTicketResolutionTextarea();
         const textareaChanged = visibleTextarea !== this._lastVisibleTicketTextarea;
         this._lastVisibleTicketTextarea = visibleTextarea;
-
-        if (visibleTextarea && textareaChanged) {
-            this._forceNotReviewing = false;
-        }
 
         if (visibleTextarea && this.features.processTicketRules && textareaChanged) {
             this.ensureTicketChatHistoryObserver(visibleTextarea);
@@ -698,7 +660,7 @@ class App {
             this.initCurrentServerFeatures();
         }
 
-        this.syncReviewingComplaintTracking();
+        this.syncOffenderTrackingForPage();
     }
 
     teardownTicketChatHistoryObservers() {

@@ -109,13 +109,17 @@ class PanelService {
     }
 
     createPanel(templates, target, panelId) {
-        if (typeof templates === 'undefined') return this.document.createElement('div');
+        if (typeof templates === 'undefined' || templates === null) {
+            return this.document.createElement('div');
+        }
+
         const panel = this.document.createElement('div');
         panel.id = panelId;
         panel.className = 'ioh-panel';
         const inline = panelId === 'mod-notif-panel';
+        const entries = this.normalizeTemplateEntries(templates);
 
-        Object.entries(templates).forEach(([name, text]) => {
+        entries.forEach(([name, text]) => {
             const btn = this.document.createElement('button');
             btn.className = 'ioh-panel-btn';
             const icon = this.document.createElement('span');
@@ -141,6 +145,57 @@ class PanelService {
             panel.appendChild(btn);
         });
         return panel;
+    }
+
+    normalizeTemplateEntries(templates) {
+        if (Array.isArray(templates)) {
+            return templates
+                .map(item => {
+                    if (!item || typeof item !== 'object') {
+                        return null;
+                    }
+                    const name = item.name ?? item.label;
+                    const text = item.text ?? item.value;
+                    if (!name || text == null) {
+                        return null;
+                    }
+                    return [String(name), String(text)];
+                })
+                .filter(Boolean);
+        }
+
+        if (typeof templates === 'object') {
+            const preferredOrder = [
+                'Здравствуйте',
+                'Оск',
+                'Провокация',
+                'Обход',
+                'Препятствие',
+                'Мониторинг',
+                'Ник',
+                'Расизм',
+                'Спам'
+            ];
+            const entries = [];
+            const used = new Set();
+
+            for (const name of preferredOrder) {
+                if (Object.prototype.hasOwnProperty.call(templates, name)) {
+                    entries.push([name, templates[name]]);
+                    used.add(name);
+                }
+            }
+
+            for (const [name, text] of Object.entries(templates)) {
+                if (!used.has(name)) {
+                    entries.push([name, text]);
+                }
+            }
+
+            return entries;
+        }
+
+        return [];
     }
 }
 

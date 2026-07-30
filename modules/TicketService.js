@@ -803,13 +803,9 @@ class TicketService {
     }
 
     getCurrentServerRefreshTicketKey() {
-        if (!this.hasOpenComplaintTicketSignal()) {
-            return null;
-        }
-
         const ticketId = this.extractActiveComplaintTicketId();
         const path = window.location.pathname || window.location.href;
-        return `${path}|${ticketId || 'active'}`;
+        return `${path}|${ticketId || 'server'}`;
     }
 
     hasOpenComplaintTicketSignal() {
@@ -3942,8 +3938,13 @@ class TicketService {
     }
 
     async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false } = {}) {
-        if (!window.location.href.includes('/support/reports') &&
-            !window.location.href.includes('/support/tickets')) {
+        const path = window.location.pathname || '';
+        const href = window.location.href || '';
+        const isQueuePage = href.includes('/support/reports') || href.includes('/support/tickets');
+        const isDetailPage = !/\/support\/(tickets|reports)\b/i.test(path)
+            && /\/ticket\/|\/reports?\//i.test(path);
+
+        if (!isQueuePage && !isDetailPage) {
             return;
         }
 
