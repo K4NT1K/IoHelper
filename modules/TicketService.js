@@ -791,26 +791,38 @@ class TicketService {
     findCurrentServerRefreshButton(header = this.findCurrentServerHeaderInDom()) {
         if (!header) return null;
 
-        const isUsableRefreshButton = (btn) => {
-            if (!btn || btn.disabled) {
-                return false;
-            }
-            if (!btn.textContent?.includes('Обновить')) {
-                return false;
-            }
-            let ancestor = btn;
+        const hasAriaHiddenAncestor = (el) => {
+            let ancestor = el;
             while (ancestor) {
                 if (ancestor.getAttribute?.('aria-hidden') === 'true') {
-                    return false;
+                    return true;
                 }
                 ancestor = ancestor.parentElement;
             }
-            return true;
+            return false;
+        };
+
+        const isRefreshControl = (btn) => {
+            if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+                return false;
+            }
+            if (btn.closest('table')) {
+                return false;
+            }
+            if (hasAriaHiddenAncestor(btn)) {
+                return false;
+            }
+
+            const hasRefreshIcon = Boolean(
+                btn.querySelector('use[href="#lc-refresh-cw"], use[href*="refresh"]')
+            );
+            const hasRefreshText = Boolean(btn.textContent?.includes('Обновить'));
+            return hasRefreshIcon || hasRefreshText;
         };
 
         const findRefreshIn = (root) => {
             if (!root) return null;
-            return Array.from(root.querySelectorAll('button')).find(isUsableRefreshButton) || null;
+            return Array.from(root.querySelectorAll('button')).find(isRefreshControl) || null;
         };
 
         const card = this.findCardSurface(header);
@@ -823,15 +835,27 @@ class TicketService {
         let container = header.parentElement;
         for (let depth = 0; depth < 8 && container; depth++) {
             const refreshButton = Array.from(container.querySelectorAll('button'))
-                .find(btn => (
-                    isUsableRefreshButton(btn)
-                    && (!scopeRoot || scopeRoot.contains(btn))
-                ));
+                .find(btn => isRefreshControl(btn) && (!scopeRoot || scopeRoot.contains(btn)));
             if (refreshButton) return refreshButton;
             container = container.parentElement;
         }
 
         return null;
+    }
+
+    clickCurrentServerRefreshButton(btn) {
+        if (!btn) {
+            return false;
+        }
+
+        const view = this.window || window;
+        const eventInit = { bubbles: true, cancelable: true, view };
+
+        btn.dispatchEvent(new PointerEvent('pointerdown', eventInit));
+        btn.dispatchEvent(new PointerEvent('pointerup', eventInit));
+        btn.dispatchEvent(new MouseEvent('click', eventInit));
+        btn.click();
+        return true;
     }
 
     getCurrentServerRefreshTicketKey() {
@@ -863,14 +887,15 @@ class TicketService {
     }
 
     ensureCurrentServerRefresh(ticketKey, seconds) {
-        if (!seconds || seconds <= 0) {
+        const normalizedSeconds = Number(seconds);
+        if (!Number.isFinite(normalizedSeconds) || normalizedSeconds <= 0) {
             this.stopCurrentServerRefresh();
             return;
         }
 
         if (
             this._currentServerRefreshTicketKey === ticketKey &&
-            this._currentServerRefreshSeconds === seconds &&
+            this._currentServerRefreshSeconds === normalizedSeconds &&
             this.currentServerRefreshInterval
         ) {
             return;
@@ -878,11 +903,11 @@ class TicketService {
 
         this.stopCurrentServerRefresh();
         this._currentServerRefreshTicketKey = ticketKey;
-        this._currentServerRefreshSeconds = seconds;
+        this._currentServerRefreshSeconds = normalizedSeconds;
         this.refreshCurrentServerNowIfAvailable();
         this.currentServerRefreshInterval = setInterval(() => {
             this.refreshCurrentServerNowIfAvailable();
-        }, seconds * 1000);
+        }, normalizedSeconds * 1000);
     }
 
     refreshCurrentServerNowIfAvailable() {
@@ -890,10 +915,11 @@ class TicketService {
         if (!header) return false;
 
         const refreshButton = this.findCurrentServerRefreshButton(header);
-        if (!refreshButton || refreshButton.disabled) return false;
+        if (!refreshButton || refreshButton.disabled || refreshButton.getAttribute('aria-disabled') === 'true') {
+            return false;
+        }
 
-        refreshButton.click();
-        return true;
+        return this.clickCurrentServerRefreshButton(refreshButton);
     }
 
     clearTicketRuleBadge() {
