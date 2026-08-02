@@ -96,15 +96,18 @@ class ModeratorService {
             }
 
             const startedAt = Date.now();
+            console.log('[Helper] ModeratorService: waitForDayButtons start');
             const observer = new MutationObserver(() => {
                 const buttons = find();
                 if (buttons) {
                     observer.disconnect();
                     clearInterval(pollId);
+                    console.log('[Helper] ModeratorService: waitForDayButtons finish — found');
                     resolve(buttons);
                 } else if (Date.now() - startedAt >= timeoutMs) {
                     observer.disconnect();
                     clearInterval(pollId);
+                    console.log('[Helper] ModeratorService: waitForDayButtons finish — timeout');
                     resolve(null);
                 }
             });
@@ -168,14 +171,17 @@ class ModeratorService {
             }
 
             const startedAt = Date.now();
+            console.log('[Helper] ModeratorService: waitForScheduleContent start');
             const observer = new MutationObserver(() => {
                 if (isReady()) {
                     observer.disconnect();
                     clearInterval(pollId);
+                    console.log('[Helper] ModeratorService: waitForScheduleContent finish — ready');
                     finish(true);
                 } else if (Date.now() - startedAt >= timeoutMs) {
                     observer.disconnect();
                     clearInterval(pollId);
+                    console.log('[Helper] ModeratorService: waitForScheduleContent finish — timeout');
                     finish(this.countScheduleMarkers() > 0);
                 }
             });

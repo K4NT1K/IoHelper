@@ -22,6 +22,7 @@ class DOMCoordinator {
     }
 
     init() {
+        console.log('[Helper] DOMCoordinator: init');
         this.initBodyObserver();
         this.initTablesRowsObserver();
         this.refreshComplaintQueueTableObservers();
@@ -35,6 +36,7 @@ class DOMCoordinator {
     }
 
     teardownAll() {
+        console.log('[Helper] DOMCoordinator: teardownAll');
         this.teardownBodyObserver();
         this.teardownTablesRowsObserver();
         this.teardownComplaintQueueTableObservers();
@@ -45,6 +47,7 @@ class DOMCoordinator {
         if (this.bodyObserver) {
             this.bodyObserver.disconnect();
             this.bodyObserver = null;
+            console.log('[Helper] DOMCoordinator: bodyObserver teardown');
         }
         if (this.bodyDebounceId) {
             clearTimeout(this.bodyDebounceId);
@@ -58,6 +61,7 @@ class DOMCoordinator {
         if (this.tablesRowsObserver) {
             this.tablesRowsObserver.disconnect();
             this.tablesRowsObserver = null;
+            console.log('[Helper] DOMCoordinator: tablesRowsObserver teardown');
         }
         if (this.tablesRowsRafId) {
             cancelAnimationFrame(this.tablesRowsRafId);
@@ -66,6 +70,9 @@ class DOMCoordinator {
     }
 
     teardownComplaintQueueTableObservers() {
+        if (this.complaintQueueTableObservers.size) {
+            console.log(`[Helper] DOMCoordinator: complaintQueueTableObservers teardown (${this.complaintQueueTableObservers.size})`);
+        }
         for (const observer of this.complaintQueueTableObservers.values()) {
             observer.disconnect();
         }
@@ -134,6 +141,7 @@ class DOMCoordinator {
             characterData: true
         });
         this.complaintQueueTableObservers.set(table, observer);
+        console.log('[Helper] DOMCoordinator: complaintQueueTableObserver init');
     }
 
     refreshComplaintQueueTableObservers() {
@@ -154,6 +162,7 @@ class DOMCoordinator {
         if (this.ticketPanelVisibilityObserver) {
             this.ticketPanelVisibilityObserver.disconnect();
             this.ticketPanelVisibilityObserver = null;
+            console.log('[Helper] DOMCoordinator: ticketPanelVisibilityObserver teardown');
         }
         if (this.ticketPanelVisibilityDebounceId) {
             clearTimeout(this.ticketPanelVisibilityDebounceId);
@@ -178,6 +187,7 @@ class DOMCoordinator {
             this.bodyObserver.disconnect();
         }
 
+        console.log('[Helper] DOMCoordinator: bodyObserver init');
         this.bodyObserver = new MutationObserver((mutations) => {
             const rowsToUpdate = new Set();
 
@@ -300,6 +310,13 @@ class DOMCoordinator {
         const dispatch = { ...this.pendingDispatch };
         this.resetPendingDispatch();
 
+        const active = Object.entries(dispatch)
+            .filter(([, enabled]) => enabled)
+            .map(([key]) => key);
+        if (active.length) {
+            console.log('[Helper] DOMCoordinator: flush', active.join(', '));
+        }
+
         if (dispatch.notification) {
             this.app.initNotificationPanels();
         }
@@ -352,36 +369,52 @@ class DOMCoordinator {
         return Boolean(node.querySelector?.('textarea, [role="dialog"]'));
     }
 
-    isRelevantTicketMountNode(node) {
+    isExtensionOrHelperNode(node) {
         if (!node || node.nodeType !== 1) {
             return false;
         }
 
-        if (
+        return Boolean(
             node.closest?.('.ioh-panel') ||
             node.closest?.('.ioh-info-badge') ||
             node.closest?.('.ioh-account-created') ||
             node.closest?.('.ioh-faceit-elo') ||
             node.closest?.('#ioh-ticket-punishment-actions') ||
-            node.closest?.('.ioh-ticket-punishment-actions')
-        ) {
+            node.closest?.('.ioh-ticket-punishment-actions') ||
+            node.closest?.('#helper-suggest-badge') ||
+            node.closest?.('#mod-ticket-panel') ||
+            node.id === 'helper-suggest-badge' ||
+            node.id === 'mod-ticket-panel'
+        );
+    }
+
+    isRelevantTicketMountNode(node) {
+        if (!node || node.nodeType !== 1) {
+            return false;
+        }
+
+        if (this.isExtensionOrHelperNode(node) || this.isCurrentServerNode(node)) {
             return false;
         }
 
         if (node.matches?.('textarea[placeholder*="Опишите детали закрытия"]')) {
             return true;
         }
-        if (node.matches?.('textarea') || node.matches?.('h3')) {
-            return true;
-        }
+
         if (node.querySelector?.('textarea[placeholder*="Опишите детали закрытия"]')) {
             return true;
         }
-        if (node.querySelector?.('h3')) {
-            return true;
+
+        if (node.matches?.('h3')) {
+            const text = node.textContent || '';
+            return text.includes('Информация тикета') || text.includes('Информация об игроках');
         }
-        if (node.textContent?.includes('История Чата') || node.textContent?.includes('Нарушитель')) {
-            return true;
+
+        if (node.querySelector?.('h3')) {
+            return Array.from(node.querySelectorAll('h3')).some(h => {
+                const text = h.textContent || '';
+                return text.includes('Информация тикета') || text.includes('Информация об игроках');
+            });
         }
 
         return false;
@@ -460,6 +493,7 @@ class DOMCoordinator {
 
         this.app._reapplyTicketRowHighlights();
         this.refreshComplaintQueueTableObservers();
+        console.log('[Helper] DOMCoordinator: tablesRowsObserver init');
         this.tablesRowsObserver.observe(this.document.documentElement, {
             childList: true,
             subtree: true,
@@ -536,6 +570,7 @@ class DOMCoordinator {
         }
 
         if (!this.ticketPanelVisibilityObserver) {
+            console.log('[Helper] DOMCoordinator: ticketPanelVisibilityObserver init');
             this.ticketPanelVisibilityObserver = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
                     if (mutation.type !== 'attributes' || mutation.attributeName !== 'aria-hidden') {

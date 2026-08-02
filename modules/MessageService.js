@@ -165,6 +165,9 @@ class MessageService {
     }
 
     releaseAllHoursWatches() {
+        if (this.hoursWatchObservers.size) {
+            console.log(`[Helper] MessageService: hoursWatch observers teardown (${this.hoursWatchObservers.size})`);
+        }
         this.document.querySelectorAll('table tbody tr').forEach(row => this.releaseHoursWatch(row));
     }
 

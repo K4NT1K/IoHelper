@@ -195,6 +195,7 @@ class SitePunishmentBridge {
 
             this._dialogCleanupObserver?.disconnect();
             this._dialogCleanupObserver = null;
+            console.log('[Helper] SitePunishmentBridge: dialogCleanupObserver teardown');
 
             this.ticketService.suppressPermissionScan();
             try {
@@ -211,6 +212,7 @@ class SitePunishmentBridge {
             attributes: true,
             attributeFilter: ['data-state', 'open']
         });
+        console.log('[Helper] SitePunishmentBridge: dialogCleanupObserver init');
     }
 
     async _returnToTicketTab(returnContext, options = {}) {
@@ -297,12 +299,15 @@ class SitePunishmentBridge {
 
         return new Promise((resolve) => {
             const deadline = Date.now() + timeoutMs;
+            console.log('[Helper] SitePunishmentBridge: waitForIssueButton start');
             const observer = new MutationObserver(() => {
                 if (hasButton()) {
                     observer.disconnect();
+                    console.log('[Helper] SitePunishmentBridge: waitForIssueButton finish — found');
                     resolve(true);
                 } else if (Date.now() > deadline) {
                     observer.disconnect();
+                    console.log('[Helper] SitePunishmentBridge: waitForIssueButton finish — timeout');
                     resolve(false);
                 }
             });
@@ -332,12 +337,15 @@ class SitePunishmentBridge {
 
         return new Promise((resolve) => {
             const deadline = Date.now() + timeoutMs;
+            console.log('[Helper] SitePunishmentBridge: waitForDialogOpen start');
             const observer = new MutationObserver(() => {
                 if (this._isTargetDialogOpen(type)) {
                     observer.disconnect();
+                    console.log('[Helper] SitePunishmentBridge: waitForDialogOpen finish — open');
                     resolve(true);
                 } else if (Date.now() > deadline) {
                     observer.disconnect();
+                    console.log('[Helper] SitePunishmentBridge: waitForDialogOpen finish — timeout');
                     resolve(false);
                 }
             });

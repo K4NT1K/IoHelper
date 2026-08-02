@@ -9,7 +9,7 @@ class PanelService {
         }
 
         if (clickCount >= 3 && name === "Оск") {
-            return "Мут за токсичность";
+            return "Мут Токсичность";
         }
 
         if (clickCount >= 2) {

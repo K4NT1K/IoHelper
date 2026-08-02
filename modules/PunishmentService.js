@@ -35,9 +35,11 @@ class PunishmentService {
 
     init() {
         if (!this.enabled) {
+            console.log('[Helper] PunishmentService: skip init — отключен');
             return;
         }
 
+        console.log('[Helper] PunishmentService: init');
         this.teardown();
         this.scanDialogs();
     }
@@ -51,6 +53,7 @@ class PunishmentService {
         if (this.listboxBodyObserver) {
             this.listboxBodyObserver.disconnect();
             this.listboxBodyObserver = null;
+            console.log('[Helper] PunishmentService: listboxBodyObserver teardown');
         }
 
         if (this.debounceId) {
@@ -653,6 +656,7 @@ class PunishmentService {
                 }
             });
             this.listboxBodyObserver.observe(this.document.body, { childList: true, subtree: true });
+            console.log('[Helper] PunishmentService: listboxBodyObserver init');
         }
     }
 

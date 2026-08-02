@@ -13,13 +13,15 @@ class TicketService {
         this.isCheckingServer = false;
         this.offenderProfileCache = new Map();
         this.offenderProfileInflight = new Map();
-        this.autoConnectedServerIps = new Set();
+        this.autoConnectedServerIps = new Map();
+        this._autoConnectSkipLoggedIps = new Set();
         this.chatSignatureByKey = new Map();
         this.globalServerCooldown = 0;
         this.offenderOffline = new Map();
         this.offenderRelocated = new Map();
         this.userDataCache = new Map();
         this._currentServerRefreshSeconds = null;
+        this._openTicketOffenderLastCheck = 0;
         this.LEFT_OFFENDER_TTL_MS = 8 * 60 * 1000;
 
         this.MODERATOR_PERMISSIONS_KEY = 'iohModeratorPermissions';
@@ -445,8 +447,67 @@ class TicketService {
 
     clearAutoConnectedServers() {
         this.autoConnectedServerIps.clear();
+        this._autoConnectSkipLoggedIps.clear();
         delete this.document.body.dataset.autoConnected;
         delete this.document.body.dataset.autoConnectedFor;
+    }
+
+    getAutoConnectTicketKey() {
+        const scope = this.getAutoConnectScope();
+        if (!scope || !this.isActiveComplaintScope(scope)) {
+            return null;
+        }
+
+        const offenderId = this.extractSteamIdFromField(
+            this.findInfoFieldScoped('Нарушитель', scope)
+        ) || 'unknown';
+        const path = window.location.pathname || window.location.href;
+        return `${path}|${offenderId}`;
+    }
+
+    hasRecentlyAutoConnected(serverIp) {
+        const normalized = String(serverIp || '').trim().toLowerCase();
+        if (!normalized) {
+            return false;
+        }
+
+        const expiresAt = this.autoConnectedServerIps.get(normalized);
+        if (!expiresAt) {
+            return false;
+        }
+
+        if (Date.now() >= expiresAt) {
+            this.autoConnectedServerIps.delete(normalized);
+            this._autoConnectSkipLoggedIps.delete(normalized);
+            return false;
+        }
+
+        return true;
+    }
+
+    markAutoConnected(serverIp) {
+        const normalized = String(serverIp || '').trim().toLowerCase();
+        if (!normalized) {
+            return;
+        }
+
+        this.autoConnectedServerIps.set(normalized, Date.now() + this.LEFT_OFFENDER_TTL_MS);
+        this._autoConnectSkipLoggedIps.delete(normalized);
+        this.document.body.dataset.autoConnectedFor = normalized;
+    }
+
+    logAutoConnectSkipOnce(serverIp, message, debug = null) {
+        const normalized = String(serverIp || '').trim().toLowerCase() || '_none';
+        if (this._autoConnectSkipLoggedIps.has(normalized)) {
+            return;
+        }
+
+        this._autoConnectSkipLoggedIps.add(normalized);
+        if (debug !== null && debug !== undefined && debug !== '') {
+            console.log(message, debug);
+        } else {
+            console.log(message);
+        }
     }
 
     markOffenderOffline(steamId) {
@@ -712,11 +773,47 @@ class TicketService {
         return true;
     }
 
-    connectToCurrentServer() {
+    connectToRelocatedServerForced() {
+        if (!this.settings?.features?.autoConnectServer) {
+            console.log('[Helper] Авто-подключение (форс-переезд) отменено: функция отключена');
+            return false;
+        }
+
+        const scope = this.getAutoConnectScope();
+        if (!scope || !this.isActiveComplaintScope(scope)) {
+            console.log('[Helper] Авто-подключение (форс-переезд) отменено: активный тикет не найден');
+            return false;
+        }
+
+        if (!this.scopeHasInProgressStatus(scope)) {
+            console.log('[Helper] Авто-подключение (форс-переезд) отменено: статус «В работе» не найден');
+            return false;
+        }
+
+        const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
+
+        if (!relocatedIp) {
+            console.log('[Helper] Авто-подключение (форс-переезд) отменено: IP переезда не найден');
+            return false;
+        }
+
+        console.log('[Helper] Авто-подключение (форс-переезд) к серверу:', relocatedIp);
+        this.markAutoConnected(relocatedIp);
+        this.connectToSteamServer(relocatedIp);
+        return true;
+    }
+
+    connectToCurrentServer({forceRelocate = false} = {}) {
+        if (forceRelocate) {
+            return this.connectToRelocatedServerForced();
+        }
+
         const decision = this.shouldAutoConnectToServer();
         if (!decision.allowed) {
             console.log(`[Helper] Авто-подключение отменено: ${decision.reason}.`, decision.debug || '');
-            return;
+            return false;
         }
 
         const scope = this.getAutoConnectScope();
@@ -726,86 +823,174 @@ class TicketService {
         const connectLink = relocatedIp ? null : this.findTicketServerConnectLink(scope);
         const connectTarget = (relocatedIp || this.extractServerIpFromConnectLink(connectLink) || '').toLowerCase();
 
-        if (connectTarget && this.autoConnectedServerIps.has(connectTarget)) {
-            console.log('[Helper] Авто-подключение уже выполнялось для сервера:', connectTarget);
-            return;
+        if (connectTarget && this.hasRecentlyAutoConnected(connectTarget)) {
+            this.logAutoConnectSkipOnce(
+                connectTarget,
+                `[Helper] Авто-подключение уже выполнялось для сервера (TTL 8 мин): ${connectTarget}`
+            );
+            return false;
         }
 
         if (relocatedIp) {
             console.log('[Helper] Авто-подключение к серверу переезда:', relocatedIp, decision.debug || '');
-            this.autoConnectedServerIps.add(connectTarget);
-            this.document.body.dataset.autoConnectedFor = connectTarget;
+            this.markAutoConnected(connectTarget || relocatedIp);
             this.connectToSteamServer(relocatedIp);
-            return;
+            return true;
         }
 
         if (connectLink) {
             console.log('[Helper] Авто-подключение к серверу тикета:', connectLink.href, decision.debug || '');
             if (connectTarget) {
-                this.autoConnectedServerIps.add(connectTarget);
-                this.document.body.dataset.autoConnectedFor = connectTarget;
+                this.markAutoConnected(connectTarget);
             }
             connectLink.click();
-        } else {
-            console.log('[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.', decision.debug || '');
-        }
-    }
-
-    findCurrentServerHeaderInDom(scopeEl = null) {
-        const headers = scopeEl
-            ? scopeEl.querySelectorAll('h3')
-            : this.document.querySelectorAll('h3');
-
-        return Array.from(headers).find(h => {
-            if (!h.textContent?.includes('Текущий сервер')) {
-                return false;
-            }
-            if (scopeEl) {
-                return true;
-            }
-
-            const hiddenRoot = h.closest('[aria-hidden]');
-            if (hiddenRoot?.getAttribute('aria-hidden') === 'true') {
-                return false;
-            }
             return true;
-        }) || null;
+        }
+
+        console.log('[Helper] Ссылка на коннект steam:// не найдена в структуре тикета.', decision.debug || '');
+        return false;
     }
 
-    hasCurrentServerSection(scopeEl = null) {
-        return Boolean(this.findCurrentServerHeaderInDom(scopeEl));
+    getCurrentServerLookupScope() {
+        return this.findActiveComplaintScope() || this.getAutoConnectScope() || null;
     }
 
-    findCurrentServerRefreshButton(header = this.findCurrentServerHeaderInDom()) {
-        if (!header) return null;
+    isEffectivelyVisible(el) {
+        if (!el || el.nodeType !== 1 || !this.document.contains(el)) {
+            return false;
+        }
 
-        const isRefreshButton = (btn) => {
-            if (!btn || btn.disabled) {
+        let element = el;
+        while (element && element !== this.document.body) {
+            if (element.getAttribute?.('aria-hidden') === 'true') {
                 return false;
+            }
+
+            const style = this.window?.getComputedStyle?.(element) || window.getComputedStyle?.(element);
+            if (style?.display === 'none' || style?.visibility === 'hidden') {
+                return false;
+            }
+
+            element = element.parentElement;
+        }
+
+        return el.getClientRects().length > 0;
+    }
+
+    findAllCurrentServerHeaders(root = null) {
+        const searchRoot = root || this.document;
+        return Array.from(searchRoot.querySelectorAll('h3')).filter(h =>
+            (h.textContent || '').includes('Текущий сервер')
+        );
+    }
+
+    pickCurrentServerHeader(candidates, {preferEnabled = true} = {}) {
+        if (!candidates.length) {
+            return null;
+        }
+
+        if (preferEnabled) {
+            return candidates.find(header => {
+                const button = this.findCurrentServerRefreshButton(header, {allowDisabled: true});
+                return button && !button.disabled && this.isEffectivelyVisible(button);
+            }) || null;
+        }
+
+        return candidates.find(header => this.isEffectivelyVisible(header)) || candidates[0] || null;
+    }
+
+    findCurrentServerHeaderInDom(scopeEl = undefined) {
+        const preferredScope = scopeEl === undefined
+            ? this.getCurrentServerLookupScope()
+            : scopeEl;
+
+        const scopedCandidates = preferredScope
+            ? this.findAllCurrentServerHeaders(preferredScope).filter(h => this.isEffectivelyVisible(h))
+            : [];
+
+        if (scopedCandidates.length) {
+            const picked = this.pickCurrentServerHeader(scopedCandidates);
+            if (picked) {
+                return picked;
+            }
+        }
+
+        // Explicit non-null scope: caller asked only for that subtree.
+        if (scopeEl) {
+            return this.pickCurrentServerHeader(scopedCandidates, {preferEnabled: false});
+        }
+
+        const documentCandidates = this.findAllCurrentServerHeaders(this.document)
+            .filter(h => this.isEffectivelyVisible(h));
+        return this.pickCurrentServerHeader(documentCandidates)
+            || this.pickCurrentServerHeader(documentCandidates, {preferEnabled: false});
+    }
+
+    hasCurrentServerSection(scopeEl = undefined) {
+        if (this.findCurrentServerHeaderInDom(scopeEl)) {
+            return true;
+        }
+        if (scopeEl === undefined) {
+            return Boolean(this.findCurrentServerHeaderInDom(null));
+        }
+        return false;
+    }
+
+    findCurrentServerRefreshButton(header = null, {allowDisabled = false} = {}) {
+        const resolvedHeader = header || this.findCurrentServerHeaderInDom();
+        if (!resolvedHeader) return null;
+
+        const scoreButton = (btn) => {
+            if (!btn) {
+                return -1;
             }
             if (btn.closest('table')) {
-                return false;
+                return -1;
             }
-            return (btn.textContent || '').includes('Обновить');
+            if (!(btn.textContent || '').includes('Обновить')) {
+                return -1;
+            }
+            if (!allowDisabled && btn.disabled) {
+                return -1;
+            }
+
+            let score = 1;
+            if (btn.querySelector?.('use[href="#lc-refresh-cw"], use[href*="refresh"]')) {
+                score += 3;
+            }
+            const parentText = btn.parentElement?.textContent || '';
+            if (parentText.includes('Онлайн') || parentText.includes('История')) {
+                score += 2;
+            }
+            return score;
         };
 
-        let container = header.parentElement;
+        let container = resolvedHeader.parentElement;
         for (let depth = 0; depth < 3 && container; depth++) {
-            const refreshButton = Array.from(container.querySelectorAll('button'))
-                .find(isRefreshButton);
-            if (refreshButton) {
-                return refreshButton;
+            if (depth > 0 && (container.textContent || '').includes('История Чата')) {
+                break;
             }
+
+            const buttons = Array.from(container.querySelectorAll('button'))
+                .map(btn => ({btn, score: scoreButton(btn)}))
+                .filter(entry => entry.score > 0)
+                .sort((a, b) => b.score - a.score);
+
+            if (buttons.length) {
+                return buttons[0].btn;
+            }
+
             container = container.parentElement;
         }
 
         return null;
     }
 
-    stopCurrentServerRefresh() {
+    stopCurrentServerRefresh(reason = 'stopped') {
         if (this.currentServerRefreshInterval) {
             clearInterval(this.currentServerRefreshInterval);
             this.currentServerRefreshInterval = null;
+            console.log(`[Helper] Автообновление текущего сервера: stop (${reason})`);
         }
         this._currentServerRefreshSeconds = null;
     }
@@ -813,7 +998,7 @@ class TicketService {
     ensureCurrentServerRefresh(seconds) {
         const normalizedSeconds = Number(seconds);
         if (!Number.isFinite(normalizedSeconds) || normalizedSeconds <= 0) {
-            this.stopCurrentServerRefresh();
+            this.stopCurrentServerRefresh('interval disabled');
             return;
         }
 
@@ -824,8 +1009,9 @@ class TicketService {
             return;
         }
 
-        this.stopCurrentServerRefresh();
+        this.stopCurrentServerRefresh('restart');
         this._currentServerRefreshSeconds = normalizedSeconds;
+        console.log(`[Helper] Автообновление текущего сервера: start (каждые ${normalizedSeconds} с)`);
         this.refreshCurrentServerNowIfAvailable();
         this.currentServerRefreshInterval = setInterval(() => {
             this.refreshCurrentServerNowIfAvailable();
@@ -833,21 +1019,37 @@ class TicketService {
     }
 
     refreshCurrentServerNowIfAvailable() {
+        const scope = this.getCurrentServerLookupScope();
         const header = this.findCurrentServerHeaderInDom();
         if (!header) {
-            this.stopCurrentServerRefresh();
+            console.log('[Helper] Автообновление текущего сервера: skip — видимый заголовок не найден');
             return false;
         }
 
-        const refreshButton = this.findCurrentServerRefreshButton(header);
-        if (!refreshButton || refreshButton.disabled) {
+        const source = scope && scope.contains(header) ? 'ticket-scope' : 'document-visible';
+
+        const refreshButton = this.findCurrentServerRefreshButton(header, {allowDisabled: true});
+        if (!refreshButton) {
+            console.log('[Helper] Автообновление текущего сервера: skip — кнопка «Обновить» не найдена', {source});
+            return false;
+        }
+
+        if (refreshButton.disabled) {
+            console.log('[Helper] Автообновление текущего сервера: skip — кнопка disabled (скрытая SPA-копия?)', {source});
+            return false;
+        }
+
+        if (!this.isEffectivelyVisible(refreshButton)) {
+            console.log('[Helper] Автообновление текущего сервера: skip — кнопка не видима', {source});
             return false;
         }
 
         try {
             refreshButton.click();
+            console.log(`[Helper] Автообновление текущего сервера: click «Обновить» (${source})`);
             return true;
-        } catch (_) {
+        } catch (err) {
+            console.log('[Helper] Автообновление текущего сервера: skip — ошибка клика', err);
             return false;
         }
     }
@@ -2217,9 +2419,11 @@ class TicketService {
 
     initMuteIssueFeature() {
         if (this._punishmentPermissionObserver) {
+            console.log('[Helper] punishmentPermissionObserver: skip — уже инициализирован');
             return;
         }
 
+        console.log('[Helper] punishmentPermissionObserver: init');
         this.loadModeratorPermissions().then(() => {
             this.refreshComplaintPunishmentButtons();
             setTimeout(() => this.refreshComplaintPunishmentButtons(), 500);
@@ -3925,6 +4129,101 @@ class TicketService {
         this.clearOffenderOffline(targetSteamId);
     }
 
+    async trackOpenTicketOffenderServer(cacheIntervalMs = null) {
+        if (!this.settings?.features?.trackOffenderServer) {
+            return;
+        }
+
+        const scope = this.getAutoConnectScope();
+        if (!scope || !this.isActiveComplaintScope(scope)) {
+            return;
+        }
+
+        if (!this.scopeHasInProgressStatus(scope)) {
+            return;
+        }
+
+        const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
+        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        if (!offenderSteamId) {
+            console.log('[Helper] Трекер открытого тикета: skip — steamId нарушителя не найден');
+            return;
+        }
+
+        const ticketConnectLink = this.findTicketServerConnectLink(scope);
+        const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
+        const CACHE_INTERVAL = Math.max(
+            Number(cacheIntervalMs) || ((this.settings.trackOffenderIntervalWhileReviewing || 30) * 1000),
+            1000
+        );
+
+        const now = Date.now();
+        if (now - this._openTicketOffenderLastCheck < CACHE_INTERVAL) {
+            return;
+        }
+
+        if (this.globalServerCooldown && now < this.globalServerCooldown) {
+            return;
+        }
+
+        let userData = this.getCachedUserData(offenderSteamId, CACHE_INTERVAL);
+        if (!userData) {
+            try {
+                const response = await this.fetchUserData(offenderSteamId);
+                if (response.status === 429) {
+                    this.globalServerCooldown = Date.now() + 660;
+                    console.log('[Helper] Трекер открытого тикета: skip — 429 cooldown');
+                    return;
+                }
+                if (!response.ok) {
+                    console.log('[Helper] Трекер открытого тикета: skip — fetch failed', response.status);
+                    return;
+                }
+                const result = await response.json();
+                userData = this.parseUserDataResult(result);
+                this.setCachedUserData(offenderSteamId, userData);
+            } catch (err) {
+                console.log('[Helper] Трекер открытого тикета: skip — ошибка fetch', err);
+                return;
+            }
+        }
+
+        this._openTicketOffenderLastCheck = Date.now();
+
+        const currentIp = userData?.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
+        if (!currentIp) {
+            this.markOffenderOffline(offenderSteamId);
+            this.clearOffenderRelocated(offenderSteamId);
+            console.log('[Helper] Трекер открытого тикета: нарушитель offline');
+            return;
+        }
+
+        this.clearOffenderOffline(offenderSteamId);
+
+        if (ticketServerIp && currentIp === ticketServerIp) {
+            this.clearOffenderRelocated(offenderSteamId);
+            return;
+        }
+
+        const previousRelocated = this.getOffenderRelocatedServer(offenderSteamId);
+        this.markOffenderRelocated(offenderSteamId, currentIp);
+
+        if (previousRelocated === currentIp) {
+            return;
+        }
+
+        console.log('[Helper] Трекер открытого тикета: переезд обнаружен', {
+            offenderSteamId,
+            ticketServerIp,
+            currentIp,
+            previousRelocated
+        });
+
+        if (this.settings?.features?.autoConnectServer) {
+            this.connectToCurrentServer({forceRelocate: true});
+        }
+    }
+
     async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false } = {}) {
         const path = window.location.pathname || '';
         const href = window.location.href || '';
@@ -4259,10 +4558,6 @@ class TicketService {
         const punishment = analysisIcons.punishment;
         const chatError = analysisIcons.chatError;
         const shield = analysisIcons.shield;
-
-        if (this.settings?.features?.autoConnectServer) {
-            this.connectToCurrentServer();
-        }
 
         const muteHistoryBlock = this.getBlockByHeaderScoped('История Мутов', scope);
         const chatHistoryBlock = this.getBlockByHeaderScoped('История Чата', scope);
