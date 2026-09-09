@@ -151,6 +151,12 @@ class PunishmentService {
             return;
         }
 
+        if (type === 'mute'
+            && !this.hasUserDurationOverride(reasonSelect)
+            && this.applySuggestedMuteReason(reasonSelect, timeControl, dialog || reasonSelect.closest('[role="dialog"]'))) {
+            return;
+        }
+
         this.syncMuteDurationAfterSiteUpdate(reasonSelect, timeControl);
     }
 
@@ -236,7 +242,14 @@ class PunishmentService {
         }
 
         const steamId = this.resolveMuteFormSteamId(dialog);
-        const label = ticketService.getSuggestedMuteReason(steamId);
+        let label = ticketService.getSuggestedMuteReason(steamId);
+
+        // Retry without SteamID gate if form ID differs from ticket extraction
+        // but analysis still has a mute verdict for the active ticket.
+        if (!label && ticketService.suggestedMuteReason?.label) {
+            label = ticketService.suggestedMuteReason.label;
+        }
+
         if (!label || !this.setReasonByLabel(reasonSelect, label)) {
             return false;
         }
@@ -267,9 +280,23 @@ class PunishmentService {
         }
 
         const normalized = this.normalizePunishmentReason(reasonLabel);
-        const option = Array.from(reasonSelect.options).find(
+        if (!normalized) {
+            return false;
+        }
+
+        const options = Array.from(reasonSelect.options);
+        let option = options.find(
             opt => this.normalizePunishmentReason(opt.textContent || '') === normalized
         );
+
+        // Form labels may be longer (e.g. "Изменение голоса программами")
+        // or differ only by slash spacing after normalize.
+        if (!option) {
+            option = options.find(opt => {
+                const optNorm = this.normalizePunishmentReason(opt.textContent || '');
+                return optNorm.startsWith(normalized) || normalized.startsWith(optNorm);
+            });
+        }
 
         if (!option) {
             return false;
@@ -536,8 +563,9 @@ class PunishmentService {
                 return;
             }
 
-            if (reasonSelect.value === this.durations.defaultMuteReason
-                && this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+            // Re-apply analysis suggestion after SteamID prefill / edit,
+            // even if a previous init already fell back to Toxic/X2.
+            if (this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
                 return;
             }
 
@@ -828,6 +856,7 @@ class PunishmentService {
     normalizePunishmentReason(text) {
         return String(text || '')
             .replace(/\s*\([^)]*\)\s*/g, ' ')
+            .replace(/\s*\/\s*/g, '/')
             .replace(/\s+/g, ' ')
             .trim()
             .toLowerCase();

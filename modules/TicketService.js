@@ -301,12 +301,22 @@ class TicketService {
     }
 
     setSuggestedMuteReason(steamId, label) {
-        this.suggestedMuteReason = steamId && label ? {steamId, label} : null;
+        this.suggestedMuteReason = label ? {steamId: steamId || '', label} : null;
     }
 
     getSuggestedMuteReason(steamId) {
         const entry = this.suggestedMuteReason;
-        return entry?.steamId === steamId ? entry.label : null;
+        if (!entry?.label) {
+            return null;
+        }
+
+        // Prefer exact SteamID match; if either side is missing, still use
+        // the analysis suggestion (form may open before SteamID is prefilled).
+        if (!entry.steamId || !steamId || entry.steamId === steamId) {
+            return entry.label;
+        }
+
+        return null;
     }
 
     clearSuggestedMuteReason() {
