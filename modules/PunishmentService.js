@@ -263,21 +263,21 @@ class PunishmentService {
         }
 
         const current = this.getTimeControlValue(timeControl);
-        if (current == null) {
+        if (current == null || current === '') {
             return false;
-        }
-
-        const remembered = this.desiredDurationByReasonSelect.get(reasonSelect);
-        if (remembered != null && current === String(remembered)) {
-            return true;
         }
 
         dialog = dialog || reasonSelect.closest('[role="dialog"]');
+        const remembered = this.desiredDurationByReasonSelect.get(reasonSelect);
+        const defaultDuration = this.getDefaultDuration('mute', reasonSelect.value);
+
+        // X2: trust only a remembered value set after applying for the current reason.
         if (this.hasSiteX2Badge(dialog)) {
-            return false;
+            return remembered != null && current === String(remembered);
         }
 
-        const defaultDuration = this.getDefaultDuration('mute', reasonSelect.value);
+        // Non-X2: UI must match THIS reason's configured duration (not a stale
+        // remembered value from a previously selected reason).
         if (defaultDuration != null && current === String(defaultDuration)) {
             this.rememberDesiredDuration(reasonSelect, defaultDuration);
             return true;
@@ -782,6 +782,7 @@ class PunishmentService {
             return;
         }
 
+        this.desiredDurationByReasonSelect.delete(reasonSelect);
         this.clearUserDurationOverride(reasonSelect);
         this.clearDurationRestore(reasonSelect);
         this.applyDuration(reasonSelect, timeControl, isMute ? 'mute' : 'ban');
