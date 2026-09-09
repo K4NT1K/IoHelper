@@ -19,7 +19,8 @@
   "host_permissions": [
     "https://raw.githubusercontent.com/K4NT1K/*",
     "https://mobile.fastmm.win/*",
-    "https://translate.googleapis.com/*"
+    "https://translate.googleapis.com/*",
+    "https://api.mymemory.translated.net/*"
   ],
   "web_accessible_resources": [
     {

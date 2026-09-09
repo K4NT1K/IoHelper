@@ -156,6 +156,107 @@ function showToast(message, duration = 2000) {
     toast._timer = setTimeout(() => toast.classList.remove('show'), duration);
 }
 
+function saveSettings(settings, {silent = false} = {}) {
+    storage.set({helperSettings: settings}, () => {
+        if (!silent) {
+            showToast('Сохранено', 1000);
+        }
+        console.log('[Popup] Settings saved:', settings);
+    });
+}
+
+function saveCurrentSettings(options = {}) {
+    currentSettings = collectSettingsFromUI();
+    saveSettings(currentSettings, options);
+}
+
+let numberSaveTimer = null;
+
+function scheduleNumberFieldSave() {
+    clearTimeout(numberSaveTimer);
+    numberSaveTimer = setTimeout(() => {
+        saveCurrentSettings({silent: true});
+    }, 350);
+}
+
+function bindNumberField(input) {
+    if (!input || input.dataset.boundNumber === 'true') {
+        return;
+    }
+
+    input.dataset.boundNumber = 'true';
+
+    // Wheel over <input type="number"> changes the value instead of scrolling
+    // the popup — that triggered constant saves and jump-to-top behavior.
+    input.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const root = document.scrollingElement || document.documentElement;
+        root.scrollTop += event.deltaY;
+    }, {passive: false});
+
+    input.addEventListener('change', () => saveCurrentSettings({silent: true}));
+    input.addEventListener('input', scheduleNumberFieldSave);
+}
+
+function initFloatingInfoTooltips() {
+    let tip = document.querySelector('.info-tooltip-floating');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.className = 'info-tooltip-floating';
+        tip.hidden = true;
+        document.body.appendChild(tip);
+    }
+
+    const hide = () => {
+        tip.hidden = true;
+    };
+
+    const show = (dot) => {
+        const help = dot.getAttribute('aria-label') || '';
+        if (!help) {
+            hide();
+            return;
+        }
+
+        tip.textContent = help;
+        tip.hidden = false;
+
+        const rect = dot.getBoundingClientRect();
+        const tipRect = tip.getBoundingClientRect();
+        const left = Math.min(
+            Math.max(8, rect.left),
+            Math.max(8, window.innerWidth - tipRect.width - 8)
+        );
+        const aboveTop = rect.top - tipRect.height - 10;
+        const top = aboveTop >= 8 ? aboveTop : rect.bottom + 10;
+
+        tip.style.left = `${left}px`;
+        tip.style.top = `${top}px`;
+    };
+
+    document.addEventListener('pointerover', (event) => {
+        const dot = event.target.closest?.('.info-dot');
+        if (dot) {
+            show(dot);
+        }
+    });
+
+    document.addEventListener('pointerout', (event) => {
+        const fromDot = event.target.closest?.('.info-dot');
+        const toDot = event.relatedTarget?.closest?.('.info-dot');
+        if (fromDot && !toDot) {
+            hide();
+        }
+    });
+
+    document.addEventListener('scroll', hide, true);
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            hide();
+        }
+    });
+}
+
 function createToggleItem(features, {key, label, desc, help}) {
     const item = document.createElement('div');
     item.className = 'toggle-item';
@@ -175,11 +276,6 @@ function createToggleItem(features, {key, label, desc, help}) {
     helpDot.tabIndex = 0;
     helpDot.setAttribute('aria-label', help);
     helpDot.textContent = 'i';
-
-    const tooltip = document.createElement('span');
-    tooltip.className = 'info-tooltip';
-    tooltip.textContent = help;
-    helpDot.appendChild(tooltip);
 
     const switchLabel = document.createElement('label');
     switchLabel.className = 'switch-ios';
@@ -227,6 +323,7 @@ function initAccordions() {
             const isOpen = accordion.classList.toggle('is-open');
             header.setAttribute('aria-expanded', String(isOpen));
             body.hidden = !isOpen;
+            header.blur();
         });
     });
 }
@@ -324,6 +421,9 @@ function renderTriggers(triggers) {
 }
 
 function loadSettingsToUI(settings) {
+    const root = document.scrollingElement || document.documentElement;
+    const scrollTop = root?.scrollTop ?? 0;
+
     const checkboxes = featureTogglesEl.querySelectorAll('input[type="checkbox"][data-feature]');
 
     checkboxes.forEach(cb => {
@@ -351,6 +451,12 @@ function loadSettingsToUI(settings) {
         settings.reasonTriggersAutoconnect || defaultSettings.reasonTriggersAutoconnect || []
     );
     renderTriggers(currentSettings.reasonTriggers);
+
+    if (root) {
+        requestAnimationFrame(() => {
+            root.scrollTop = scrollTop;
+        });
+    }
 }
 
 function collectSettingsFromUI() {
@@ -386,18 +492,6 @@ function collectSettingsFromUI() {
         reasonTriggers: [...currentSettings.reasonTriggers],
         reasonTriggersAutoconnect: [...currentSettings.reasonTriggersAutoconnect]
     };
-}
-
-function saveSettings(settings) {
-    storage.set({helperSettings: settings}, () => {
-        showToast('Сохранено', 1000);
-        console.log('[Popup] Settings saved:', settings);
-    });
-}
-
-function saveCurrentSettings() {
-    currentSettings = collectSettingsFromUI();
-    saveSettings(currentSettings);
 }
 
 async function loadSettings() {
@@ -489,10 +583,10 @@ autoConnectTriggerInput.addEventListener('keydown', (e) => {
     }
 });
 
-hoursInput.addEventListener('change', saveCurrentSettings);
-refreshIntervalInput.addEventListener('change', saveCurrentSettings);
-trackIntervalInput.addEventListener('input', saveCurrentSettings);
-trackIntervalWhileReviewingInput.addEventListener('input', saveCurrentSettings);
+hoursInput && bindNumberField(hoursInput);
+refreshIntervalInput && bindNumberField(refreshIntervalInput);
+trackIntervalInput && bindNumberField(trackIntervalInput);
+trackIntervalWhileReviewingInput && bindNumberField(trackIntervalWhileReviewingInput);
 
 resetBtn.addEventListener("click", () => {
     if (!confirm("Сбросить все настройки?"))
@@ -509,6 +603,7 @@ resetBtn.addEventListener("click", () => {
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
+    initFloatingInfoTooltips();
     await loadSettings();
 
     document.querySelector(".header-version").textContent =
