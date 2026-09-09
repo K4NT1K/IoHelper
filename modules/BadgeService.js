@@ -16,7 +16,12 @@ class BadgeService {
             targetTextarea.parentNode.insertBefore(badge, targetTextarea);
         }
 
-        badge.className = `ioh-info-badge ioh-info-badge--${variant}`;
+        const nextClass = `ioh-info-badge ioh-info-badge--${variant}`;
+        if (badge.className === nextClass && badge.innerHTML === innerHTML) {
+            return;
+        }
+
+        badge.className = nextClass;
         badge.innerHTML = innerHTML;
     }
 

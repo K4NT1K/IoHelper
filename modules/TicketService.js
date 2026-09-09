@@ -16,6 +16,8 @@ class TicketService {
         this.autoConnectedServerIps = new Map();
         this._autoConnectSkipLoggedIps = new Set();
         this.chatSignatureByKey = new Map();
+        this.activePunishmentBadgeByKey = new Map();
+        this.suggestedMuteReason = null;
         this.globalServerCooldown = 0;
         this.offenderOffline = new Map();
         this.offenderRelocated = new Map();
@@ -288,10 +290,27 @@ class TicketService {
 
     resetChatAnalysisCache(textarea) {
         if (textarea) {
-            this.chatSignatureByKey.delete(this.getChatCacheKey(textarea));
+            const key = this.getChatCacheKey(textarea);
+            this.chatSignatureByKey.delete(key);
+            this.activePunishmentBadgeByKey.delete(key);
             return;
         }
         this.chatSignatureByKey.clear();
+        this.activePunishmentBadgeByKey.clear();
+        this.clearSuggestedMuteReason();
+    }
+
+    setSuggestedMuteReason(steamId, label) {
+        this.suggestedMuteReason = steamId && label ? {steamId, label} : null;
+    }
+
+    getSuggestedMuteReason(steamId) {
+        const entry = this.suggestedMuteReason;
+        return entry?.steamId === steamId ? entry.label : null;
+    }
+
+    clearSuggestedMuteReason() {
+        this.suggestedMuteReason = null;
     }
 
     handleTriggerClick(e) {
@@ -397,32 +416,39 @@ class TicketService {
         return latestMute;
     }
 
-    hasActiveMute(muteHistoryBlock) {
-        if (!muteHistoryBlock) return false;
+    findActivePunishmentRow(historyBlock) {
+        if (!historyBlock) {
+            return null;
+        }
 
-        const muteRows = muteHistoryBlock.querySelectorAll('tbody tr');
+        const punishmentRows = historyBlock.querySelectorAll('tbody tr');
 
-        for (const mRow of muteRows) {
-            const cells = mRow.querySelectorAll('td');
-            if (cells.length < 6) continue;
+        for (const punishmentRow of punishmentRows) {
+            const cells = punishmentRow.querySelectorAll('td');
+            if (cells.length < 5) {
+                continue;
+            }
 
-            const spans = cells[1].querySelectorAll('span');
+            const dateIndex = this.getColumnIndex(punishmentRow, ['дата'], 1);
+            const durationIndex = this.getColumnIndex(punishmentRow, ['длительность'], cells.length - 1);
+            const dateCell = cells[dateIndex];
+            const spans = dateCell?.querySelectorAll('span') || [];
             const dateText = spans[0]?.innerText?.trim();
             const timeText = spans[1]?.innerText?.trim();
-            const durationText = cells[5]?.innerText?.trim();
+            const durationText = cells[durationIndex]?.innerText?.trim();
 
             if (dateText && timeText && durationText) {
                 const [d, m, y] = dateText.split('.').map(Number);
                 const [hh, mm] = timeText.split(':').map(Number);
 
                 if (!isNaN(d) && !isNaN(m) && !isNaN(y) && !isNaN(hh) && !isNaN(mm)) {
-                    const muteStart = new Date(y, m - 1, d, hh, mm, 0);
+                    const punishmentStart = new Date(y, m - 1, d, hh, mm, 0);
                     const durationMins = this.utils.parseDurationToMinutes(durationText);
 
                     if (durationMins > 0) {
-                        const muteEnd = new Date(muteStart.getTime() + durationMins * 60 * 1000);
-                        if (new Date() < muteEnd) {
-                            return true;
+                        const punishmentEnd = new Date(punishmentStart.getTime() + durationMins * 60 * 1000);
+                        if (new Date() < punishmentEnd) {
+                            return punishmentRow;
                         }
                     }
                 }
@@ -431,18 +457,55 @@ class TicketService {
             const statusIndicator = cells[0].querySelector('span') || cells[0];
             if (statusIndicator) {
                 const computedBg = window.getComputedStyle(statusIndicator).backgroundColor;
-                const hasActiveVar = mRow.innerHTML.includes('--color-status-active') || statusIndicator.outerHTML.includes('active');
+                const hasActiveVar = punishmentRow.innerHTML.includes('--color-status-active')
+                    || statusIndicator.outerHTML.includes('active');
                 const isYellowBg = computedBg.includes('234, 179, 8') ||
                     computedBg.includes('250, 204, 21') ||
                     computedBg.includes('255, 193, 7');
 
                 if (hasActiveVar || isYellowBg) {
-                    return true;
+                    return punishmentRow;
                 }
             }
         }
 
+        return null;
+    }
+
+    hasActiveMute(muteHistoryBlock) {
+        return Boolean(this.findActivePunishmentRow(muteHistoryBlock));
+    }
+
+    hasActiveBan(banHistoryBlock) {
+        return Boolean(this.findActivePunishmentRow(banHistoryBlock));
+    }
+
+    buildPunishmentPreviewEye(activeRow) {
+        if (!activeRow) {
+            return '';
+        }
+
+        const eyeIcon = window.Icons?.eye || '';
+        return `<span class="ioh-punishment-preview-tooltip">${eyeIcon}<span class="ioh-punishment-preview-tooltip__panel"><span class="ioh-punishment-preview-tooltip__panel-inner"><table><tbody>${activeRow.outerHTML}</tbody></table></span></span></span>`;
+    }
+
+    getPunishmentRowFingerprint(row) {
+        return (row?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    }
+
+    shouldSkipActivePunishmentBadge(type, row, textarea) {
+        const key = this.getChatCacheKey(textarea);
+        const fingerprint = this.getPunishmentRowFingerprint(row);
+        const prev = this.activePunishmentBadgeByKey.get(key);
+        if (prev?.type === type && prev?.fingerprint === fingerprint) {
+            return true;
+        }
+        this.activePunishmentBadgeByKey.set(key, {type, fingerprint});
         return false;
+    }
+
+    buildActivePunishmentBadge(icon, message, activeRow) {
+        return `<div class="ioh-badge-row">${icon}<span><b>${message}</b></span>${this.buildPunishmentPreviewEye(activeRow)}</div>`;
     }
 
     clearAutoConnectedServers() {
@@ -1056,6 +1119,8 @@ class TicketService {
 
     clearTicketRuleBadge() {
         this.document.getElementById('helper-suggest-badge')?.remove();
+        this.activePunishmentBadgeByKey.clear();
+        this.clearSuggestedMuteReason();
     }
 
     clearSteamAccountCreationDate() {
@@ -4448,8 +4513,18 @@ class TicketService {
             reason: icons.bell || '',
             punishment: icons.clock || '',
             chatError: icons.chat || '',
-            shield: icons.shield || ''
+            shield: icons.shield || '',
+            ban: icons.ban || '',
+            mute: icons.mute || '',
+            warning: icons.warning || ''
         };
+    }
+
+    getWarningHistoryBlockScoped(scope) {
+        return this.getBlockByHeaderScoped('История предупреждений', scope)
+            || this.getBlockByHeaderScoped('История Предупреждений', scope)
+            || this.getHistorySectionCard('История предупреждений', scope)
+            || this.getHistorySectionCard('История Предупреждений', scope);
     }
 
     parseWarningHistoryRows(warningHistoryBlock) {
@@ -4458,7 +4533,7 @@ class TicketService {
         }
 
         const warnings = [];
-        warningHistoryBlock.querySelectorAll('tbody tr').forEach(row => {
+        warningHistoryBlock.querySelectorAll('tbody tr, tr').forEach(row => {
             const cells = row.querySelectorAll('td');
             if (cells.length < 4) {
                 return;
@@ -4482,12 +4557,12 @@ class TicketService {
     warningTextMatchesRule(text, ruleName) {
         const lowered = String(text || '').toLowerCase();
         const matchers = {
-            'Оскорбление': [/оскорбл/i],
-            'Троллинг/провокация': [/провоц/i],
-            'Спам в микрофон/чат': [/спам/i],
-            'Расизм / дискриминация': [/расист/i],
-            'Токсичность': [/токсич/i, /оскорбл/i],
-            'Мониторинг': [/монитор/i],
+            'Оскорбление': [/оскорбл/i, /insult/i],
+            'Троллинг/провокация': [/провоц/i, /provok/i],
+            'Спам в микрофон/чат': [/спам/i, /spam/i],
+            'Расизм / дискриминация': [/расист/i, /racist/i, /racism/i, /discriminat/i],
+            'Токсичность': [/токсич/i, /оскорбл/i, /toxic/i],
+            'Мониторинг': [/монитор/i, /monitor/i],
             'Препятствие': [/препятств/i]
         };
 
@@ -4504,7 +4579,7 @@ class TicketService {
             return 'warn:0|';
         }
 
-        const warnRows = Array.from(warningHistoryBlock.querySelectorAll('tbody tr'))
+        const warnRows = Array.from(warningHistoryBlock.querySelectorAll('tbody tr, tr'))
             .filter(row => row.querySelector('td'));
         const lastWarn = warnRows[warnRows.length - 1];
         const warnTail = (lastWarn?.innerText || '').trim().slice(0, 220);
@@ -4558,18 +4633,48 @@ class TicketService {
         const punishment = analysisIcons.punishment;
         const chatError = analysisIcons.chatError;
         const shield = analysisIcons.shield;
+        const banIcon = analysisIcons.ban || chatError;
+        const muteIcon = analysisIcons.mute || chatError;
+        const warningIcon = analysisIcons.warning || chatError;
 
         const muteHistoryBlock = this.getBlockByHeaderScoped('История Мутов', scope);
+        const banHistoryBlock = this.getBlockByHeaderScoped('История Банов', scope)
+            || this.getBlockByHeaderScoped('История банов', scope);
         const chatHistoryBlock = this.getBlockByHeaderScoped('История Чата', scope);
-        const warningHistoryBlock = this.getBlockByHeaderScoped('История предупреждений', scope)
-            || this.getBlockByHeaderScoped('История Предупреждений', scope);
+        const warningHistoryBlock = this.getWarningHistoryBlockScoped(scope);
 
-        if (muteHistoryBlock && this.hasActiveMute(muteHistoryBlock)) {
-            this.badgeService.updateInfoBadge('helper-suggest-badge', 'warning', `<div class="ioh-badge-row">${chatError}<span><b> У игрока уже есть активный мут!</b></span></div>`, textarea);
+        const activeBanRow = this.findActivePunishmentRow(banHistoryBlock);
+        if (activeBanRow) {
+            this.clearSuggestedMuteReason();
+            if (!this.shouldSkipActivePunishmentBadge('ban', activeBanRow, textarea)) {
+                this.badgeService.updateInfoBadge(
+                    'helper-suggest-badge',
+                    'accent',
+                    this.buildActivePunishmentBadge(banIcon, ' У игрока уже есть активный бан!', activeBanRow),
+                    textarea
+                );
+            }
             return;
         }
 
+        const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
+        if (activeMuteRow) {
+            this.clearSuggestedMuteReason();
+            if (!this.shouldSkipActivePunishmentBadge('mute', activeMuteRow, textarea)) {
+                this.badgeService.updateInfoBadge(
+                    'helper-suggest-badge',
+                    'warning',
+                    this.buildActivePunishmentBadge(muteIcon, ' У игрока уже есть активный мут!', activeMuteRow),
+                    textarea
+                );
+            }
+            return;
+        }
+
+        this.activePunishmentBadgeByKey.delete(this.getChatCacheKey(textarea));
+
         if (this.isChatHistoryEmptyScoped(scope)) {
+            this.clearSuggestedMuteReason();
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${chatError}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|empty-block|${this.getWarningHistorySignaturePart(warningHistoryBlock)}`);
             return;
@@ -4599,6 +4704,7 @@ class TicketService {
 
         const rows = Array.from(chatHistoryBlock?.querySelectorAll('tbody tr, tr') || []).filter(row => row.querySelector('td'));
         if (rows.length === 0) {
+            this.clearSuggestedMuteReason();
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'muted', `<div class="ioh-badge-row">${chatError}<span><b>Проверка:</b> Чат пуст.</span></div>`, textarea);
             this.chatSignatureByKey.set(this.getChatCacheKey(textarea), `${window.location.pathname}|0|empty|${this.getWarningHistorySignaturePart(warningHistoryBlock)}`);
             return;
@@ -4675,6 +4781,12 @@ class TicketService {
 
             matchedRules.sort((a, b) => this.getRuleSeverity(b.rule) - this.getRuleSeverity(a.rule) || b.rule.duration - a.rule.duration);
             const strongestMatch = matchedRules[0];
+            const matchedKeyword = strongestMatch.keyword;
+            const keyword = this.utils.extractTriggerWord(
+                messageText,
+                matchedKeyword,
+                this.getKeywordExceptions(String(matchedKeyword).toLowerCase())
+            );
 
             ruleCounters[strongestMatch.rule.name] += 1;
 
@@ -4683,7 +4795,7 @@ class TicketService {
             allViolations.push({
                 id: triggerId,
                 ruleName: strongestMatch.rule.name,
-                keyword: strongestMatch.keyword,
+                keyword,
                 fullMessage: messageText,
                 severity: this.getRuleSeverity(strongestMatch.rule),
                 duration: strongestMatch.rule.duration,
@@ -4762,24 +4874,29 @@ class TicketService {
             : '';
 
         if (allViolations.length === 0) {
+            this.clearSuggestedMuteReason();
             this.badgeService.updateInfoBadge('helper-suggest-badge', 'success', `<div class="ioh-badge-row">${shield}<span><b>Проверка:</b> Нарушений не обнаружено.${activityHTML}</span></div>`, textarea);
             return;
         }
 
         const coveringWarning = this.getCoveringWarningWithoutNewTriggers(warningHistoryBlock, allViolations);
         if (coveringWarning) {
+            this.clearSuggestedMuteReason();
             const eyeIcon = window.Icons?.eye || '';
             this.badgeService.updateInfoBadge(
                 'helper-suggest-badge',
                 'warning',
-                `<div class="ioh-badge-row">${chatError}<span><b> Игроку уже выдано предупреждение!</b></span><span class="ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title="">${eyeIcon}</span></div>`,
+                `<div class="ioh-badge-row">${warningIcon}<span><b> Игроку уже выдано предупреждение!</b></span><span class="ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title="">${eyeIcon}</span></div>`,
                 textarea
             );
             return;
         }
 
         const mostSevere = this.findMostSeverePunishment(ruleCounters);
-        if (!mostSevere) return;
+        if (!mostSevere) {
+            this.clearSuggestedMuteReason();
+            return;
+        }
 
         const {
             finalName,
@@ -4812,21 +4929,28 @@ class TicketService {
         const isWarning = finalDurationStr === "Предупреждение";
         const punishmentText = isWarning ? finalDurationStr : `мут на ${finalDurationForDisplay}`;
 
+        const offenderId = this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope)) || '';
+        if (isWarning) {
+            this.clearSuggestedMuteReason();
+        } else {
+            this.setSuggestedMuteReason(offenderId, finalName);
+        }
+
         const htmlResponse = `
                 <div class="ioh-analysis-grid">
                     <div class="ioh-analysis-row">
-                        <div class="ioh-analysis-label">${triggers}<span>Триггеры</span></div>
+                        <div class="ioh-analysis-label">${triggers}<span></span></div>
                         <div class="ioh-analysis-value ioh-analysis-triggers">${topTriggersHTML}</div>
                     </div>
                     <div class="ioh-analysis-row">
-                        <div class="ioh-analysis-label">${reason}<span>Причина</span></div>
+                        <div class="ioh-analysis-label">${reason}<span></span></div>
                         <div class="ioh-analysis-value">
                             <strong>${this.utils.escapeHtml(finalName)}</strong>
                             ${activityChipsHTML ? `<div class="ioh-analysis-chips">${activityChipsHTML}</div>` : ''}
                         </div>
                     </div>
                     <div class="ioh-analysis-row ioh-analysis-row--verdict">
-                        <div class="ioh-analysis-label">${punishment}<span>Вердикт</span></div>
+                        <div class="ioh-analysis-label">${punishment}<span></span></div>
                         <div class="ioh-analysis-value"><strong>${this.utils.escapeHtml(punishmentText)}</strong></div>
                     </div>
                 </div>

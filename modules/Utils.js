@@ -111,6 +111,22 @@ class Utils {
         return new RegExp(escapedTrigger, "iu").test(sanitizedText);
     }
 
+    extractTriggerWord(text, trigger, exceptions = []) {
+        const triggerLower = String(trigger).toLowerCase();
+        const words = String(text).match(/\S+/g);
+        if (!words) {
+            return trigger;
+        }
+
+        for (const word of words) {
+            if (this.containsTrigger(word.toLowerCase(), triggerLower, exceptions)) {
+                return word;
+            }
+        }
+
+        return trigger;
+    }
+
     parseComplaintCell(container) {
         if (!container) {
             return {category: '', playerText: ''};

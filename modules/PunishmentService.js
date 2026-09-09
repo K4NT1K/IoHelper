@@ -1,7 +1,8 @@
 class PunishmentService {
-    constructor({ document, durations, utils = null }) {
+    constructor({ document, durations, utils = null, ticketService = null }) {
         this.document = document;
         this.utils = utils;
+        this.ticketService = ticketService;
         this.durations = {
             defaultMuteReason: 'Reason_Mute_Toxic',
             mute: {},
@@ -195,11 +196,16 @@ class PunishmentService {
 
     async initializeMuteForm(reasonSelect, timeControl, dialog = null) {
         this.clearUserDurationOverride(reasonSelect);
+        dialog = dialog || reasonSelect.closest('[role="dialog"]');
+
+        if (this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+            return;
+        }
 
         const synced = await this.syncMuteReasonFromSiteX2(
             reasonSelect,
             timeControl,
-            dialog || reasonSelect.closest('[role="dialog"]')
+            dialog
         );
 
         if (synced) {
@@ -207,6 +213,36 @@ class PunishmentService {
         }
 
         this.applyDefaultMuteReason(reasonSelect, timeControl);
+    }
+
+    resolveMuteFormSteamId(dialog) {
+        const fromInput = dialog?.querySelector('#mute-steamid64')?.value?.trim();
+        if (fromInput) {
+            return fromInput;
+        }
+
+        const ticketService = this.ticketService;
+        if (!ticketService) {
+            return '';
+        }
+
+        return ticketService.getOffenderSteamIdForScope(ticketService.getActivePunishmentScope()) || '';
+    }
+
+    applySuggestedMuteReason(reasonSelect, timeControl, dialog) {
+        const ticketService = this.ticketService;
+        if (!ticketService) {
+            return false;
+        }
+
+        const steamId = this.resolveMuteFormSteamId(dialog);
+        const label = ticketService.getSuggestedMuteReason(steamId);
+        if (!label || !this.setReasonByLabel(reasonSelect, label)) {
+            return false;
+        }
+
+        this.applyDuration(reasonSelect, timeControl, 'mute');
+        return true;
     }
 
     hasSiteX2Badge(dialog) {
@@ -500,7 +536,11 @@ class PunishmentService {
                 return;
             }
 
-            // SteamID load may reveal X2 options — re-apply for current reason once.
+            if (reasonSelect.value === this.durations.defaultMuteReason
+                && this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+                return;
+            }
+
             void this.applyMuteListboxDuration(reasonSelect, timeControl);
         };
 

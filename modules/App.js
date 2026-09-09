@@ -43,7 +43,8 @@ class App {
         this.punishmentService = new PunishmentService({
             document,
             durations: config.punishmentDurations,
-            utils: this.utils
+            utils: this.utils,
+            ticketService: this.ticketService
         });
         this.domCoordinator = new DOMCoordinator(this);
         this.messageService.ticketService = this.ticketService;
@@ -269,6 +270,7 @@ class App {
 
         if (!nextFeatures.processTicketRules && previousFeatures.processTicketRules !== false) {
             this.ticketService.clearTicketRuleBadge();
+            this.ticketService.clearSuggestedMuteReason();
             this.ticketService.teardownTicketPunishmentButtons();
         }
 
