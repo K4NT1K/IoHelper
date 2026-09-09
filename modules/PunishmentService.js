@@ -151,12 +151,6 @@ class PunishmentService {
             return;
         }
 
-        if (type === 'mute'
-            && !this.hasUserDurationOverride(reasonSelect)
-            && this.applySuggestedMuteReason(reasonSelect, timeControl, dialog || reasonSelect.closest('[role="dialog"]'))) {
-            return;
-        }
-
         this.syncMuteDurationAfterSiteUpdate(reasonSelect, timeControl);
     }
 
@@ -172,7 +166,7 @@ class PunishmentService {
         return Date.now() < this.suppressDurationRestoreUntil;
     }
 
-    suppressDurationRestore(ms = 500) {
+    suppressDurationRestore(ms = 1200) {
         this.suppressDurationRestoreUntil = Date.now() + ms;
     }
 
@@ -254,8 +248,42 @@ class PunishmentService {
             return false;
         }
 
+        // Already showing the target duration — do not reopen the listbox.
+        if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
+            return true;
+        }
+
         this.applyDuration(reasonSelect, timeControl, 'mute');
         return true;
+    }
+
+    isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog = null) {
+        if (!reasonSelect || !timeControl) {
+            return false;
+        }
+
+        const current = this.getTimeControlValue(timeControl);
+        if (current == null) {
+            return false;
+        }
+
+        const remembered = this.desiredDurationByReasonSelect.get(reasonSelect);
+        if (remembered != null && current === String(remembered)) {
+            return true;
+        }
+
+        dialog = dialog || reasonSelect.closest('[role="dialog"]');
+        if (this.hasSiteX2Badge(dialog)) {
+            return false;
+        }
+
+        const defaultDuration = this.getDefaultDuration('mute', reasonSelect.value);
+        if (defaultDuration != null && current === String(defaultDuration)) {
+            this.rememberDesiredDuration(reasonSelect, defaultDuration);
+            return true;
+        }
+
+        return false;
     }
 
     hasSiteX2Badge(dialog) {
@@ -418,10 +446,7 @@ class PunishmentService {
         }
 
         if (this.isMuteDurationListboxControl(timeControl)) {
-            const desired = this.desiredDurationByReasonSelect.get(reasonSelect);
-            const current = this.getTimeControlValue(timeControl);
-
-            if (desired != null && current === String(desired)) {
+            if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl)) {
                 return false;
             }
 
@@ -563,9 +588,21 @@ class PunishmentService {
                 return;
             }
 
-            // Re-apply analysis suggestion after SteamID prefill / edit,
-            // even if a previous init already fell back to Toxic/X2.
-            if (this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+            const suggested = this.ticketService?.suggestedMuteReason?.label;
+            const currentReason = this.getReasonLabel(reasonSelect);
+            const reasonMatchesSuggested = Boolean(
+                suggested
+                && this.normalizePunishmentReason(currentReason)
+                    === this.normalizePunishmentReason(suggested)
+            );
+
+            // Only (re)apply analysis when reason is still default / not yet suggested.
+            if (!reasonMatchesSuggested
+                && this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+                return;
+            }
+
+            if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
                 return;
             }
 
@@ -785,6 +822,11 @@ class PunishmentService {
         if (this.hasUserDurationOverride(reasonSelect)
             || this.isUserInteractingWithTimeControl(timeControl)
             || this.isProgrammaticSelectUpdate) {
+            return false;
+        }
+
+        const dialog = reasonSelect.closest('[role="dialog"]');
+        if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
             return false;
         }
 
