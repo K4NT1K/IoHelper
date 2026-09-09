@@ -3,9 +3,8 @@
    ========================================================================== */
 
 .ioh-trigger-tooltip {
-    color: var(--color-danger, #ef4444);
-    border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 28%, transparent);
-    background: color-mix(in srgb, var(--color-danger, #ef4444) 13%, transparent);
+    color: var(--color-text, #f8fafc);
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 45%, transparent);
     cursor: help;
     position: relative;
     font-weight: 600;
@@ -16,9 +15,9 @@
 }
 
 .ioh-trigger-tooltip:hover {
-    background: color-mix(in srgb, var(--color-danger, #ef4444) 20%, transparent);
-    border-color: color-mix(in srgb, var(--color-danger, #ef4444) 55%, transparent);
-    transform: translateY(-0.5px);
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 70%, transparent);
+    color: var(--color-text, #f8fafc);
+    transform: scale(1.05);
 }
 
 /* Всплывающий тултип при наведении на слово-триггер */
@@ -88,6 +87,7 @@
     color: currentColor;
     opacity: 0.85;
     line-height: 0;
+    padding: 4px;
 }
 
 .ioh-warning-text-tooltip:hover {
@@ -102,7 +102,7 @@
 .ioh-warning-text-tooltip::after {
     content: attr(data-full-msg);
     position: absolute;
-    bottom: 140%;
+    bottom: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%);
     width: max-content;
@@ -135,7 +135,7 @@
 .ioh-warning-text-tooltip::before {
     content: '';
     position: absolute;
-    bottom: 120%;
+    bottom: calc(100% + 2px);
     left: 50%;
     transform: translateX(-50%);
     border-width: 6px;
@@ -149,6 +149,101 @@
 }
 
 .ioh-warning-text-tooltip:hover::before {
+    opacity: 1;
+    visibility: visible;
+}
+
+.ioh-punishment-preview-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: help;
+    color: currentColor;
+    opacity: 0.85;
+    line-height: 0;
+    padding: 4px;
+}
+
+.ioh-punishment-preview-tooltip:hover {
+    opacity: 1;
+}
+
+.ioh-punishment-preview-tooltip .ioh-badge-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.ioh-punishment-preview-tooltip__panel {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-40%);
+    width: max-content;
+    max-width: min(720px, 95vw);
+    padding-bottom: 10px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    overflow: visible;
+    line-height: 1.4;
+}
+
+.ioh-punishment-preview-tooltip:hover .ioh-punishment-preview-tooltip__panel {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.ioh-punishment-preview-tooltip__panel-inner {
+    display: block;
+    background: var(--color-bg-card, #1e293b);
+    backdrop-filter: blur(20px) saturate(1.35);
+    -webkit-backdrop-filter: blur(20px) saturate(1.35);
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.ioh-punishment-preview-tooltip__panel table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+}
+
+.ioh-punishment-preview-tooltip__panel td {
+    padding: 4px 10px;
+    vertical-align: middle;
+}
+
+.ioh-punishment-preview-tooltip__panel td + td {
+    padding-left: 12px;
+}
+
+.ioh-punishment-preview-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: var(--color-bg-card, rgba(15, 23, 42, 0.95)) transparent transparent transparent;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.ioh-punishment-preview-tooltip:hover::before {
     opacity: 1;
     visibility: visible;
 }
