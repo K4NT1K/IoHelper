@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.6.2",
+  "version": "2.7.0",
   "description": "Улучшает функционал IO сайта",
   "background": {
     "service_worker": "background.js"
@@ -34,7 +34,8 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.cybershoke.net/*"
+        "*://*.cybershoke.net/*",
+        "*://*.cybershoke.ru/*"
       ],
       "css": [
         "css/panel.css",
