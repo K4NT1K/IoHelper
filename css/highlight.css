@@ -135,6 +135,14 @@ svg.ioh-admin-icon {
     right: 5px !important;
 }
 
+svg.ioh-punishment-icon--ban {
+    color: var(--color-danger, #ef4444);
+}
+
+svg.ioh-punishment-icon--mute {
+    color: var(--color-warning, #f59e0b);
+}
+
 .ioh-duplicate-server {
     --ioh-dup-color: #ffa800;
     position: relative;

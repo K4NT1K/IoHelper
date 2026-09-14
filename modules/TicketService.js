@@ -3512,6 +3512,76 @@ class TicketService {
         this.applyOffenderPunishmentHighlight(row, {isBanned: Boolean(isBanned)});
     }
 
+    getOffenderPunishmentIconType(row, userData) {
+        if (userData?.isBanned) {
+            return 'ban';
+        }
+
+        if (userData?.isMuted && this.isMuteHighlightComplaintReason(this.getComplaintReasonFromRow(row))) {
+            return 'mute';
+        }
+
+        return null;
+    }
+
+    removeOffenderPunishmentIcons(offenderLink) {
+        const cell = offenderLink?.closest('td');
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const scope = cell || ctx?.textColumn || offenderLink?.parentElement;
+
+        scope?.querySelectorAll('.ioh-punishment-icon').forEach(el => el.remove());
+
+        if (offenderLink) {
+            delete offenderLink.dataset.iohPunishmentIcon;
+        }
+    }
+
+    applyOffenderMuteBanIcons(offenderLink, row, userData) {
+        if (!offenderLink) {
+            return;
+        }
+
+        const type = this.getOffenderPunishmentIconType(row, userData);
+        if (!type) {
+            this.removeOffenderPunishmentIcons(offenderLink);
+            return;
+        }
+
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const nameButton = ctx?.nameButton;
+        if (!nameButton?.parentNode) {
+            return;
+        }
+
+        const nameRow = nameButton.closest('.ioh-vip-name-row');
+        const insertParent = nameRow || nameButton.parentElement;
+        const existing = insertParent?.querySelector(':scope > .ioh-punishment-icon')
+            || ctx?.textColumn?.querySelector('.ioh-punishment-icon');
+
+        if (existing && offenderLink.dataset.iohPunishmentIcon === type) {
+            return;
+        }
+
+        this.removeOffenderPunishmentIcons(offenderLink);
+
+        const iconSvg = window.Icons?.[type];
+        if (!iconSvg) {
+            return;
+        }
+
+        const template = this.document.createElement('template');
+        template.innerHTML = iconSvg.trim();
+        const badge = template.content.firstElementChild;
+        if (!badge) {
+            return;
+        }
+
+        badge.classList.remove('ioh-badge-icon');
+        badge.classList.add('ioh-admin-icon', 'ioh-punishment-icon', `ioh-punishment-icon--${type}`);
+        nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
+        offenderLink.dataset.iohPunishmentIcon = type;
+    }
+
     getVipBadgeMeta(vipName) {
         const normalized = this.normalizeVipName(vipName);
         if (!normalized) {
@@ -3688,11 +3758,13 @@ class TicketService {
         }
 
         // Do not stack on top of moderator/verification icons already next to the nick.
-        const existingAdmin = insertParent?.querySelector(':scope > .ioh-admin-icon')
+        // Punishment mute/ban icons are allowed alongside verification.
+        const existingAdminCandidate = insertParent?.querySelector(':scope > .ioh-admin-icon:not(.ioh-punishment-icon)')
             || (nameButton.nextElementSibling?.classList?.contains('ioh-admin-icon')
+                && !nameButton.nextElementSibling.classList.contains('ioh-punishment-icon')
                 ? nameButton.nextElementSibling
                 : null);
-        if (existingAdmin) {
+        if (existingAdminCandidate) {
             offenderLink.dataset.iohProfileVerified = '1';
             return;
         }
@@ -4413,6 +4485,7 @@ class TicketService {
                 this.applyOffenderPunishmentHighlight(targetRow, userData);
                 this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
                 this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
+                this.applyOffenderMuteBanIcons(offenderLinkToUpdate, targetRow, userData);
                 targetRow.dataset.lastIpCheck = Date.now().toString();
 
                 if (singleRowPerPass) {

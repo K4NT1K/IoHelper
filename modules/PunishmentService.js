@@ -166,6 +166,25 @@ class PunishmentService {
         return Date.now() < this.suppressDurationRestoreUntil;
     }
 
+    // Suppress only blocks redundant re-clicks while OUR value is already shown.
+    // If the site overwrote the duration (common during first mute-form init /
+    // management-tab remount), we must still restore the desired value.
+    shouldSkipDurationRestore(reasonSelect, timeControl) {
+        if (this.hasUserDurationOverride(reasonSelect)
+            || this.isUserInteractingWithTimeControl(timeControl)
+            || this.isProgrammaticSelectUpdate) {
+            return true;
+        }
+
+        if (!this.isDurationRestoreSuppressed()) {
+            return false;
+        }
+
+        const desired = this.desiredDurationByReasonSelect.get(reasonSelect);
+        const current = this.getTimeControlValue(timeControl);
+        return desired != null && current === String(desired);
+    }
+
     suppressDurationRestore(ms = 1200) {
         this.suppressDurationRestoreUntil = Date.now() + ms;
     }
@@ -198,7 +217,8 @@ class PunishmentService {
         this.clearUserDurationOverride(reasonSelect);
         dialog = dialog || reasonSelect.closest('[role="dialog"]');
 
-        if (this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+        if (await this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
+            await this.ensureMuteDurationSettled(dialog);
             return;
         }
 
@@ -209,10 +229,47 @@ class PunishmentService {
         );
 
         if (synced) {
+            await this.ensureMuteDurationSettled(dialog);
             return;
         }
 
-        this.applyDefaultMuteReason(reasonSelect, timeControl);
+        await this.applyDefaultMuteReason(reasonSelect, timeControl);
+        await this.ensureMuteDurationSettled(dialog);
+    }
+
+    async ensureMuteDurationSettled(dialog = null) {
+        const delays = [0, 250, 700, 1400, 2200];
+
+        for (const delay of delays) {
+            if (delay > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+
+            const liveDialog = this.findOpenMuteDialog() || dialog;
+            const reasonSelect = liveDialog?.querySelector('#mute-reason');
+            const timeControl = liveDialog?.querySelector('#mute-time');
+
+            if (!reasonSelect?.isConnected || !timeControl?.isConnected) {
+                continue;
+            }
+
+            if (this.hasUserDurationOverride(reasonSelect)
+                || this.isUserInteractingWithTimeControl(timeControl)) {
+                return;
+            }
+
+            if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, liveDialog)) {
+                return;
+            }
+
+            await this.applyMuteListboxDuration(reasonSelect, timeControl);
+        }
+    }
+
+    findOpenMuteDialog() {
+        return Array.from(this.document.querySelectorAll('[role="dialog"]'))
+            .find(dialog => dialog.querySelector('#mute-reason') && dialog.querySelector('#mute-time'))
+            || null;
     }
 
     resolveMuteFormSteamId(dialog) {
@@ -229,7 +286,7 @@ class PunishmentService {
         return ticketService.getOffenderSteamIdForScope(ticketService.getActivePunishmentScope()) || '';
     }
 
-    applySuggestedMuteReason(reasonSelect, timeControl, dialog) {
+    async applySuggestedMuteReason(reasonSelect, timeControl, dialog) {
         const ticketService = this.ticketService;
         if (!ticketService) {
             return false;
@@ -253,7 +310,7 @@ class PunishmentService {
             return true;
         }
 
-        this.applyDuration(reasonSelect, timeControl, 'mute');
+        await this.applyDuration(reasonSelect, timeControl, 'mute');
         return true;
     }
 
@@ -438,10 +495,7 @@ class PunishmentService {
             return false;
         }
 
-        if (this.hasUserDurationOverride(reasonSelect)
-            || this.isUserInteractingWithTimeControl(timeControl)
-            || this.isDurationRestoreSuppressed()
-            || this.isProgrammaticSelectUpdate) {
+        if (this.shouldSkipDurationRestore(reasonSelect, timeControl)) {
             return false;
         }
 
@@ -470,7 +524,7 @@ class PunishmentService {
         return this.restoreDesiredDuration(reasonSelect, timeControl);
     }
 
-    applyDefaultMuteReason(reasonSelect, timeControl) {
+    async applyDefaultMuteReason(reasonSelect, timeControl) {
         this.clearUserDurationOverride(reasonSelect);
         const defaultReason = this.durations.defaultMuteReason;
 
@@ -479,7 +533,7 @@ class PunishmentService {
             this.setSelectValue(reasonSelect, defaultReason);
         }
 
-        this.applyDuration(reasonSelect, timeControl, 'mute');
+        await this.applyDuration(reasonSelect, timeControl, 'mute');
     }
 
     rememberDesiredDuration(reasonSelect, value) {
@@ -530,41 +584,35 @@ class PunishmentService {
             return;
         }
 
-        if (this.hasUserDurationOverride(reasonSelect)
-            || this.isUserInteractingWithTimeControl(timeControl)
-            || this.isDurationRestoreSuppressed()
-            || this.isProgrammaticSelectUpdate) {
+        if (this.shouldSkipDurationRestore(reasonSelect, timeControl)) {
             return;
         }
 
         this.clearDurationRestore(reasonSelect);
 
         const runRestore = () => {
-            if (this.hasUserDurationOverride(reasonSelect)
-                || this.isDurationRestoreSuppressed()
-                || this.isProgrammaticSelectUpdate) {
-                return;
-            }
-
-            const dialog = reasonSelect.closest('[role="dialog"]');
+            const dialog = reasonSelect.closest('[role="dialog"]')
+                || this.findOpenMuteDialog();
+            const currentReasonSelect = dialog?.querySelector('#mute-reason') || reasonSelect;
             const currentTimeControl = dialog?.querySelector('#mute-time') || timeControl;
 
-            if (!reasonSelect.isConnected || !currentTimeControl?.isConnected) {
+            if (!currentReasonSelect?.isConnected || !currentTimeControl?.isConnected) {
                 return;
             }
 
-            if (this.isUserInteractingWithTimeControl(currentTimeControl)) {
+            if (this.shouldSkipDurationRestore(currentReasonSelect, currentTimeControl)) {
                 return;
             }
 
-            this.syncMuteDurationAfterSiteUpdate(reasonSelect, currentTimeControl);
+            this.syncMuteDurationAfterSiteUpdate(currentReasonSelect, currentTimeControl);
         };
 
         const timeouts = [
             setTimeout(runRestore, 50),
             setTimeout(runRestore, 150),
             setTimeout(runRestore, 400),
-            setTimeout(runRestore, 800)
+            setTimeout(runRestore, 800),
+            setTimeout(runRestore, 1600)
         ];
 
         this.durationRestoreIds.set(reasonSelect, timeouts);
@@ -701,12 +749,7 @@ class PunishmentService {
         this.boundMuteTimeObservers.add(timeControl);
 
         const observer = new MutationObserver(() => {
-            if (
-                this.isProgrammaticSelectUpdate
-                || this.isDurationRestoreSuppressed()
-                || this.hasUserDurationOverride(reasonSelect)
-                || this.isUserInteractingWithTimeControl(timeControl)
-            ) {
+            if (this.shouldSkipDurationRestore(reasonSelect, timeControl)) {
                 return;
             }
 
@@ -723,7 +766,7 @@ class PunishmentService {
 
         if (this.isMuteDurationListboxControl(timeControl) && this.document.body && !this.listboxBodyObserver) {
             this.listboxBodyObserver = new MutationObserver(mutations => {
-                if (this.isProgrammaticSelectUpdate || this.isDurationRestoreSuppressed()) {
+                if (this.isProgrammaticSelectUpdate) {
                     return;
                 }
 
@@ -736,14 +779,13 @@ class PunishmentService {
                                 || node.querySelector?.('[role="listbox"]')
                             )
                         ) {
-                            const dialog = this.document.querySelector('[role="dialog"]');
+                            const dialog = this.findOpenMuteDialog();
                             const muteReason = dialog?.querySelector('#mute-reason');
                             const muteTime = dialog?.querySelector('#mute-time');
                             if (
                                 !muteReason
                                 || !muteTime
-                                || this.hasUserDurationOverride(muteReason)
-                                || this.isUserInteractingWithTimeControl(muteTime)
+                                || this.shouldSkipDurationRestore(muteReason, muteTime)
                             ) {
                                 return;
                             }
@@ -790,8 +832,7 @@ class PunishmentService {
 
     applyDuration(reasonSelect, timeControl, type) {
         if (this.isMuteDurationListboxControl(timeControl)) {
-            void this.applyMuteListboxDuration(reasonSelect, timeControl);
-            return;
+            return this.applyMuteListboxDuration(reasonSelect, timeControl);
         }
 
         const reasonValue = reasonSelect.value;
@@ -805,14 +846,20 @@ class PunishmentService {
         });
 
         if (targetValue == null) {
-            return;
+            return false;
         }
 
         if (this.setSelectValue(timeControl, targetValue)) {
             this.rememberDesiredDuration(reasonSelect, targetValue);
-        } else if (this.getTimeControlValue(timeControl) === String(targetValue)) {
-            this.rememberDesiredDuration(reasonSelect, targetValue);
+            return true;
         }
+
+        if (this.getTimeControlValue(timeControl) === String(targetValue)) {
+            this.rememberDesiredDuration(reasonSelect, targetValue);
+            return true;
+        }
+
+        return false;
     }
 
     async applyMuteListboxDuration(reasonSelect, timeControl) {
@@ -826,7 +873,7 @@ class PunishmentService {
             return false;
         }
 
-        const dialog = reasonSelect.closest('[role="dialog"]');
+        const dialog = reasonSelect.closest('[role="dialog"]') || this.findOpenMuteDialog();
         if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
             return false;
         }
@@ -849,7 +896,11 @@ class PunishmentService {
                 return false;
             }
 
-            const x2Option = this.findX2ListboxOption(reasonLabel, listbox);
+            // Only take X2 when the site shows the X2 badge. Otherwise first-init
+            // listboxes may contain an X2 row and wrongly keep a 6h value.
+            const x2Option = this.hasSiteX2Badge(dialog)
+                ? this.findX2ListboxOption(reasonLabel, listbox)
+                : null;
             let option = x2Option;
             let desired = null;
 
