@@ -1,4 +1,4 @@
-class Utils {
+export class Utils {
     constructor({ document }) {
         this.document = document;
     }
@@ -195,6 +195,4 @@ class Utils {
         return `В игре ${diffDays} дн назад`;
     }
 }
-
-window.Utils = Utils;
 

@@ -104,16 +104,6 @@
                 </button>
                 <div class="settings-accordion__body" hidden>
                     <div class="toggle-grid toggle-grid--nested" data-toggle-group="ticket"></div>
-                    <label class="number-card" for="serverRefreshInterval">
-                        <span>
-                            <strong>Автообновление текущего сервера</strong>
-                            <small>Введите 0 для отключения функции.</small>
-                        </span>
-                        <span class="number-control">
-                            <input type="number" id="serverRefreshInterval" min="0" max="600" value="30"/>
-                            <span class="unit">сек</span>
-                        </span>
-                    </label>
                     <p class="section-hint section-hint--spaced">Категории жалоб, при которых срабатывает автоподключение.</p>
                     <div class="reason-checkboxes" id="autoConnectReasonsContainer"></div>
                     <p class="section-hint section-hint--spaced">Триггеры в причине жалобы для автоподключения к серверу, не учитывая категорию жалобы.</p>
@@ -164,7 +154,6 @@
         <button class="btn-reset" id="resetDefaultsBtn">Сбросить</button>
     </div>
 </main>
-<script src="modules/ConfigService.js"></script>
-<script src="popup.js"></script>
+<script type="module" src="popup.js"></script>
 </body>
 </html>

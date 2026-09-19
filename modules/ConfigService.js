@@ -1,4 +1,4 @@
-class ConfigService {
+export class ConfigService {
 
     static LOCAL_KEY = "helperConfig";
     static FETCHED_AT_KEY = "helperConfigFetchedAt";
@@ -60,5 +60,3 @@ class ConfigService {
         return fallback;
     }
 }
-
-window.ConfigService = ConfigService;

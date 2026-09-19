@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Улучшает функционал IO сайта",
   "background": {
     "service_worker": "background.js"
@@ -25,10 +25,12 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "icons/icons.json"
+        "icons/icons.json",
+        "dist/chunks/*"
       ],
       "matches": [
-        "<all_urls>"
+        "*://*.cybershoke.net/*",
+        "*://*.cybershoke.ru/*"
       ]
     }
   ],
@@ -47,18 +49,7 @@
         "css/ticketCards.css"
       ],
       "js": [
-        "modules/Utils.js",
-        "modules/ConfigService.js",
-        "modules/BadgeService.js",
-        "modules/PanelService.js",
-        "modules/MessageService.js",
-        "modules/SitePunishmentBridge.js",
-        "modules/TicketService.js",
-        "modules/PunishmentService.js",
-        "modules/ModeratorService.js",
-        "modules/DOMCoordinator.js",
-        "modules/App.js",
-        "content.js"
+        "dist/content.js"
       ],
       "run_at": "document_end"
     }

@@ -1,6 +1,7 @@
+import { ConfigService } from './modules/ConfigService.js';
+
 const featureTogglesEl = document.getElementById('featureToggles');
 const hoursInput = document.getElementById('newAccountHours');
-const refreshIntervalInput = document.getElementById('serverRefreshInterval');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const trackIntervalInput = document.getElementById('trackOffenderInterval');
@@ -433,7 +434,6 @@ function loadSettingsToUI(settings) {
     });
 
     hoursInput.value = settings.newAccountHours;
-    refreshIntervalInput.value = settings.serverRefreshInterval;
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
     currentSettings.reasonTriggersAutoconnect = [...(settings.reasonTriggersAutoconnect || [])];
     trackIntervalInput.value = settings.trackOffenderInterval;
@@ -473,10 +473,6 @@ function collectSettingsFromUI() {
         newAccountHours: Math.max(
             parseInt(hoursInput.value, 10) || 1,
             1
-        ),
-        serverRefreshInterval: Math.max(
-            parseInt(refreshIntervalInput.value, 10) || 0,
-            0
         ),
         trackOffenderInterval: Math.min(60, Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1)),
         trackOffenderIntervalWhileReviewing: Math.min(
@@ -584,7 +580,6 @@ autoConnectTriggerInput.addEventListener('keydown', (e) => {
 });
 
 hoursInput && bindNumberField(hoursInput);
-refreshIntervalInput && bindNumberField(refreshIntervalInput);
 trackIntervalInput && bindNumberField(trackIntervalInput);
 trackIntervalWhileReviewingInput && bindNumberField(trackIntervalWhileReviewingInput);
 

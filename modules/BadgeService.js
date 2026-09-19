@@ -1,4 +1,6 @@
-class BadgeService {
+import { markIoh } from './shared/dom.js';
+
+export class BadgeService {
     constructor({ document }) {
         this.document = document;
         this.translateCache = new Map();
@@ -12,6 +14,7 @@ class BadgeService {
         if (!badge) {
             badge = this.document.createElement('div');
             badge.id = elementId;
+            markIoh(badge);
         }
 
         if (targetTextarea?.parentNode && badge.parentNode !== targetTextarea.parentNode) {
@@ -22,11 +25,80 @@ class BadgeService {
 
         const nextClass = `ioh-info-badge ioh-info-badge--${variant}`;
         if (badge.className === nextClass && badge.innerHTML === innerHTML) {
+            this.wireOverflowTooltips(badge);
             return;
         }
 
+        this.document.querySelectorAll('body > .ioh-punishment-preview-tooltip__panel').forEach(panel => {
+            panel.remove();
+        });
+
         badge.className = nextClass;
         badge.innerHTML = innerHTML;
+        this.wireOverflowTooltips(badge);
+    }
+
+    wireOverflowTooltips(root) {
+        if (!root) {
+            return;
+        }
+
+        root.querySelectorAll('.ioh-punishment-preview-tooltip').forEach(host => {
+            const panel = host.querySelector(':scope > .ioh-punishment-preview-tooltip__panel');
+            if (!panel || host.dataset.iohTipBound === '1') {
+                return;
+            }
+
+            host.dataset.iohTipBound = '1';
+
+            const placePanel = () => {
+                const rect = host.getBoundingClientRect();
+                const gap = 10;
+                const maxWidth = Math.min(720, window.innerWidth - 16);
+                panel.style.position = 'fixed';
+                panel.style.zIndex = '2147483646';
+                panel.style.width = 'max-content';
+                panel.style.maxWidth = `${maxWidth}px`;
+                panel.style.transform = 'none';
+                panel.style.pointerEvents = 'none';
+
+                // Prefer growing right from the host; clamp into the viewport.
+                let left = Math.max(8, rect.left);
+                panel.style.left = `${left}px`;
+                panel.style.right = 'auto';
+                panel.style.top = 'auto';
+                panel.style.bottom = `${Math.max(8, window.innerHeight - rect.top + gap)}px`;
+
+                if (panel.parentElement !== this.document.body) {
+                    this.document.body.appendChild(panel);
+                }
+
+                const panelRect = panel.getBoundingClientRect();
+                if (panelRect.right > window.innerWidth - 8) {
+                    left = Math.max(8, window.innerWidth - 8 - panelRect.width);
+                    panel.style.left = `${left}px`;
+                }
+                if (panelRect.top < 8) {
+                    panel.style.bottom = 'auto';
+                    panel.style.top = `${Math.min(window.innerHeight - panelRect.height - 8, rect.bottom + gap)}px`;
+                }
+
+                panel.classList.add('ioh-punishment-preview-tooltip__panel--open');
+            };
+
+            const hidePanel = () => {
+                panel.classList.remove('ioh-punishment-preview-tooltip__panel--open');
+                panel.style.pointerEvents = 'none';
+                if (panel.parentElement === this.document.body) {
+                    host.appendChild(panel);
+                }
+            };
+
+            host.addEventListener('mouseenter', placePanel);
+            host.addEventListener('focus', placePanel);
+            host.addEventListener('mouseleave', hidePanel);
+            host.addEventListener('blur', hidePanel);
+        });
     }
 
     async detectSourceLanguage(text) {
@@ -159,5 +231,3 @@ class BadgeService {
         return requestPromise;
     }
 }
-
-window.BadgeService = BadgeService;

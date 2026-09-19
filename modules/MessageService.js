@@ -1,4 +1,6 @@
-class MessageService {
+import { markIoh } from './shared/dom.js';
+
+export class MessageService {
     static CYBERSHOKE_HOURS_RE = /CYBERSHOKE:\s*(\d+)ч/i;
     static DUPLICATE_SERVER_COLOR_COUNT = 7;
 
@@ -130,7 +132,7 @@ class MessageService {
                 const regex = new RegExp(`(${escapedTrigger})`, 'gi');
 
                 if (regex.test(html)) {
-                    html = html.replace(regex, '<span class="ioh-complaint-trigger">$1</span>');
+                    html = html.replace(regex, '<span class="ioh-complaint-trigger" data-ioh="1">$1</span>');
                     changed = true;
                 }
             });
@@ -216,6 +218,7 @@ class MessageService {
         }
 
         span.classList.add('ioh-new-account-hours');
+        markIoh(span);
     }
 
     _applyRowHoursHighlight(row) {
@@ -236,7 +239,7 @@ class MessageService {
                     return fullMatch;
                 }
 
-                return `${prefix}<span class="cs-hours-span ioh-new-account-hours">${hoursText}</span>`;
+                return `${prefix}<span class="cs-hours-span ioh-new-account-hours" data-ioh="1">${hoursText}</span>`;
             });
 
             if (newHtml !== html) {
@@ -375,6 +378,4 @@ class MessageService {
         });
     }
 }
-
-window.MessageService = MessageService;
 

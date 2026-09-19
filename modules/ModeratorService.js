@@ -1,4 +1,7 @@
-class ModeratorService {
+import { markIoh } from './shared/dom.js';
+import { ConfigService } from './ConfigService.js';
+
+export class ModeratorService {
     static WEEKDAY_LABELS = [
         'Понедельник',
         'Вторник',
@@ -88,44 +91,33 @@ class ModeratorService {
     waitForDayButtons(timeoutMs = 15000) {
         return new Promise((resolve) => {
             const find = () => this.findDayButtons();
-
             const existing = find();
             if (existing) {
                 resolve(existing);
                 return;
             }
 
-            const startedAt = Date.now();
+            let settled = false;
+            const finish = (value, reason) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                observer.disconnect();
+                console.log(`[Helper] ModeratorService: waitForDayButtons finish — ${reason}`);
+                resolve(value);
+            };
+
             console.log('[Helper] ModeratorService: waitForDayButtons start');
             const observer = new MutationObserver(() => {
                 const buttons = find();
                 if (buttons) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    console.log('[Helper] ModeratorService: waitForDayButtons finish — found');
-                    resolve(buttons);
-                } else if (Date.now() - startedAt >= timeoutMs) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    console.log('[Helper] ModeratorService: waitForDayButtons finish — timeout');
-                    resolve(null);
+                    finish(buttons, 'found');
                 }
             });
 
             observer.observe(this.document.body, { childList: true, subtree: true });
-
-            const pollId = setInterval(() => {
-                const buttons = find();
-                if (buttons) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    resolve(buttons);
-                } else if (Date.now() - startedAt >= timeoutMs) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    resolve(null);
-                }
-            }, 250);
+            setTimeout(() => finish(find(), 'timeout'), timeoutMs);
         });
     }
 
@@ -161,44 +153,38 @@ class ModeratorService {
             };
 
             const finish = (ok) => {
-                // Small settle delay for SPA re-render after day switch.
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                observer?.disconnect();
                 setTimeout(() => resolve(ok), 350);
             };
+
+            let settled = false;
+            let observer = null;
 
             if (isReady()) {
                 finish(true);
                 return;
             }
 
-            const startedAt = Date.now();
             console.log('[Helper] ModeratorService: waitForScheduleContent start');
-            const observer = new MutationObserver(() => {
+            observer = new MutationObserver(() => {
                 if (isReady()) {
-                    observer.disconnect();
-                    clearInterval(pollId);
                     console.log('[Helper] ModeratorService: waitForScheduleContent finish — ready');
                     finish(true);
-                } else if (Date.now() - startedAt >= timeoutMs) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    console.log('[Helper] ModeratorService: waitForScheduleContent finish — timeout');
-                    finish(this.countScheduleMarkers() > 0);
                 }
             });
 
             observer.observe(this.document.body, { childList: true, subtree: true });
-
-            const pollId = setInterval(() => {
-                if (isReady()) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    finish(true);
-                } else if (Date.now() - startedAt >= timeoutMs) {
-                    observer.disconnect();
-                    clearInterval(pollId);
-                    finish(this.countScheduleMarkers() > 0);
+            setTimeout(() => {
+                if (settled) {
+                    return;
                 }
-            }, 200);
+                console.log('[Helper] ModeratorService: waitForScheduleContent finish — timeout');
+                finish(this.countScheduleMarkers() > 0);
+            }, timeoutMs);
         });
     }
 
@@ -545,6 +531,7 @@ class ModeratorService {
 
         const badge = template.content.firstElementChild;
         badge.classList.add('ioh-admin-icon');
+        markIoh(badge);
 
         const idContainer = link.closest('div');
         const parentContainer = idContainer ? idContainer.parentElement : null;
@@ -614,5 +601,3 @@ class ModeratorService {
         });
     }
 }
-
-window.ModeratorService = ModeratorService;

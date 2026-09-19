@@ -85,9 +85,7 @@ tr.ioh-highlighted-muted > td {
 }
 
 tr.ioh-highlighted-banned > td {
-    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 18%, transparent) !important;
-    border-top: 2px solid color-mix(in srgb, var(--color-danger, #ef4444) 88%, transparent) !important;
-    border-bottom: 2px solid color-mix(in srgb, var(--color-danger, #ef4444) 88%, transparent) !important;
+    background-color: color-mix(in srgb, var(--color-danger, #ef4444) 22%, transparent) !important;
 }
 
 tr.ioh-highlighted-banned > td:first-child {
@@ -104,9 +102,7 @@ tr.ioh-highlighted-banned > td:last-child {
 }
 
 tr.ioh-highlighted-muted > td {
-    background-color: color-mix(in srgb, var(--color-warning, #f59e0b) 18%, transparent) !important;
-    border-top: 2px solid color-mix(in srgb, var(--color-warning, #f59e0b) 88%, transparent) !important;
-    border-bottom: 2px solid color-mix(in srgb, var(--color-warning, #f59e0b) 88%, transparent) !important;
+    background-color: color-mix(in srgb, var(--color-warning, #f59e0b) 22%, transparent) !important;
 }
 
 tr.ioh-highlighted-muted > td:first-child {
@@ -120,6 +116,61 @@ tr.ioh-highlighted-muted > td:first-child {
 tr.ioh-highlighted-muted > td:last-child {
     border-right: 2px solid var(--color-warning, #f59e0b) !important;
     border-radius: 0 6px 6px 0;
+}
+
+/* Статус ЗАБАНЕН / АКТИВНЫЙ МУТ вместо «Принять …» / «На рассмотрении» */
+.ioh-punishment-action {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    min-height: 32px !important;
+    padding: 4px 10px !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.04em !important;
+    line-height: 1.2 !important;
+    cursor: default !important;
+    box-shadow: none !important;
+}
+
+.ioh-punishment-action--ban {
+    --ioh-tone: var(--color-danger, #ef4444);
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 70%, transparent) !important;
+}
+
+.ioh-punishment-action--mute {
+    --ioh-tone: var(--color-warning, #f59e0b);
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 70%, transparent) !important;
+    color: #fff !important;
+}
+
+.ioh-punishment-action__inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ioh-punishment-action .ioh-icon-box {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: color-mix(in srgb, #fff 18%, transparent);
+    color: #fff;
+}
+
+.ioh-punishment-action .ioh-icon-box .ioh-badge-icon {
+    width: 15px;
+    height: 15px;
+}
+
+.ioh-punishment-action__text {
+    color: inherit;
+    white-space: nowrap;
 }
 
 /* На всякий случай фиксируем выравнивание иконки */

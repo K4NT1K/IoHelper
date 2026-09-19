@@ -1,19 +1,14 @@
-class DOMCoordinator {
+import { isIohNode } from './shared/dom.js';
+
+export class DOMCoordinator {
     constructor(app) {
         this.app = app;
         this.document = app.document;
+        this.listeners = new Map();
+        this.pending = new Set();
         this.bodyObserver = null;
         this.bodyDebounceId = null;
         this._ticketMountedLeadingFlushed = false;
-        this.pendingDispatch = {
-            notification: false,
-            ticketMounted: false,
-            currentServer: false,
-            currentServerMods: false,
-            tableEnhancements: false,
-            punishmentDialog: false
-        };
-        this.tablesRowsObserver = null;
         this.tablesRowsRafId = null;
         this.complaintQueueTableObservers = new Map();
         this.ticketPanelVisibilityObserver = null;
@@ -21,26 +16,48 @@ class DOMCoordinator {
         this.observedTicketPanelRoots = new WeakSet();
     }
 
+    on(event, handler) {
+        const list = this.listeners.get(event) || [];
+        list.push(handler);
+        this.listeners.set(event, list);
+        return () => {
+            this.listeners.set(
+                event,
+                (this.listeners.get(event) || []).filter(item => item !== handler)
+            );
+        };
+    }
+
+    emit(event) {
+        this.pending.add(event);
+    }
+
+    notify(event) {
+        this.emit(event);
+        this.scheduleFlush();
+    }
+
     init() {
         console.log('[Helper] DOMCoordinator: init');
         this.initBodyObserver();
-        this.initTablesRowsObserver();
         this.refreshComplaintQueueTableObservers();
         this.refreshComplaintQueueVisibilityObserver();
-
-        this.pendingDispatch.notification = true;
-        this.pendingDispatch.currentServer = true;
-        this.pendingDispatch.currentServerMods = true;
-        this.pendingDispatch.tableEnhancements = true;
-        this.flushBodyDispatch();
+        this.emit('notification');
+        this.emit('currentServerMods');
+        this.emit('tableAdded');
+        this.flush();
     }
 
     teardownAll() {
         console.log('[Helper] DOMCoordinator: teardownAll');
         this.teardownBodyObserver();
-        this.teardownTablesRowsObserver();
         this.teardownComplaintQueueTableObservers();
         this.teardownTicketPanelVisibilityObserver();
+        if (this.tablesRowsRafId) {
+            cancelAnimationFrame(this.tablesRowsRafId);
+            this.tablesRowsRafId = null;
+        }
+        this.pending.clear();
     }
 
     teardownBodyObserver() {
@@ -54,19 +71,7 @@ class DOMCoordinator {
             this.bodyDebounceId = null;
         }
         this._ticketMountedLeadingFlushed = false;
-        this.resetPendingDispatch();
-    }
-
-    teardownTablesRowsObserver() {
-        if (this.tablesRowsObserver) {
-            this.tablesRowsObserver.disconnect();
-            this.tablesRowsObserver = null;
-            console.log('[Helper] DOMCoordinator: tablesRowsObserver teardown');
-        }
-        if (this.tablesRowsRafId) {
-            cancelAnimationFrame(this.tablesRowsRafId);
-            this.tablesRowsRafId = null;
-        }
+        this.pending.clear();
     }
 
     teardownComplaintQueueTableObservers() {
@@ -89,16 +94,17 @@ class DOMCoordinator {
         const updatedRows = new Set();
 
         for (const mutation of mutations) {
+            if (isIohNode(mutation.target)) {
+                continue;
+            }
             for (const node of mutation.addedNodes || []) {
-                if (!node || node.nodeType !== 1) {
+                if (!node || node.nodeType !== 1 || isIohNode(node)) {
                     continue;
                 }
-
                 if (node.matches?.('tr')) {
                     newRows.add(node);
                     continue;
                 }
-
                 const nestedRows = node.querySelectorAll?.('tr') || [];
                 nestedRows.forEach(row => newRows.add(row));
             }
@@ -115,7 +121,6 @@ class DOMCoordinator {
         if (newRows.size) {
             newRows.forEach(row => this.app._applyRowHighlights(row));
         }
-
         if (updatedRows.size) {
             this.scheduleRowHighlights(updatedRows);
         }
@@ -171,15 +176,38 @@ class DOMCoordinator {
         this.observedTicketPanelRoots = new WeakSet();
     }
 
-    resetPendingDispatch() {
-        this.pendingDispatch = {
-            notification: false,
-            ticketMounted: false,
-            currentServer: false,
-            currentServerMods: false,
-            tableEnhancements: false,
-            punishmentDialog: false
-        };
+    scheduleFlush() {
+        const leadingTicketFlush = this.pending.has('ticketMounted') && !this._ticketMountedLeadingFlushed;
+
+        if (this.bodyDebounceId) {
+            clearTimeout(this.bodyDebounceId);
+        }
+
+        if (leadingTicketFlush) {
+            this._ticketMountedLeadingFlushed = true;
+            this.flush();
+        }
+
+        this.bodyDebounceId = setTimeout(() => {
+            this.bodyDebounceId = null;
+            this._ticketMountedLeadingFlushed = false;
+            if (this.pending.size) {
+                this.flush();
+            }
+        }, 150);
+    }
+
+    flush() {
+        const events = [...this.pending];
+        this.pending.clear();
+        if (events.length) {
+            console.log('[Helper] DOMCoordinator: flush', events.join(', '));
+        }
+        for (const event of events) {
+            for (const handler of this.listeners.get(event) || []) {
+                handler();
+            }
+        }
     }
 
     initBodyObserver() {
@@ -192,6 +220,10 @@ class DOMCoordinator {
             const rowsToUpdate = new Set();
 
             for (const mutation of mutations) {
+                if (isIohNode(mutation.target)) {
+                    continue;
+                }
+
                 if (mutation.type === 'attributes') {
                     if (mutation.attributeName !== 'aria-hidden') {
                         continue;
@@ -201,7 +233,7 @@ class DOMCoordinator {
                     if (!target || target.nodeType !== 1) {
                         continue;
                     }
-                    if (this.app.ticketService.isExtensionUiElement(target)) {
+                    if (this.app.ticketService.isExtensionUiElement(target) || isIohNode(target)) {
                         continue;
                     }
                     if (target.getAttribute('aria-hidden') === 'true') {
@@ -209,23 +241,21 @@ class DOMCoordinator {
                     }
 
                     if (this.isCurrentServerNode(target)) {
-                        this.pendingDispatch.currentServer = true;
-                        this.pendingDispatch.currentServerMods = true;
+                        this.emit('currentServerMods');
                     }
                     continue;
                 }
 
                 for (const node of mutation.addedNodes || []) {
-                    if (!node || node.nodeType !== 1) {
+                    if (!node || node.nodeType !== 1 || isIohNode(node)) {
                         continue;
                     }
-
                     this.inspectAddedNode(node, rowsToUpdate);
                 }
             }
 
-            if (this.hasPendingBodyWork()) {
-                this.scheduleBodyDispatch();
+            if (this.pending.size) {
+                this.scheduleFlush();
             }
 
             if (rowsToUpdate.size) {
@@ -247,26 +277,23 @@ class DOMCoordinator {
 
     inspectAddedNode(node, rowsToUpdate) {
         if (this.isRelevantNotificationNode(node)) {
-            this.pendingDispatch.notification = true;
+            this.emit('notification');
         }
 
         if (this.isRelevantTicketMountNode(node)) {
-            this.pendingDispatch.ticketMounted = true;
+            this.emit('ticketMounted');
         }
 
-        if (this.isCurrentServerNode(node)) {
-            this.pendingDispatch.currentServer = true;
-            this.pendingDispatch.currentServerMods = true;
-        } else if (node.querySelector?.('a[href*="cybershoke.net/"]')) {
-            this.pendingDispatch.currentServerMods = true;
+        if (this.isCurrentServerNode(node) || node.querySelector?.('a[href*="cybershoke.net/"]')) {
+            this.emit('currentServerMods');
         }
 
         if (node.matches?.('table, tr') || node.querySelector?.('table, tr')) {
-            this.pendingDispatch.tableEnhancements = true;
+            this.emit('tableAdded');
         }
 
         if (this.isPunishmentDialogNode(node)) {
-            this.pendingDispatch.punishmentDialog = true;
+            this.emit('punishmentDialog');
         }
 
         if (node.matches?.('tr')) {
@@ -277,74 +304,7 @@ class DOMCoordinator {
         }
 
         if (node.matches?.('[role="tabpanel"]') || node.querySelector?.('[role="tabpanel"]')) {
-            this.pendingDispatch.ticketMounted = true;
-        }
-    }
-
-    hasPendingBodyWork() {
-        return Object.values(this.pendingDispatch).some(Boolean);
-    }
-
-    scheduleBodyDispatch() {
-        const leadingTicketFlush = this.pendingDispatch.ticketMounted && !this._ticketMountedLeadingFlushed;
-
-        if (this.bodyDebounceId) {
-            clearTimeout(this.bodyDebounceId);
-        }
-
-        if (leadingTicketFlush) {
-            this._ticketMountedLeadingFlushed = true;
-            this.flushBodyDispatch();
-        }
-
-        this.bodyDebounceId = setTimeout(() => {
-            this.bodyDebounceId = null;
-            this._ticketMountedLeadingFlushed = false;
-            if (this.hasPendingBodyWork()) {
-                this.flushBodyDispatch();
-            }
-        }, 150);
-    }
-
-    flushBodyDispatch() {
-        const dispatch = { ...this.pendingDispatch };
-        this.resetPendingDispatch();
-
-        const active = Object.entries(dispatch)
-            .filter(([, enabled]) => enabled)
-            .map(([key]) => key);
-        if (active.length) {
-            console.log('[Helper] DOMCoordinator: flush', active.join(', '));
-        }
-
-        if (dispatch.notification) {
-            this.app.initNotificationPanels();
-        }
-
-        if (dispatch.ticketMounted) {
-            this.app.initTicketSectionFeatures();
-            this.refreshComplaintQueueVisibilityObserver();
-            if (this.app.features.highlightNewAccounts || this.app.features.highlightComplaintTriggers) {
-                this.app._reapplyTicketRowHighlights();
-            }
-        }
-
-        if (dispatch.currentServerMods) {
-            this.app.moderatorService.highlightSavedModerators();
-        }
-
-        if (dispatch.currentServer) {
-            this.app.initCurrentServerFeatures();
-        }
-
-        if (dispatch.tableEnhancements) {
-            this.app.initTableFeatures();
-            this.refreshComplaintQueueTableObservers();
-            this.app._reapplyTicketRowHighlights();
-        }
-
-        if (dispatch.punishmentDialog && this.app.features.autoPunishmentDuration !== false) {
-            this.app.punishmentService.scheduleScan();
+            this.emit('ticketMounted');
         }
     }
 
@@ -353,7 +313,7 @@ class DOMCoordinator {
             return false;
         }
 
-        if (node.closest?.('.ioh-panel')) {
+        if (isIohNode(node) || node.closest?.('.ioh-panel')) {
             return false;
         }
 
@@ -370,22 +330,7 @@ class DOMCoordinator {
     }
 
     isExtensionOrHelperNode(node) {
-        if (!node || node.nodeType !== 1) {
-            return false;
-        }
-
-        return Boolean(
-            node.closest?.('.ioh-panel') ||
-            node.closest?.('.ioh-info-badge') ||
-            node.closest?.('.ioh-account-created') ||
-            node.closest?.('.ioh-faceit-elo') ||
-            node.closest?.('#ioh-ticket-punishment-actions') ||
-            node.closest?.('.ioh-ticket-punishment-actions') ||
-            node.closest?.('#helper-suggest-badge') ||
-            node.closest?.('#mod-ticket-panel') ||
-            node.id === 'helper-suggest-badge' ||
-            node.id === 'mod-ticket-panel'
-        );
+        return isIohNode(node) || this.app.ticketService.isExtensionUiElement(node);
     }
 
     isRelevantTicketMountNode(node) {
@@ -405,19 +350,13 @@ class DOMCoordinator {
             return true;
         }
 
-        if (node.matches?.('h3')) {
-            const text = node.textContent || '';
-            return text.includes('Информация тикета') || text.includes('Информация об игроках');
-        }
-
-        if (node.querySelector?.('h3')) {
-            return Array.from(node.querySelectorAll('h3')).some(h => {
-                const text = h.textContent || '';
-                return text.includes('Информация тикета') || text.includes('Информация об игроках');
-            });
-        }
-
-        return false;
+        const headers = node.matches?.('h3')
+            ? [node]
+            : Array.from(node.querySelectorAll?.('h3') || []);
+        return headers.some(h =>
+            h.textContent?.includes('Информация тикета')
+            || h.textContent?.includes('Информация об игроках')
+        );
     }
 
     isCurrentServerNode(node) {
@@ -441,64 +380,7 @@ class DOMCoordinator {
         if (!node || node.nodeType !== 1) {
             return false;
         }
-
         return this.app.punishmentService.isRelevantNode(node);
-    }
-
-    initTablesRowsObserver() {
-        this.teardownTablesRowsObserver();
-
-        this.tablesRowsObserver = new MutationObserver((mutations) => {
-            const newRows = new Set();
-            const updatedRows = new Set();
-
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes || []) {
-                    if (!node || node.nodeType !== 1) {
-                        continue;
-                    }
-
-                    if (node.matches?.('tr')) {
-                        if (!this.isComplaintQueueRow(node)) {
-                            newRows.add(node);
-                        }
-                        continue;
-                    }
-
-                    const nestedRows = node.querySelectorAll?.('tr') || [];
-                    nestedRows.forEach(row => {
-                        if (!this.isComplaintQueueRow(row)) {
-                            newRows.add(row);
-                        }
-                    });
-                }
-
-                const target = mutation.target;
-                const row = target?.nodeType === 1
-                    ? target.closest?.('tbody tr')
-                    : target?.parentElement?.closest?.('tbody tr');
-                if (row && !newRows.has(row) && !this.isComplaintQueueRow(row)) {
-                    updatedRows.add(row);
-                }
-            }
-
-            if (newRows.size) {
-                newRows.forEach(row => this.app._applyRowHighlights(row));
-            }
-
-            if (updatedRows.size) {
-                this.scheduleRowHighlights(updatedRows);
-            }
-        });
-
-        this.app._reapplyTicketRowHighlights();
-        this.refreshComplaintQueueTableObservers();
-        console.log('[Helper] DOMCoordinator: tablesRowsObserver init');
-        this.tablesRowsObserver.observe(this.document.documentElement, {
-            childList: true,
-            subtree: true,
-            characterData: true
-        });
     }
 
     scheduleRowHighlights(rows) {
@@ -531,7 +413,6 @@ class DOMCoordinator {
             }
         });
 
-        // Open complaint overlay is often an aria-hidden=false panel outside <main>.
         this.document.querySelectorAll('[aria-hidden="false"]').forEach(panel => {
             if (this.isCurrentServerNode(panel) || this.isRelevantTicketMountNode(panel)) {
                 roots.add(panel);
@@ -577,7 +458,7 @@ class DOMCoordinator {
                         continue;
                     }
 
-                    if (this.app.ticketService.isExtensionUiElement(mutation.target)) {
+                    if (isIohNode(mutation.target) || this.app.ticketService.isExtensionUiElement(mutation.target)) {
                         continue;
                     }
 
@@ -616,5 +497,3 @@ class DOMCoordinator {
         }, 120);
     }
 }
-
-window.DOMCoordinator = DOMCoordinator;

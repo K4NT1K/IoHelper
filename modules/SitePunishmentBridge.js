@@ -1,4 +1,4 @@
-class SitePunishmentBridge {
+export class SitePunishmentBridge {
     static PANELS = {
         mute: {
             sectionTitle: 'Управление мутами',
@@ -364,5 +364,3 @@ class SitePunishmentBridge {
         });
     }
 }
-
-window.SitePunishmentBridge = SitePunishmentBridge;

@@ -1,4 +1,13 @@
-class App {
+import { Utils } from './Utils.js';
+import { BadgeService } from './BadgeService.js';
+import { PanelService } from './PanelService.js';
+import { MessageService } from './MessageService.js';
+import { TicketService } from './TicketService.js';
+import { PunishmentService } from './PunishmentService.js';
+import { DOMCoordinator } from './DOMCoordinator.js';
+import { isIohNode, scheduleIdle } from './shared/dom.js';
+
+export class App {
     constructor({window, document, chrome, config}) {
         this.window = window;
         this.document = document;
@@ -39,7 +48,14 @@ class App {
             muteExceptions: this.muteExceptions,
             chrome
         });
-        this.moderatorService = new ModeratorService({document, chrome});
+        this.moderatorService = {
+            highlightSavedModerators: () => {
+                void this.withModeratorService(service => service.highlightSavedModerators());
+            },
+            scanSchedulePage: () => {
+                void this.withModeratorService(service => service.scanSchedulePage());
+            }
+        };
         this.punishmentService = new PunishmentService({
             document,
             durations: config.punishmentDurations,
@@ -48,6 +64,59 @@ class App {
         });
         this.domCoordinator = new DOMCoordinator(this);
         this.messageService.ticketService = this.ticketService;
+        this.bindCoordinatorEvents();
+    }
+
+    bindCoordinatorEvents() {
+        this.domCoordinator.on('notification', () => this.initNotificationPanels());
+        this.domCoordinator.on('ticketMounted', () => {
+            this.initTicketSectionFeatures();
+            this.domCoordinator.refreshComplaintQueueVisibilityObserver();
+            if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers) {
+                this._reapplyTicketRowHighlights();
+            }
+        });
+        this.domCoordinator.on('currentServerMods', () => {
+            this.moderatorService.highlightSavedModerators();
+        });
+        this.domCoordinator.on('tableAdded', () => {
+            this.initTableFeatures();
+            this.domCoordinator.refreshComplaintQueueTableObservers();
+            this._reapplyTicketRowHighlights();
+        });
+        this.domCoordinator.on('punishmentDialog', () => {
+            if (this.features.autoPunishmentDuration !== false) {
+                this.punishmentService.scheduleScan();
+            }
+        });
+        this.domCoordinator.on('chatChanged', () => {
+            if (this.features.translateText) {
+                this.messageService.processChatMessages();
+            }
+        });
+    }
+
+    async loadModeratorService() {
+        if (this._moderatorService) {
+            return this._moderatorService;
+        }
+        if (!this._moderatorServicePromise) {
+            this._moderatorServicePromise = import(chrome.runtime.getURL('dist/chunks/moderator.js'))
+                .then(({ModeratorService}) => {
+                    this._moderatorService = new ModeratorService({
+                        document: this.document,
+                        chrome: this.chrome
+                    });
+                    this.moderatorService = this._moderatorService;
+                    return this._moderatorService;
+                });
+        }
+        return this._moderatorServicePromise;
+    }
+
+    async withModeratorService(fn) {
+        const service = await this.loadModeratorService();
+        return fn(service);
     }
 
     start() {
@@ -103,13 +172,7 @@ class App {
         this.ticketService.settings = this.settings;
         this.ticketService.rules = this.rules;
         this.ticketService.muteExceptions = this.muteExceptions;
-
-        if (previousSettings.serverRefreshInterval !== settings.serverRefreshInterval) {
-            this.ticketService.stopCurrentServerRefresh();
-            if (this.settings.serverRefreshInterval > 0) {
-                this.initCurrentServerFeatures();
-            }
-        }
+        this.ticketService.recompileRuleMatcher();
 
         if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
             this._lastAutoConnectTicketKey = null;
@@ -318,7 +381,6 @@ class App {
     runDOMUpdates() {
         this.initPageSpecificFeatures();
         this.initTicketSectionFeatures();
-        this.initCurrentServerFeatures();
         this.initTableFeatures();
     }
 
@@ -350,14 +412,6 @@ class App {
         });
 
         this.maybeAutoConnectOnTicketMount();
-
-        if (this.ticketService.hasCurrentServerSection()) {
-            this.initCurrentServerFeatures();
-        }
-
-        if (this.features.translateText) {
-            this.messageService.processChatMessages();
-        }
 
         if (this.features.showSteamAccountCreationDate) {
             this.ticketService.renderSteamAccountCreationDate();
@@ -392,20 +446,6 @@ class App {
         this._lastAutoConnectTicketKey = key;
         console.log('[Helper] Авто-подключение: mount тикета', key);
         this.ticketService.connectToCurrentServer();
-    }
-
-    initCurrentServerFeatures() {
-        if (this.settings.serverRefreshInterval <= 0) {
-            this.ticketService.stopCurrentServerRefresh('interval disabled in settings');
-            return;
-        }
-
-        if (!this.ticketService.hasCurrentServerSection()) {
-            console.log('[Helper] Автообновление текущего сервера: секция пока не в DOM, интервал не трогаем');
-            return;
-        }
-
-        this.ticketService.ensureCurrentServerRefresh(this.settings.serverRefreshInterval);
     }
 
     initVisibilityCatchUpListener() {
@@ -633,7 +673,6 @@ class App {
         this.domCoordinator.teardownAll();
         this.ticketService.clearTicketRuleBadge();
         this.ticketService.resetChatAnalysisCache();
-        this.ticketService.stopCurrentServerRefresh('navigation');
 
         this.runDOMUpdates();
         this.domCoordinator.init();
@@ -667,15 +706,6 @@ class App {
             this.maybeAutoConnectOnTicketMount();
         }
 
-        const hasVisibleServerSection = this.ticketService.hasCurrentServerSection();
-        const hasActiveComplaint = Boolean(this.ticketService.findActiveComplaintScope());
-
-        if (hasVisibleServerSection) {
-            this.initCurrentServerFeatures();
-        } else if (!hasActiveComplaint) {
-            this.ticketService.stopCurrentServerRefresh('ticket closed');
-        }
-
         this.ticketService.refreshComplaintPunishmentButtons();
 
         if (this.features.highlightComplaintTriggers) {
@@ -699,6 +729,13 @@ class App {
         for (const entry of this.ticketChatHistoryObservers.values()) {
             if (entry.debounceTimerId) {
                 clearTimeout(entry.debounceTimerId);
+            }
+            if (entry.idleId != null) {
+                if (typeof cancelIdleCallback === 'function') {
+                    cancelIdleCallback(entry.idleId);
+                } else {
+                    clearTimeout(entry.idleId);
+                }
             }
             entry.observer?.disconnect();
             entry.waitObserver?.disconnect();
@@ -757,20 +794,26 @@ class App {
             observer: null,
             waitObserver: null,
             debounceTimerId: null,
+            idleId: null,
             chatAttached: false,
             warningAttached: false,
         };
 
-        const observer = new MutationObserver(() => {
+        const observer = new MutationObserver((mutations) => {
+            if (mutations.every(mutation => isIohNode(mutation.target))) {
+                return;
+            }
             if (!this.features.processTicketRules) return;
             if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
+            this.domCoordinator.notify('chatChanged');
             this._debouncedProcessTicketRules(textarea);
         });
         entry.observer = observer;
 
         const tryAttachBlocks = () => {
-            const chatHistoryBlock = this._findChatHistoryBlockScoped(scopeEl);
-            const warningHistoryBlock = this._findWarningHistoryBlockScoped(scopeEl);
+            const blocks = this.ticketService.getHistoryBlocks(scopeEl);
+            const chatHistoryBlock = blocks.chat || this._findChatHistoryBlockScoped(scopeEl);
+            const warningHistoryBlock = blocks.warning || this._findWarningHistoryBlockScoped(scopeEl);
 
             if (chatHistoryBlock && !entry.chatAttached) {
                 observer.observe(chatHistoryBlock, {childList: true, subtree: true});
@@ -801,7 +844,10 @@ class App {
 
             if (!entry.warningAttached) {
                 console.log('[Helper] ticketChatHistoryObserver: wait start (warning)');
-                const waitObserver = new MutationObserver(() => {
+                const waitObserver = new MutationObserver((mutations) => {
+                    if (mutations.every(mutation => isIohNode(mutation.target))) {
+                        return;
+                    }
                     if (!this.document.contains(textarea)) {
                         finishWaitObserver('textarea gone');
                         return;
@@ -820,7 +866,10 @@ class App {
 
         // Wait until chat history appears (ticket DOM can be rendered in phases).
         console.log('[Helper] ticketChatHistoryObserver: wait start (chat)');
-        const waitObserver = new MutationObserver(() => {
+        const waitObserver = new MutationObserver((mutations) => {
+            if (mutations.every(mutation => isIohNode(mutation.target))) {
+                return;
+            }
             if (!this.document.contains(textarea)) {
                 finishWaitObserver('textarea gone');
                 return;
@@ -836,7 +885,10 @@ class App {
 
             if (!entry.warningAttached) {
                 console.log('[Helper] ticketChatHistoryObserver: wait start (warning)');
-                const warningWaitObserver = new MutationObserver(() => {
+                const warningWaitObserver = new MutationObserver((mutations) => {
+                    if (mutations.every(mutation => isIohNode(mutation.target))) {
+                        return;
+                    }
                     if (!this.document.contains(textarea)) {
                         warningWaitObserver.disconnect();
                         entry.waitObserver = null;
@@ -869,22 +921,28 @@ class App {
             clearTimeout(entry.debounceTimerId);
             entry.debounceTimerId = null;
         }
+        if (entry.idleId != null) {
+            if (typeof cancelIdleCallback === 'function') {
+                cancelIdleCallback(entry.idleId);
+            } else {
+                clearTimeout(entry.idleId);
+            }
+            entry.idleId = null;
+        }
 
         entry.debounceTimerId = setTimeout(() => {
             entry.debounceTimerId = null;
-            this._runTicketChatAnalysis(textarea);
+            entry.idleId = scheduleIdle(() => this._runTicketChatAnalysis(textarea));
         }, delayMs);
     }
 
-    _runTicketChatAnalysis(textarea) {
+    async _runTicketChatAnalysis(textarea) {
         if (!this.document.contains(textarea)) return;
         if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
 
-        if (this.features.translateText) {
-            this.messageService.processChatMessages();
-        }
-
-        this.ticketService.processTicketRules(textarea);
+        this.domCoordinator.notify('chatChanged');
+        const result = await this.ticketService.processTicketRules(textarea);
+        this.ticketService.maybeAutoConnectAfterChatAnalysis(result);
     }
 
     _getHighlightTargetRows() {
@@ -932,5 +990,3 @@ class App {
         return Boolean(textarea.placeholder && textarea.placeholder.includes('Опишите детали закрытия'));
     }
 }
-
-window.App = App;

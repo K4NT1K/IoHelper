@@ -1,4 +1,6 @@
-class PanelService {
+import { markIoh } from './shared/dom.js';
+
+export class PanelService {
     constructor({ document }) {
         this.document = document;
     }
@@ -116,6 +118,7 @@ class PanelService {
         const panel = this.document.createElement('div');
         panel.id = panelId;
         panel.className = 'ioh-panel';
+        markIoh(panel);
         const inline = panelId === 'mod-notif-panel';
         const entries = this.normalizeTemplateEntries(templates);
 
@@ -198,5 +201,3 @@ class PanelService {
         return [];
     }
 }
-
-window.PanelService = PanelService;

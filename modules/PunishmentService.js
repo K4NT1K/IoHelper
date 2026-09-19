@@ -1,4 +1,4 @@
-class PunishmentService {
+export class PunishmentService {
     constructor({ document, durations, utils = null, ticketService = null }) {
         this.document = document;
         this.utils = utils;
@@ -1429,5 +1429,3 @@ class PunishmentService {
         }
     }
 }
-
-window.PunishmentService = PunishmentService;
