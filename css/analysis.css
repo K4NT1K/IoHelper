@@ -82,37 +82,11 @@
     align-items: baseline;
 }
 
-.ioh-analysis-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    width: 100%;
-    margin-top: 2px;
-}
-
-.ioh-analysis-chip {
+.ioh-analysis-value--reason {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    max-width: 100%;
-    padding: 2px 6px;
-    border-radius: 8px;
-    border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-    background: color-mix(in srgb, currentColor 9%, transparent);
-    color: var(--color-text, #f8fafc);
-    font-size: 9px;
-    line-height: 1.2;
-}
-
-.ioh-analysis-chip b {
-    display: inline-grid;
-    place-items: center;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 5px;
-    border-radius: 12px;
-    background: color-mix(in srgb, currentColor 15%, transparent);
-    font-size: 11px;
+    flex-wrap: wrap;
+    gap: 2px 0;
 }
 
 .ioh-trigger-separator {

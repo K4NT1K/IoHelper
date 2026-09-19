@@ -4594,6 +4594,7 @@ class TicketService {
         return {
             triggers: icons.loupe || '',
             reason: icons.bell || '',
+            info: icons.info || '',
             punishment: icons.clock || '',
             chatError: icons.chat || '',
             shield: icons.shield || '',
@@ -4713,6 +4714,7 @@ class TicketService {
         const analysisIcons = this.getAnalysisIcons();
         const triggers = analysisIcons.triggers;
         const reason = analysisIcons.reason;
+        const infoIcon = analysisIcons.info;
         const punishment = analysisIcons.punishment;
         const chatError = analysisIcons.chatError;
         const shield = analysisIcons.shield;
@@ -4948,13 +4950,6 @@ class TicketService {
             .join(' | ');
 
         const activityHTML = activeStatsSummary ? ` <span class="ioh-activity-text">(${this.utils.escapeHtml(activeStatsSummary)})</span>` : '';
-        const activityChipsHTML = activeStats.length > 1
-            ? activeStats
-                .map(([name, count]) =>
-                    `<span class="ioh-analysis-chip">${this.utils.escapeHtml(name)}<b>${count}</b></span>`
-                )
-                .join('')
-            : '';
 
         if (allViolations.length === 0) {
             this.clearSuggestedMuteReason();
@@ -5019,6 +5014,30 @@ class TicketService {
             this.setSuggestedMuteReason(offenderId, finalName);
         }
 
+        const severityByRule = {};
+        const durationByRule = {};
+        for (const v of allViolations) {
+            if ((v.severity ?? -1) > (severityByRule[v.ruleName] ?? -1)) {
+                severityByRule[v.ruleName] = v.severity;
+            }
+            if ((v.duration ?? -1) > (durationByRule[v.ruleName] ?? -1)) {
+                durationByRule[v.ruleName] = v.duration;
+            }
+        }
+        const sortedStats = [...activeStats].sort((a, b) =>
+            (severityByRule[b[0]] ?? 0) - (severityByRule[a[0]] ?? 0) ||
+            (durationByRule[b[0]] ?? 0) - (durationByRule[a[0]] ?? 0) ||
+            a[0].localeCompare(b[0])
+        );
+        const statsTooltip =
+            sortedStats.length > 1 && infoIcon
+                ? `<span class="ioh-analysis-stats-tooltip" title="">${infoIcon}<span class="ioh-analysis-stats-tooltip__panel" role="tooltip">${sortedStats
+                    .map(([name, count]) =>
+                        `<span class="ioh-analysis-stats-tooltip__row"><span class="ioh-analysis-stats-tooltip__name">${this.utils.escapeHtml(name)}</span><span class="ioh-analysis-stats-tooltip__count">${count}</span></span>`
+                    )
+                    .join('')}</span></span>`
+                : '';
+
         const htmlResponse = `
                 <div class="ioh-analysis-grid">
                     <div class="ioh-analysis-row">
@@ -5027,9 +5046,8 @@ class TicketService {
                     </div>
                     <div class="ioh-analysis-row">
                         <div class="ioh-analysis-label">${reason}<span></span></div>
-                        <div class="ioh-analysis-value">
-                            <strong>${this.utils.escapeHtml(finalName)}</strong>
-                            ${activityChipsHTML ? `<div class="ioh-analysis-chips">${activityChipsHTML}</div>` : ''}
+                        <div class="ioh-analysis-value ioh-analysis-value--reason">
+                            <strong>${this.utils.escapeHtml(finalName)}</strong>${statsTooltip}
                         </div>
                     </div>
                     <div class="ioh-analysis-row ioh-analysis-row--verdict">
