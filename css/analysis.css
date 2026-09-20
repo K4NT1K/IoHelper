@@ -252,7 +252,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 9px 17px;
+    gap: 8px;
+    padding: 6px 14px 6px 8px;
     min-height: 38px;
     border-radius: 10px;
     font-size: 14px;
@@ -263,6 +264,7 @@
 }
 
 .ioh-ticket-issue-mute {
+    --ioh-tone: var(--color-warning, #f59e0b);
     background: color-mix(in srgb, var(--color-warning, #f59e0b) 45%, var(--color-bg-card, #1e293b));
     color: var(--color-text, #f8fafc);
 }
@@ -274,6 +276,7 @@
 }
 
 .ioh-ticket-issue-ban {
+    --ioh-tone: var(--color-danger, #ef4444);
     background: color-mix(in srgb, var(--color-danger, #ef4444) 45%, var(--color-bg-card, #1e293b));
     color: var(--color-text, #f8fafc);
 }
@@ -287,4 +290,24 @@
 .ioh-ticket-issue-mute:active,
 .ioh-ticket-issue-ban:active {
     transform: scale(0.98);
+}
+
+.ioh-ticket-issue-mute .ioh-icon-box,
+.ioh-ticket-issue-ban .ioh-icon-box {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: color-mix(in srgb, #fff 8%, transparent);
+    color: var(--color-text, #f8fafc);
+}
+
+.ioh-ticket-issue-mute .ioh-icon-box .ioh-badge-icon,
+.ioh-ticket-issue-ban .ioh-icon-box .ioh-badge-icon {
+    width: 15px;
+    height: 15px;
+}
+
+.ioh-ticket-issue-label {
+    line-height: 1;
 }

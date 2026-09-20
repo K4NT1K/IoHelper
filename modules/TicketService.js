@@ -111,11 +111,13 @@ export class TicketService {
             info: infoIcon,
             punishment,
             chatError,
-            shield
+            shield,
+            done
         } = analysisIcons;
         const banIcon = analysisIcons.ban || chatError;
         const muteIcon = analysisIcons.mute || chatError;
         const warningIcon = analysisIcons.warning || chatError;
+        const doneIcon = done || shield || chatError;
 
         const muteHistoryBlock = blocks.mute;
         const banHistoryBlock = blocks.ban;
@@ -175,7 +177,7 @@ export class TicketService {
             this.badgeService.updateInfoBadge(
                 'helper-suggest-badge',
                 'muted',
-                `<div class="ioh-badge-row">${chatError}<span>ЧАТ ПУСТ</span></div>`,
+                `<div class="ioh-badge-row"><span class="ioh-icon-box">${chatError}</span><span>ЧАТ ПУСТ</span></div>`,
                 textarea
             );
             return {kind: 'none'};
@@ -213,7 +215,7 @@ export class TicketService {
             this.badgeService.updateInfoBadge(
                 'helper-suggest-badge',
                 'success',
-                `<div class="ioh-badge-row">${shield}<span>НЕТ НАРУШЕНИЙ ${activityHTML}</span></div>`,
+                `<div class="ioh-badge-row">${doneIcon}<span>НЕТ НАРУШЕНИЙ ${activityHTML}</span></div>`,
                 textarea
             );
             return {kind: 'none'};
