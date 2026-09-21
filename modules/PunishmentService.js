@@ -627,38 +627,51 @@ export class PunishmentService {
         this.boundSteamIdInputs.add(steamInput);
 
         const handleSteamIdChange = () => {
-            if (this.hasUserDurationOverride(reasonSelect)) {
-                return;
-            }
-
-            const timeControl = dialog.querySelector('#mute-time');
-            if (!timeControl) {
-                return;
-            }
-
-            const suggested = this.ticketService?.suggestedMuteReason?.label;
-            const currentReason = this.getReasonLabel(reasonSelect);
-            const reasonMatchesSuggested = Boolean(
-                suggested
-                && this.normalizePunishmentReason(currentReason)
-                    === this.normalizePunishmentReason(suggested)
-            );
-
-            // Only (re)apply analysis when reason is still default / not yet suggested.
-            if (!reasonMatchesSuggested
-                && this.applySuggestedMuteReason(reasonSelect, timeControl, dialog)) {
-                return;
-            }
-
-            if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
-                return;
-            }
-
-            void this.applyMuteListboxDuration(reasonSelect, timeControl);
+            // paste fires before value is committed; defer to the next task.
+            queueMicrotask(() => {
+                void this.handleMuteSteamIdChange(dialog, reasonSelect);
+            });
         };
 
         steamInput.addEventListener('input', handleSteamIdChange);
         steamInput.addEventListener('paste', handleSteamIdChange);
+    }
+
+    async handleMuteSteamIdChange(dialog, reasonSelect) {
+        if (!this.enabled || this.hasUserDurationOverride(reasonSelect)) {
+            return;
+        }
+
+        const liveDialog = this.findOpenMuteDialog() || dialog;
+        if (!liveDialog?.isConnected) {
+            return;
+        }
+
+        const liveReason = liveDialog.querySelector('#mute-reason') || reasonSelect;
+        const timeControl = liveDialog.querySelector('#mute-time');
+        if (!liveReason || !timeControl) {
+            return;
+        }
+
+        // Site may replace #mute-time when resolving offender X2 history.
+        this.bindTimeSelectListener(liveReason, timeControl);
+        this.observeMuteTimeOptions(liveReason, timeControl);
+
+        const suggested = this.ticketService?.suggestedMuteReason?.label;
+        const currentReason = this.getReasonLabel(liveReason);
+        const reasonMatchesSuggested = Boolean(
+            suggested
+            && this.normalizePunishmentReason(currentReason)
+                === this.normalizePunishmentReason(suggested)
+        );
+
+        if (!reasonMatchesSuggested) {
+            await this.applySuggestedMuteReason(liveReason, timeControl, liveDialog);
+        }
+
+        // One re-apply after Steam ID paste (site remounts X2 options and may
+        // clear the value set on an empty form). No delay settle loop.
+        await this.applyMuteListboxDuration(liveReason, timeControl, { force: true });
     }
 
     bindTimeSelectListener(reasonSelect, timeControl) {
@@ -862,7 +875,7 @@ export class PunishmentService {
         return false;
     }
 
-    async applyMuteListboxDuration(reasonSelect, timeControl) {
+    async applyMuteListboxDuration(reasonSelect, timeControl, { force = false } = {}) {
         if (!this.enabled || !reasonSelect?.isConnected || !timeControl?.isConnected) {
             return false;
         }
@@ -874,7 +887,7 @@ export class PunishmentService {
         }
 
         const dialog = reasonSelect.closest('[role="dialog"]') || this.findOpenMuteDialog();
-        if (this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
+        if (!force && this.isMuteDurationAlreadyApplied(reasonSelect, timeControl, dialog)) {
             return false;
         }
 

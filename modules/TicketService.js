@@ -103,7 +103,11 @@ export class TicketService {
         }
 
         const scope = this.getTicketScopeRoot(textarea);
-        const blocks = this.getHistoryBlocks(scope);
+        if (!this.isChatHistorySettledScoped(scope)) {
+            return {kind: 'pending'};
+        }
+
+        const blocks = this.getHistoryBlocks(scope, {force: true});
         const analysisIcons = this.getAnalysisIcons();
         const {
             triggers,

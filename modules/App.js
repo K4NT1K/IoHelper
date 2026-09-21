@@ -941,8 +941,14 @@ export class App {
         if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
 
         this.domCoordinator.notify('chatChanged');
+
+        const settled = await this.ticketService.waitForSettledChatHistory(textarea);
+        if (!settled) {
+            console.log('[Helper] ticket chat analysis: history not settled, skip voice-fallback path');
+        }
+
         const result = await this.ticketService.processTicketRules(textarea);
-        this.ticketService.maybeAutoConnectAfterChatAnalysis(result);
+        await this.ticketService.maybeAutoConnectAfterChatAnalysis(result, textarea);
     }
 
     _getHighlightTargetRows() {
