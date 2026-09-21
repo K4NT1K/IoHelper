@@ -9,8 +9,8 @@
       "showSteamAccountCreationDate": true,
       "showFaceitElo": true,
       "autoPunishmentDuration": true,
-      "trackOffenderServer": false,
-      "showOffenderVipBadge": false,
+      "trackOffenderServer": true,
+      "showOffenderVipBadge": true,
       "autoConnectServer": false,
       "scanSchedulePage": false,
       "squareTickets": false
@@ -328,7 +328,6 @@
       "76561199104418138": "violento123",
       "76561199791345052": "koteikkaa.LUMI",
       "76561198414467994": "Satoshi",
-      "76561199151236752": "ZetikBB",
       "76561198454420655": "whydidudie",
       "76561199490916594": "selfffq",
       "76561198375770974": "weefy",
