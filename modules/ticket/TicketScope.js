@@ -302,7 +302,7 @@ export const TicketScopeMethods = {
         return rows.length > 0;
     },
 
-    async waitForSettledChatHistory(textarea, {timeoutMs = 2000, pollMs = 120} = {}) {
+    async waitForSettledChatHistory(textarea, {timeoutMs = 3000, pollMs = 120} = {}) {
         if (!textarea || !this.document.contains(textarea)) {
             return false;
         }

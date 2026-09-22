@@ -128,27 +128,18 @@ export class TicketService {
         const chatHistoryBlock = blocks.chat;
         const warningHistoryBlock = blocks.warning;
         const cacheKey = this.getChatCacheKey(textarea);
+        const pathname = window.location.pathname;
 
-        const rows = Array.from(chatHistoryBlock?.querySelectorAll('tbody tr, tr') || [])
-            .filter(row => row.querySelector('td'));
-        const lastRow = rows[rows.length - 1];
-        const chatEmpty = this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
-        const warnPart = this.getWarningHistorySignaturePart(warningHistoryBlock);
+        // Pipeline: ban → mute → chat → covering warning → verdict.
+        // Active ban/mute short-circuit — do not scan chat or warnings.
+
         const activeBanRow = this.findActivePunishmentRow(banHistoryBlock);
-        const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
-        const banFp = activeBanRow ? this.getPunishmentRowFingerprint(activeBanRow) : '';
-        const muteFp = activeMuteRow ? this.getPunishmentRowFingerprint(activeMuteRow) : '';
-        const signature = chatEmpty
-            ? `${window.location.pathname}|empty|${warnPart}|ban:${banFp}|mute:${muteFp}`
-            : `${window.location.pathname}|${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}|${warnPart}|ban:${banFp}|mute:${muteFp}`;
-
-        const prevSignature = this.chatSignatureByKey.get(cacheKey);
-        if (prevSignature === signature) {
-            return {kind: 'unchanged'};
-        }
-        this.chatSignatureByKey.set(cacheKey, signature);
-
         if (activeBanRow) {
+            const signature = `${pathname}|ban:${this.getPunishmentRowFingerprint(activeBanRow)}`;
+            if (this.chatSignatureByKey.get(cacheKey) === signature) {
+                return {kind: 'unchanged'};
+            }
+            this.chatSignatureByKey.set(cacheKey, signature);
             this.clearSuggestedMuteReason();
             if (!this.shouldSkipActivePunishmentBadge('ban', activeBanRow, textarea)) {
                 this.badgeService.updateInfoBadge(
@@ -161,7 +152,13 @@ export class TicketService {
             return {kind: 'skip'};
         }
 
+        const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
         if (activeMuteRow) {
+            const signature = `${pathname}|mute:${this.getPunishmentRowFingerprint(activeMuteRow)}`;
+            if (this.chatSignatureByKey.get(cacheKey) === signature) {
+                return {kind: 'unchanged'};
+            }
+            this.chatSignatureByKey.set(cacheKey, signature);
             this.clearSuggestedMuteReason();
             if (!this.shouldSkipActivePunishmentBadge('mute', activeMuteRow, textarea)) {
                 this.badgeService.updateInfoBadge(
@@ -175,6 +172,20 @@ export class TicketService {
         }
 
         this.activePunishmentBadgeByKey.delete(cacheKey);
+
+        const rows = Array.from(chatHistoryBlock?.querySelectorAll('tbody tr, tr') || [])
+            .filter(row => row.querySelector('td'));
+        const lastRow = rows[rows.length - 1];
+        const chatEmpty = this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
+        const warnPart = this.getWarningHistorySignaturePart(warningHistoryBlock);
+        const signature = chatEmpty
+            ? `${pathname}|empty|${warnPart}`
+            : `${pathname}|${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}|${warnPart}`;
+
+        if (this.chatSignatureByKey.get(cacheKey) === signature) {
+            return {kind: 'unchanged'};
+        }
+        this.chatSignatureByKey.set(cacheKey, signature);
 
         if (chatEmpty) {
             this.clearSuggestedMuteReason();
@@ -191,6 +202,8 @@ export class TicketService {
         const analysis = this.analyzeChatRows(rows, lastMuteDate);
         let {allViolations, ruleCounters} = analysis;
 
+        // Covering warning needs chat triggers. Runs before dropSoloTrolling so a
+        // solo «завали» still matches «Не провоцируйте» in warning history.
         const coveringWarning = this.getCoveringWarningWithoutNewTriggers(warningHistoryBlock, allViolations);
         if (coveringWarning) {
             this.clearSuggestedMuteReason();

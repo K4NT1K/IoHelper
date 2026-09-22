@@ -57,34 +57,40 @@ export const VerdictMethods = {
         const toxicityCount = ruleCounters["Токсичность"] || 0;
         const insultCount = ruleCounters["Оскорбление"] || 0;
         const trollingCount = ruleCounters["Троллинг/провокация"] || 0;
+        const toxicityRule = this.rules.find(r => r.name === "Токсичность");
+        const winnerSeverity = this.getRuleSeverity(rule);
+        const toxicitySeverity = this.getRuleSeverity(toxicityRule);
 
-        if (toxicityCount > 0 || rule.name === "Токсичность") {
-            const toxicityRule = this.rules.find(r => r.name === "Токсичность");
-            finalName = "Токсичность";
-            finalDuration = toxicityRule?.duration ?? 720;
-            finalDurationStr = this.utils.formatDuration(finalDuration);
-            return {finalName, finalDuration, finalDurationStr};
-        }
+        // Collapse weaker chat mixes into toxicity / insult / trolling —
+        // but never override a more severe winner (Racism, Ads, …).
+        if (winnerSeverity <= toxicitySeverity) {
+            if (toxicityCount > 0 || rule.name === "Токсичность") {
+                finalName = "Токсичность";
+                finalDuration = toxicityRule?.duration ?? 720;
+                finalDurationStr = this.utils.formatDuration(finalDuration);
+                return {finalName, finalDuration, finalDurationStr};
+            }
 
-        if (insultCount > 2 && trollingCount > 2) {
-            finalName = "Токсичность";
-            finalDuration = this.rules.find(r => r.name === "Токсичность")?.duration ?? 720;
-            finalDurationStr = this.utils.formatDuration(finalDuration);
-            return {finalName, finalDuration, finalDurationStr};
-        }
+            if (insultCount > 2 && trollingCount > 2) {
+                finalName = "Токсичность";
+                finalDuration = toxicityRule?.duration ?? 720;
+                finalDurationStr = this.utils.formatDuration(finalDuration);
+                return {finalName, finalDuration, finalDurationStr};
+            }
 
-        if (insultCount > 1 && trollingCount > 1) {
-            finalName = "Оскорбление";
-            finalDuration = this.rules.find(r => r.name === "Оскорбление")?.duration ?? 360;
-            finalDurationStr = this.utils.formatDuration(finalDuration);
-            return {finalName, finalDuration, finalDurationStr};
-        }
+            if (insultCount > 1 && trollingCount > 1) {
+                finalName = "Оскорбление";
+                finalDuration = this.rules.find(r => r.name === "Оскорбление")?.duration ?? 360;
+                finalDurationStr = this.utils.formatDuration(finalDuration);
+                return {finalName, finalDuration, finalDurationStr};
+            }
 
-        if (insultCount > 0 && trollingCount > 2) {
-            finalName = "Троллинг/провокация";
-            finalDuration = this.rules.find(r => r.name === "Троллинг/провокация")?.duration ?? 360;
-            finalDurationStr = this.utils.formatDuration(finalDuration);
-            return {finalName, finalDuration, finalDurationStr};
+            if (insultCount > 0 && trollingCount > 2) {
+                finalName = "Троллинг/провокация";
+                finalDuration = this.rules.find(r => r.name === "Троллинг/провокация")?.duration ?? 360;
+                finalDurationStr = this.utils.formatDuration(finalDuration);
+                return {finalName, finalDuration, finalDurationStr};
+            }
         }
 
         if (rule.name === "Оскорбление") {

@@ -1586,7 +1586,7 @@ ${nextMessage}` : nextMessage;
       const rows = Array.from(chatHistoryBlock.querySelectorAll("tbody tr, tr")).filter((row) => row.querySelector("td"));
       return rows.length > 0;
     },
-    async waitForSettledChatHistory(textarea, { timeoutMs = 2e3, pollMs = 120 } = {}) {
+    async waitForSettledChatHistory(textarea, { timeoutMs = 3e3, pollMs = 120 } = {}) {
       if (!textarea || !this.document.contains(textarea)) {
         return false;
       }
@@ -1865,30 +1865,34 @@ ${nextMessage}` : nextMessage;
       const toxicityCount = ruleCounters["\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C"] || 0;
       const insultCount = ruleCounters["\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435"] || 0;
       const trollingCount = ruleCounters["\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F"] || 0;
-      if (toxicityCount > 0 || rule.name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C") {
-        const toxicityRule = this.rules.find((r) => r.name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C");
-        finalName = "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C";
-        finalDuration = toxicityRule?.duration ?? 720;
-        finalDurationStr = this.utils.formatDuration(finalDuration);
-        return { finalName, finalDuration, finalDurationStr };
-      }
-      if (insultCount > 2 && trollingCount > 2) {
-        finalName = "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C";
-        finalDuration = this.rules.find((r) => r.name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C")?.duration ?? 720;
-        finalDurationStr = this.utils.formatDuration(finalDuration);
-        return { finalName, finalDuration, finalDurationStr };
-      }
-      if (insultCount > 1 && trollingCount > 1) {
-        finalName = "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435";
-        finalDuration = this.rules.find((r) => r.name === "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435")?.duration ?? 360;
-        finalDurationStr = this.utils.formatDuration(finalDuration);
-        return { finalName, finalDuration, finalDurationStr };
-      }
-      if (insultCount > 0 && trollingCount > 2) {
-        finalName = "\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F";
-        finalDuration = this.rules.find((r) => r.name === "\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F")?.duration ?? 360;
-        finalDurationStr = this.utils.formatDuration(finalDuration);
-        return { finalName, finalDuration, finalDurationStr };
+      const toxicityRule = this.rules.find((r) => r.name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C");
+      const winnerSeverity = this.getRuleSeverity(rule);
+      const toxicitySeverity = this.getRuleSeverity(toxicityRule);
+      if (winnerSeverity <= toxicitySeverity) {
+        if (toxicityCount > 0 || rule.name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C") {
+          finalName = "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C";
+          finalDuration = toxicityRule?.duration ?? 720;
+          finalDurationStr = this.utils.formatDuration(finalDuration);
+          return { finalName, finalDuration, finalDurationStr };
+        }
+        if (insultCount > 2 && trollingCount > 2) {
+          finalName = "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C";
+          finalDuration = toxicityRule?.duration ?? 720;
+          finalDurationStr = this.utils.formatDuration(finalDuration);
+          return { finalName, finalDuration, finalDurationStr };
+        }
+        if (insultCount > 1 && trollingCount > 1) {
+          finalName = "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435";
+          finalDuration = this.rules.find((r) => r.name === "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435")?.duration ?? 360;
+          finalDurationStr = this.utils.formatDuration(finalDuration);
+          return { finalName, finalDuration, finalDurationStr };
+        }
+        if (insultCount > 0 && trollingCount > 2) {
+          finalName = "\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F";
+          finalDuration = this.rules.find((r) => r.name === "\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F")?.duration ?? 360;
+          finalDurationStr = this.utils.formatDuration(finalDuration);
+          return { finalName, finalDuration, finalDurationStr };
+        }
       }
       if (rule.name === "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435") {
         if (count > 4) {
@@ -5390,21 +5394,14 @@ ${nextMessage}` : nextMessage;
       const chatHistoryBlock = blocks.chat;
       const warningHistoryBlock = blocks.warning;
       const cacheKey = this.getChatCacheKey(textarea);
-      const rows = Array.from(chatHistoryBlock?.querySelectorAll("tbody tr, tr") || []).filter((row) => row.querySelector("td"));
-      const lastRow = rows[rows.length - 1];
-      const chatEmpty = this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
-      const warnPart = this.getWarningHistorySignaturePart(warningHistoryBlock);
+      const pathname = window.location.pathname;
       const activeBanRow = this.findActivePunishmentRow(banHistoryBlock);
-      const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
-      const banFp = activeBanRow ? this.getPunishmentRowFingerprint(activeBanRow) : "";
-      const muteFp = activeMuteRow ? this.getPunishmentRowFingerprint(activeMuteRow) : "";
-      const signature = chatEmpty ? `${window.location.pathname}|empty|${warnPart}|ban:${banFp}|mute:${muteFp}` : `${window.location.pathname}|${rows.length}|${(lastRow.innerText || "").trim().slice(0, 220)}|${warnPart}|ban:${banFp}|mute:${muteFp}`;
-      const prevSignature = this.chatSignatureByKey.get(cacheKey);
-      if (prevSignature === signature) {
-        return { kind: "unchanged" };
-      }
-      this.chatSignatureByKey.set(cacheKey, signature);
       if (activeBanRow) {
+        const signature2 = `${pathname}|ban:${this.getPunishmentRowFingerprint(activeBanRow)}`;
+        if (this.chatSignatureByKey.get(cacheKey) === signature2) {
+          return { kind: "unchanged" };
+        }
+        this.chatSignatureByKey.set(cacheKey, signature2);
         this.clearSuggestedMuteReason();
         if (!this.shouldSkipActivePunishmentBadge("ban", activeBanRow, textarea)) {
           this.badgeService.updateInfoBadge(
@@ -5416,7 +5413,13 @@ ${nextMessage}` : nextMessage;
         }
         return { kind: "skip" };
       }
+      const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
       if (activeMuteRow) {
+        const signature2 = `${pathname}|mute:${this.getPunishmentRowFingerprint(activeMuteRow)}`;
+        if (this.chatSignatureByKey.get(cacheKey) === signature2) {
+          return { kind: "unchanged" };
+        }
+        this.chatSignatureByKey.set(cacheKey, signature2);
         this.clearSuggestedMuteReason();
         if (!this.shouldSkipActivePunishmentBadge("mute", activeMuteRow, textarea)) {
           this.badgeService.updateInfoBadge(
@@ -5429,6 +5432,15 @@ ${nextMessage}` : nextMessage;
         return { kind: "skip" };
       }
       this.activePunishmentBadgeByKey.delete(cacheKey);
+      const rows = Array.from(chatHistoryBlock?.querySelectorAll("tbody tr, tr") || []).filter((row) => row.querySelector("td"));
+      const lastRow = rows[rows.length - 1];
+      const chatEmpty = this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
+      const warnPart = this.getWarningHistorySignaturePart(warningHistoryBlock);
+      const signature = chatEmpty ? `${pathname}|empty|${warnPart}` : `${pathname}|${rows.length}|${(lastRow.innerText || "").trim().slice(0, 220)}|${warnPart}`;
+      if (this.chatSignatureByKey.get(cacheKey) === signature) {
+        return { kind: "unchanged" };
+      }
+      this.chatSignatureByKey.set(cacheKey, signature);
       if (chatEmpty) {
         this.clearSuggestedMuteReason();
         this.badgeService.updateInfoBadge(
