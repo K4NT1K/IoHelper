@@ -5499,7 +5499,7 @@ ${nextMessage}` : nextMessage;
     </span>`).join('<span class="ioh-trigger-separator">,</span> ');
       let finalDurationForDisplay = finalDurationStr;
       if (finalDuration > 0) {
-        const recentSameReasonMute = this.findRecentMuteForReasons(muteHistoryBlock, [finalName, mostSevere.rule.name]);
+        const recentSameReasonMute = this.findRecentMuteForReasons(muteHistoryBlock, [finalName]);
         if (recentSameReasonMute) {
           finalDurationForDisplay = this.utils.formatDuration(recentSameReasonMute.duration * 2);
         }

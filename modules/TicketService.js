@@ -263,7 +263,9 @@ export class TicketService {
 
         let finalDurationForDisplay = finalDurationStr;
         if (finalDuration > 0) {
-            const recentSameReasonMute = this.findRecentMuteForReasons(muteHistoryBlock, [finalName, mostSevere.rule.name]);
+            // X2 only for the final verdict reason — not mostSevere.rule.name
+            // (e.g. insult+trolling → «Троллинг/провокация» must not use an insult mute).
+            const recentSameReasonMute = this.findRecentMuteForReasons(muteHistoryBlock, [finalName]);
             if (recentSameReasonMute) {
                 finalDurationForDisplay = this.utils.formatDuration(recentSameReasonMute.duration * 2);
             }
