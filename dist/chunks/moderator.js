@@ -1,4 +1,4 @@
-// IoHelper/modules/shared/dom.js
+// modules/shared/dom.js
 function markIoh(el) {
   if (el && el.nodeType === 1) {
     el.setAttribute("data-ioh", "1");
@@ -6,12 +6,12 @@ function markIoh(el) {
   return el;
 }
 
-// IoHelper/modules/ConfigService.js
+// modules/ConfigService.js
 var ConfigService = class {
   static LOCAL_KEY = "helperConfig";
   static FETCHED_AT_KEY = "helperConfigFetchedAt";
   static FETCH_TTL_MS = 3364e3;
-  static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/CYBERSHOKE/refs/heads/main/IoHelper/config.json";
+  static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/IoHelper/refs/heads/main/config.json";
   static async load(chrome) {
     const local = await chrome.storage.local.get([
       this.LOCAL_KEY,
@@ -51,7 +51,7 @@ var ConfigService = class {
   }
 };
 
-// IoHelper/modules/ModeratorService.js
+// modules/ModeratorService.js
 var ModeratorService = class _ModeratorService {
   static WEEKDAY_LABELS = [
     "\u041F\u043E\u043D\u0435\u0434\u0435\u043B\u044C\u043D\u0438\u043A",

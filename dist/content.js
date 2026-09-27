@@ -1,10 +1,10 @@
 (() => {
-  // IoHelper/modules/ConfigService.js
+  // modules/ConfigService.js
   var ConfigService = class {
     static LOCAL_KEY = "helperConfig";
     static FETCHED_AT_KEY = "helperConfigFetchedAt";
     static FETCH_TTL_MS = 3364e3;
-    static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/CYBERSHOKE/refs/heads/main/IoHelper/config.json";
+    static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/IoHelper/refs/heads/main/config.json";
     static async load(chrome2) {
       const local = await chrome2.storage.local.get([
         this.LOCAL_KEY,
@@ -44,7 +44,7 @@
     }
   };
 
-  // IoHelper/modules/Utils.js
+  // modules/Utils.js
   var Utils = class {
     constructor({ document: document2 }) {
       this.document = document2;
@@ -220,7 +220,7 @@
     }
   };
 
-  // IoHelper/modules/shared/dom.js
+  // modules/shared/dom.js
   function markIoh(el) {
     if (el && el.nodeType === 1) {
       el.setAttribute("data-ioh", "1");
@@ -243,7 +243,7 @@
     return setTimeout(fn, 0);
   }
 
-  // IoHelper/modules/BadgeService.js
+  // modules/BadgeService.js
   var BadgeService = class {
     constructor({ document: document2 }) {
       this.document = document2;
@@ -440,7 +440,7 @@
     }
   };
 
-  // IoHelper/modules/PanelService.js
+  // modules/PanelService.js
   var PanelService = class {
     constructor({ document: document2 }) {
       this.document = document2;
@@ -602,7 +602,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/MessageService.js
+  // modules/MessageService.js
   var MessageService = class _MessageService {
     static CYBERSHOKE_HOURS_RE = /CYBERSHOKE:\s*(\d+)ч/i;
     static DUPLICATE_SERVER_COLOR_COUNT = 7;
@@ -899,7 +899,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/SitePunishmentBridge.js
+  // modules/SitePunishmentBridge.js
   var SitePunishmentBridge = class _SitePunishmentBridge {
     static PANELS = {
       mute: {
@@ -1195,7 +1195,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/shared/RuleMatcher.js
+  // modules/shared/RuleMatcher.js
   function escapeRegExp(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -1337,7 +1337,7 @@ ${nextMessage}` : nextMessage;
     return violations;
   }
 
-  // IoHelper/modules/ticket/TicketScope.js
+  // modules/ticket/TicketScope.js
   var TicketScopeMethods = {
     getChatCacheKey(textarea) {
       const scope = this.getTicketScopeRoot(textarea);
@@ -1760,7 +1760,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/ChatAnalyzer.js
+  // modules/ticket/ChatAnalyzer.js
   var ChatAnalyzerMethods = {
     resetChatAnalysisCache(textarea) {
       if (textarea) {
@@ -1816,7 +1816,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/Verdict.js
+  // modules/ticket/Verdict.js
   var VerdictMethods = {
     findRecentMuteForReasons(muteHistoryBlock, reasonNames) {
       if (!muteHistoryBlock) return null;
@@ -1995,7 +1995,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/AnalysisBadge.js
+  // modules/ticket/AnalysisBadge.js
   var AnalysisBadgeMethods = {
     setSuggestedMuteReason(steamId, label) {
       this.suggestedMuteReason = label ? { steamId: steamId || "", label } : null;
@@ -2049,7 +2049,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/ActivePunishment.js
+  // modules/ticket/ActivePunishment.js
   var ActivePunishmentMethods = {
     LIFTED_STATUS_RGB: "21, 141, 183",
     ACTIVE_STATUS_RGBS: ["234, 179, 8", "250, 204, 21", "255, 193, 7"],
@@ -2166,7 +2166,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/AutoConnect.js
+  // modules/ticket/AutoConnect.js
   var AutoConnectMethods = {
     clearAutoConnectedServers() {
       this.autoConnectedServerIps.clear();
@@ -2564,7 +2564,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/QueueCards.js
+  // modules/ticket/QueueCards.js
   var QueueCardsMethods = {
     findComplaintQueueTables() {
       const tables = Array.from(this.document.querySelectorAll("table"));
@@ -2612,7 +2612,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/PunishmentPanel.js
+  // modules/ticket/PunishmentPanel.js
   var PunishmentPanelMethods = {
     _isExtensionPunishmentButton(button) {
       return button?.id === this.TICKET_MUTE_BUTTON_ID || button?.id === this.TICKET_BAN_BUTTON_ID || Boolean(button?.closest(`#${this.TICKET_PUNISHMENT_ACTIONS_ID}`));
@@ -3912,7 +3912,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/OffenderProfile.js
+  // modules/ticket/OffenderProfile.js
   var OffenderProfileMethods = {
     clearSteamAccountCreationDate() {
       this.document.querySelectorAll(".ioh-account-created").forEach((node) => node.remove());
@@ -4189,7 +4189,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/ticket/OffenderTracking.js
+  // modules/ticket/OffenderTracking.js
   var OffenderTrackingMethods = {
     extractServerLabel(result) {
       const server = result?.server;
@@ -4287,6 +4287,9 @@ ${nextMessage}` : nextMessage;
     extractProfileVerified(result) {
       return Boolean(result?.verification?.profile);
     },
+    extractIsModerator(result) {
+      return Boolean(result?.verification?.moderation);
+    },
     parseUserDataResult(result) {
       return {
         serverIp: this.extractServerIpFromUserData(result),
@@ -4295,7 +4298,8 @@ ${nextMessage}` : nextMessage;
         isBanned: this.extractActiveBan(result),
         isMuted: this.extractActiveMute(result),
         vipName: this.extractVipName(result),
-        profileVerified: this.extractProfileVerified(result)
+        profileVerified: this.extractProfileVerified(result),
+        isModerator: this.extractIsModerator(result)
       };
     },
     getCachedUserData(steamId, ttlMs = 5e3) {
@@ -4318,6 +4322,7 @@ ${nextMessage}` : nextMessage;
         isMuted: Boolean(data.isMuted),
         vipName: data.vipName ?? null,
         profileVerified: Boolean(data.profileVerified),
+        isModerator: Boolean(data.isModerator),
         fetchedAt: Date.now()
       });
     },
@@ -4652,6 +4657,17 @@ ${nextMessage}` : nextMessage;
       });
       this.document.querySelectorAll(".ioh-profile-verified").forEach((el) => el.remove());
     },
+    clearOffenderModeratorHighlights() {
+      this.document.querySelectorAll("tr.ioh-highlighted-moderator").forEach((row) => {
+        row.classList.remove("ioh-highlighted-moderator");
+      });
+      this.document.querySelectorAll(
+        'a[href*="cybershoke.net/"][data-ioh-moderator-badge], a[href*="cybershoke.net/"][data-ioh-moderator-source]'
+      ).forEach((link) => {
+        this.removeOffenderModeratorBadge(link);
+      });
+      this.document.querySelectorAll(".ioh-moderator-badge").forEach((el) => el.remove());
+    },
     refreshOffenderProfileVerification() {
       this.document.querySelectorAll('a[href*="cybershoke.net/"][data-ioh-profile-verified-source]').forEach((link) => {
         this.applyOffenderProfileVerification(link, true);
@@ -4702,6 +4718,65 @@ ${nextMessage}` : nextMessage;
       markIoh(badge);
       nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
       offenderLink.dataset.iohProfileVerified = "1";
+    },
+    removeOffenderModeratorBadge(offenderLink) {
+      const cell = offenderLink?.closest("td");
+      const ctx = this.resolveOffenderVipContext(offenderLink);
+      const scope = cell || ctx?.textColumn || offenderLink?.parentElement;
+      scope?.querySelectorAll(".ioh-moderator-badge").forEach((el) => el.remove());
+      if (offenderLink) {
+        delete offenderLink.dataset.iohModeratorBadge;
+        delete offenderLink.dataset.iohModeratorSource;
+      }
+    },
+    applyOffenderModeratorHighlight(row, offenderLink, isModerator) {
+      if (offenderLink) {
+        if (isModerator) {
+          offenderLink.dataset.iohModeratorSource = "1";
+        } else {
+          delete offenderLink.dataset.iohModeratorSource;
+        }
+      }
+      const show = this.settings.features?.trackOffenderServer && Boolean(isModerator);
+      if (row) {
+        row.classList.toggle("ioh-highlighted-moderator", show);
+      }
+      if (!show) {
+        this.removeOffenderModeratorBadge(offenderLink);
+        return;
+      }
+      if (!offenderLink) {
+        return;
+      }
+      const ctx = this.resolveOffenderVipContext(offenderLink);
+      const nameButton = ctx?.nameButton;
+      if (!nameButton?.parentNode) {
+        return;
+      }
+      const nameRow = nameButton.closest(".ioh-vip-name-row");
+      const insertParent = nameRow || nameButton.parentElement;
+      const existingOurs = insertParent?.querySelector(":scope > .ioh-moderator-badge") || ctx?.textColumn?.querySelector(".ioh-moderator-badge");
+      if (existingOurs) {
+        offenderLink.dataset.iohModeratorBadge = "1";
+        return;
+      }
+      insertParent?.querySelectorAll(":scope > .ioh-profile-verified").forEach((el) => el.remove());
+      ctx?.textColumn?.querySelectorAll(".ioh-profile-verified").forEach((el) => el.remove());
+      delete offenderLink.dataset.iohProfileVerified;
+      const iconSvg = window.Icons?.admin;
+      if (!iconSvg) {
+        return;
+      }
+      const template = this.document.createElement("template");
+      template.innerHTML = iconSvg.trim();
+      const badge = template.content.firstElementChild;
+      if (!badge) {
+        return;
+      }
+      badge.classList.add("ioh-admin-icon", "ioh-moderator-badge");
+      markIoh(badge);
+      nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
+      offenderLink.dataset.iohModeratorBadge = "1";
     },
     resolveOffenderVipContext(offenderLink) {
       if (!offenderLink) {
@@ -5238,7 +5313,7 @@ ${nextMessage}` : nextMessage;
             this.setCachedUserData(targetSteamId, userData);
           }
           const actionState = this.rowActionIsInReview(targetRow) ? "review" : targetRow.querySelector(".ioh-punishment-action") ? "custom" : "accept";
-          const snapshotKey = `${targetSteamId}|${userData.serverIp || ""}|${userData.vipName || ""}|${userData.profileVerified ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
+          const snapshotKey = `${targetSteamId}|${userData.serverIp || ""}|${userData.vipName || ""}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
           if (!this._offenderRowSnapshots) {
             this._offenderRowSnapshots = /* @__PURE__ */ new WeakMap();
           }
@@ -5256,6 +5331,7 @@ ${nextMessage}` : nextMessage;
             this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
             this.applyOffenderPunishmentHighlight(targetRow, userData);
             this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
+            this.applyOffenderModeratorHighlight(targetRow, offenderLinkToUpdate, userData.isModerator);
             this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
             this.applyOffenderMuteBanIcons(offenderLinkToUpdate, targetRow, userData);
           });
@@ -5287,7 +5363,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/TicketService.js
+  // modules/TicketService.js
   var TicketService = class {
     constructor({ document: document2, utils, badgeService, settings, rules, muteExceptions = {}, chrome: chrome2 = null }) {
       this.document = document2;
@@ -5669,7 +5745,7 @@ ${nextMessage}` : nextMessage;
     OffenderTrackingMethods
   );
 
-  // IoHelper/modules/PunishmentService.js
+  // modules/PunishmentService.js
   var PunishmentService = class {
     constructor({ document: document2, durations, utils = null, ticketService = null }) {
       this.document = document2;
@@ -6779,7 +6855,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/DOMCoordinator.js
+  // modules/DOMCoordinator.js
   var DOMCoordinator = class {
     constructor(app) {
       this.app = app;
@@ -7193,7 +7269,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/modules/App.js
+  // modules/App.js
   var App = class {
     constructor({ window: window2, document: document2, chrome: chrome2, config }) {
       this.window = window2;
@@ -7484,6 +7560,7 @@ ${nextMessage}` : nextMessage;
       }
       if (!nextFeatures.trackOffenderServer && previousFeatures.trackOffenderServer) {
         this.ticketService.clearOffenderProfileVerification();
+        this.ticketService.clearOffenderModeratorHighlights();
       }
       const vipStatusesChanged = JSON.stringify(previousSettings?.offenderVipStatuses || []) !== JSON.stringify(nextSettings.offenderVipStatuses || []);
       const vipBadgeReenabled = !previousFeatures.showOffenderVipBadge && nextFeatures.showOffenderVipBadge !== false;
@@ -8011,7 +8088,7 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // IoHelper/content.js
+  // content.js
   chrome.storage.local.get(["scriptEnabled", "helperSettings"], (result) => {
     const isEnabled = result.scriptEnabled !== false;
     if (!isEnabled) {

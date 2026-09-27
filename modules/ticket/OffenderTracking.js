@@ -123,6 +123,10 @@ export const OffenderTrackingMethods = {
         return Boolean(result?.verification?.profile);
     },
 
+    extractIsModerator(result) {
+        return Boolean(result?.verification?.moderation);
+    },
+
     parseUserDataResult(result) {
         return {
             serverIp: this.extractServerIpFromUserData(result),
@@ -131,7 +135,8 @@ export const OffenderTrackingMethods = {
             isBanned: this.extractActiveBan(result),
             isMuted: this.extractActiveMute(result),
             vipName: this.extractVipName(result),
-            profileVerified: this.extractProfileVerified(result)
+            profileVerified: this.extractProfileVerified(result),
+            isModerator: this.extractIsModerator(result)
         };
     },
 
@@ -158,6 +163,7 @@ export const OffenderTrackingMethods = {
             isMuted: Boolean(data.isMuted),
             vipName: data.vipName ?? null,
             profileVerified: Boolean(data.profileVerified),
+            isModerator: Boolean(data.isModerator),
             fetchedAt: Date.now()
         });
     },
@@ -573,6 +579,18 @@ export const OffenderTrackingMethods = {
         this.document.querySelectorAll('.ioh-profile-verified').forEach(el => el.remove());
     },
 
+    clearOffenderModeratorHighlights() {
+        this.document.querySelectorAll('tr.ioh-highlighted-moderator').forEach(row => {
+            row.classList.remove('ioh-highlighted-moderator');
+        });
+        this.document.querySelectorAll(
+            'a[href*="cybershoke.net/"][data-ioh-moderator-badge], a[href*="cybershoke.net/"][data-ioh-moderator-source]'
+        ).forEach(link => {
+            this.removeOffenderModeratorBadge(link);
+        });
+        this.document.querySelectorAll('.ioh-moderator-badge').forEach(el => el.remove());
+    },
+
     refreshOffenderProfileVerification() {
         this.document.querySelectorAll('a[href*="cybershoke.net/"][data-ioh-profile-verified-source]').forEach(link => {
             this.applyOffenderProfileVerification(link, true);
@@ -641,6 +659,81 @@ export const OffenderTrackingMethods = {
         markIoh(badge);
         nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
         offenderLink.dataset.iohProfileVerified = '1';
+    },
+
+    removeOffenderModeratorBadge(offenderLink) {
+        const cell = offenderLink?.closest('td');
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const scope = cell || ctx?.textColumn || offenderLink?.parentElement;
+
+        scope?.querySelectorAll('.ioh-moderator-badge').forEach(el => el.remove());
+
+        if (offenderLink) {
+            delete offenderLink.dataset.iohModeratorBadge;
+            delete offenderLink.dataset.iohModeratorSource;
+        }
+    },
+
+    applyOffenderModeratorHighlight(row, offenderLink, isModerator) {
+        if (offenderLink) {
+            if (isModerator) {
+                offenderLink.dataset.iohModeratorSource = '1';
+            } else {
+                delete offenderLink.dataset.iohModeratorSource;
+            }
+        }
+
+        const show = this.settings.features?.trackOffenderServer && Boolean(isModerator);
+
+        if (row) {
+            row.classList.toggle('ioh-highlighted-moderator', show);
+        }
+
+        if (!show) {
+            this.removeOffenderModeratorBadge(offenderLink);
+            return;
+        }
+
+        if (!offenderLink) {
+            return;
+        }
+
+        const ctx = this.resolveOffenderVipContext(offenderLink);
+        const nameButton = ctx?.nameButton;
+        if (!nameButton?.parentNode) {
+            return;
+        }
+
+        const nameRow = nameButton.closest('.ioh-vip-name-row');
+        const insertParent = nameRow || nameButton.parentElement;
+        const existingOurs = insertParent?.querySelector(':scope > .ioh-moderator-badge')
+            || ctx?.textColumn?.querySelector('.ioh-moderator-badge');
+        if (existingOurs) {
+            offenderLink.dataset.iohModeratorBadge = '1';
+            return;
+        }
+
+        // Prefer moderator badge over profile-verified checkmark next to nick.
+        insertParent?.querySelectorAll(':scope > .ioh-profile-verified').forEach(el => el.remove());
+        ctx?.textColumn?.querySelectorAll('.ioh-profile-verified').forEach(el => el.remove());
+        delete offenderLink.dataset.iohProfileVerified;
+
+        const iconSvg = window.Icons?.admin;
+        if (!iconSvg) {
+            return;
+        }
+
+        const template = this.document.createElement('template');
+        template.innerHTML = iconSvg.trim();
+        const badge = template.content.firstElementChild;
+        if (!badge) {
+            return;
+        }
+
+        badge.classList.add('ioh-admin-icon', 'ioh-moderator-badge');
+        markIoh(badge);
+        nameButton.parentNode.insertBefore(badge, nameButton.nextSibling);
+        offenderLink.dataset.iohModeratorBadge = '1';
     },
 
     resolveOffenderVipContext(offenderLink) {
@@ -1329,7 +1422,7 @@ export const OffenderTrackingMethods = {
                 const actionState = this.rowActionIsInReview(targetRow)
                     ? 'review'
                     : (targetRow.querySelector('.ioh-punishment-action') ? 'custom' : 'accept');
-                const snapshotKey = `${targetSteamId}|${userData.serverIp || ''}|${userData.vipName || ''}|${userData.profileVerified ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
+                const snapshotKey = `${targetSteamId}|${userData.serverIp || ''}|${userData.vipName || ''}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
                 if (!this._offenderRowSnapshots) {
                     this._offenderRowSnapshots = new WeakMap();
                 }
@@ -1348,6 +1441,7 @@ export const OffenderTrackingMethods = {
                     this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
                     this.applyOffenderPunishmentHighlight(targetRow, userData);
                     this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
+                    this.applyOffenderModeratorHighlight(targetRow, offenderLinkToUpdate, userData.isModerator);
                     this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
                     this.applyOffenderMuteBanIcons(offenderLinkToUpdate, targetRow, userData);
                 });

@@ -1,3 +1,10 @@
 .idea/
 node_modules/
-IoHelper/siteDemonstration/
+.cursor/
+.prettierrc.yaml
+siteDemonstration/
+.ai/
+AGENTS.md
+IoHelperV2/
+dist/*.map
+scripts/

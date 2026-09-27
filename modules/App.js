@@ -358,6 +358,7 @@ export class App {
 
         if (!nextFeatures.trackOffenderServer && previousFeatures.trackOffenderServer) {
             this.ticketService.clearOffenderProfileVerification();
+            this.ticketService.clearOffenderModeratorHighlights();
         }
 
         const vipStatusesChanged = JSON.stringify(previousSettings?.offenderVipStatuses || [])

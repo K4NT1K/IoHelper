@@ -1,77 +1,76 @@
-Privacy Policy
+# Privacy Policy
 
-Effective date: July 2026
+**Effective date:** July 2026  
+**Last updated:** September 2026
 
-IO HELPER Privacy Policy
+This Privacy Policy describes how **IO HELPER**, a Chrome Manifest V3 browser extension for CYBERSHOKE moderators, handles information.
 
-IO HELPER is an extension developed exclusively for moderators of the CYBERSHOKE project.
+IO HELPER is developed for use on the official CYBERSHOKE moderation website (`cybershoke.net` and `cybershoke.ru`). It is not a general-purpose browsing tool.
 
-We respect your privacy and are committed to being transparent about how the extension works.
+## Summary
 
-Data Collection
+IO HELPER does not collect, store on remote servers, sell, rent, or share personal information about users of the extension. Processing that the extension performs to assist moderation happens locally in the user’s browser, except for the limited network requests listed below.
 
-IO HELPER does not collect, store, transmit, sell, or share any personal information.
+## Information we do not collect
 
-The extension does not collect:
+The extension does not collect, transmit, or retain:
 
-Personal information
-Email addresses
-Passwords
-Cookies
-Browsing history
-Financial information
-Location data
-Analytics or tracking data
-Data Processing
+- names, email addresses, or account credentials;
+- passwords;
+- cookies belonging to other sites;
+- browsing history outside the CYBERSHOKE moderation pages where the extension runs;
+- financial or payment data;
+- precise location data;
+- advertising, analytics, or telemetry identifiers.
 
-The extension processes information available on the CYBERSHOKE moderation website locally within your browser to provide its functionality, including:
+## Local processing
 
-Analyzing chat history for moderation assistance.
-Highlighting complaint triggers.
-Translating chat messages.
-Displaying moderator information.
-Automatically filling moderation templates.
-Managing interface elements.
-Detecting duplicate server reports.
+On CYBERSHOKE moderation pages, the extension reads information that is already visible in the page (for example chat history, ticket fields, and server links) in order to:
 
-This processing happens entirely on the user's device.
+- analyze chat history and suggest moderation outcomes;
+- highlight complaint triggers, duplicate servers, and new accounts;
+- translate non-Russian chat messages when that feature is enabled;
+- display moderator and offender context (VIP status, Steam account creation date, Faceit ELO);
+- fill moderation templates and punishment form fields;
+- auto-connect to a game server when the corresponding setting is enabled.
 
-Local Storage
+This processing runs on the user’s device.
 
-IO HELPER stores only extension settings and cached configuration data using the browser's local storage.
+## Local storage
 
-Examples include:
+IO HELPER stores only extension settings and cached configuration in the browser’s extension storage (`chrome.storage.local`), for example:
 
-User preferences.
-Feature settings.
-Cached moderation configuration downloaded from the official GitHub repository.
+- feature toggles and user preferences;
+- cached moderation configuration fetched from this project’s GitHub repository;
+- cached moderator list data used by schedule scanning and server highlighting.
 
-This data never leaves your browser.
+This data remains in the browser profile unless the user clears extension data or uninstalls the extension.
 
-Network Requests
+## Network requests
 
-The extension may connect to:
+The extension may make requests to:
 
-The official CYBERSHOKE moderation website.
-The official GitHub repository to download the latest configuration file.
-Translation services when the translation feature is enabled.
+- the official CYBERSHOKE moderation website (`*.cybershoke.net`, `*.cybershoke.ru`), including the user-data API used by offender tracking;
+- this project’s GitHub repository, to download the latest `config.json`;
+- FastMM (`mobile.fastmm.win`), to look up public Steam profile metadata (account creation date and Faceit ELO) when those features are enabled;
+- Google Translate (`translate.googleapis.com`) and MyMemory (`api.mymemory.translated.net`), when the chat translation feature is enabled.
 
-These requests are required solely for the extension's functionality.
+These requests exist only to support the features above. The extension does not send browsing history or unrelated personal data to these endpoints.
 
-Third-Party Services
+## Third-party services
 
-When the translation feature is enabled, translated text may be processed by a third-party translation service.
+If translation is enabled, message text is sent to the selected translation provider to obtain a translation. FastMM is queried only with the Steam identifier already present on the moderation page, when Steam/Faceit profile features are enabled.
 
-No additional personal information is intentionally transmitted.
+IO HELPER does not sell, rent, or otherwise share user data with third parties for advertising or analytics.
 
-Data Sharing
+## Permissions
 
-IO HELPER does not sell, rent, or share user data with third parties.
+The extension requests the `storage` permission to save settings locally, and host permissions only for the sites and APIs listed in the extension manifest.
 
-Changes
+## Changes
 
-This Privacy Policy may be updated when new features are added.
+This Privacy Policy may be updated when the extension’s features or network endpoints change. The updated text will be published in this repository.
 
-Contact
+## Contact
 
-If you have any questions regarding this Privacy Policy, please contact the extension developer through the official CYBERSHOKE project or the project's GitHub repository.
+Questions about this Privacy Policy can be opened as an issue in the project’s GitHub repository: [https://github.com/K4NT1K/IoHelper](https://github.com/K4NT1K/IoHelper).

@@ -4,7 +4,7 @@ export class ConfigService {
     static FETCHED_AT_KEY = "helperConfigFetchedAt";
     static FETCH_TTL_MS = 3364000;
 
-    static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/CYBERSHOKE/refs/heads/main/IoHelper/config.json";
+    static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/IoHelper/refs/heads/main/config.json";
 
     static async load(chrome) {
 
