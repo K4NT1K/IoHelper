@@ -6,5 +6,5 @@ siteDemonstration/
 .ai/
 AGENTS.md
 IoHelperV2/
-dist/*.map
+dist/**/*.map
 scripts/
