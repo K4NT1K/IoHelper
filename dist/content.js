@@ -1839,21 +1839,26 @@ ${nextMessage}` : nextMessage;
     },
     findMostSeverePunishment(ruleCounters) {
       let bestRule = null;
+      let bestIsMute = -1;
       let bestScore = -1;
       if (!Array.isArray(this.rules) || this.rules.length === 0) {
         return null;
       }
       this.rules.forEach((rule) => {
         const count = ruleCounters[rule.name] || 0;
-        if (count > 0) {
-          let score = this.getRuleSeverity(rule);
-          if (rule.name === "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435" && count > 4) {
-            score = 720;
-          }
-          if (score > bestScore) {
-            bestScore = score;
-            bestRule = { rule, count };
-          }
+        if (count <= 0) {
+          return;
+        }
+        const { finalDuration } = this.calculateFinalPunishment(rule, count, ruleCounters);
+        const isMute = finalDuration > 0 ? 1 : 0;
+        let score = this.getRuleSeverity(rule);
+        if (rule.name === "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435" && count > 4) {
+          score = 720;
+        }
+        if (isMute > bestIsMute || isMute === bestIsMute && score > bestScore) {
+          bestIsMute = isMute;
+          bestScore = score;
+          bestRule = { rule, count };
         }
       });
       return bestRule;

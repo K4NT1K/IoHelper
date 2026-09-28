@@ -27,6 +27,7 @@ export const VerdictMethods = {
 
     findMostSeverePunishment(ruleCounters) {
         let bestRule = null;
+        let bestIsMute = -1;
         let bestScore = -1;
 
         if (!Array.isArray(this.rules) || this.rules.length === 0) {
@@ -34,15 +35,23 @@ export const VerdictMethods = {
         }
         this.rules.forEach(rule => {
             const count = ruleCounters[rule.name] || 0;
-            if (count > 0) {
-                let score = this.getRuleSeverity(rule);
-                if (rule.name === "Оскорбление" && count > 4) {
-                    score = 720;
-                }
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestRule = {rule, count};
-                }
+            if (count <= 0) {
+                return;
+            }
+
+            // Mute for any reason beats a warning for a heavier reason
+            // (e.g. Racism×1 → warning vs Toxicity×N → mute → pick mute).
+            const {finalDuration} = this.calculateFinalPunishment(rule, count, ruleCounters);
+            const isMute = finalDuration > 0 ? 1 : 0;
+            let score = this.getRuleSeverity(rule);
+            if (rule.name === "Оскорбление" && count > 4) {
+                score = 720;
+            }
+
+            if (isMute > bestIsMute || (isMute === bestIsMute && score > bestScore)) {
+                bestIsMute = isMute;
+                bestScore = score;
+                bestRule = {rule, count};
             }
         });
 
