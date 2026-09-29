@@ -1294,45 +1294,43 @@ ${nextMessage}` : nextMessage;
       }
     };
   }
-  function detectSpamLinear(playerChatLog, spamRule, getSeverity) {
+  function detectSpamLinear(playerChatLog, spamRule, getSeverity, spamRules = {}) {
+    const intervalSec = Number(spamRules.interval) || 3;
+    const warningCount = Number(spamRules.warningCount) || 3;
     const violations = [];
+    const flushRun = (run) => {
+      if (run.length < warningCount) {
+        return;
+      }
+      const first = run[0];
+      violations.push({
+        rows: run.map((msg) => msg.row),
+        dupes: run.length,
+        raw: first.raw,
+        timeMs: first.time,
+        severity: getSeverity(spamRule),
+        duration: spamRule?.duration ?? 0
+      });
+    };
     for (const msgs of Object.values(playerChatLog)) {
       const sorted = [...msgs].sort((a, b) => a.time - b.time);
-      const windowCounts = /* @__PURE__ */ new Map();
-      let windowStart = 0;
-      for (let i = 0; i < sorted.length; i++) {
-        const current = sorted[i];
-        while (windowStart < i && (current.time - sorted[windowStart].time) / 1e3 > 5) {
-          const leaving = sorted[windowStart];
-          const left = windowCounts.get(leaving.text);
-          if (left) {
-            left.count -= 1;
-            if (left.count <= 0) {
-              windowCounts.delete(leaving.text);
-            }
-          }
-          windowStart += 1;
+      let run = [];
+      for (const current of sorted) {
+        if (run.length === 0) {
+          run = [current];
+          continue;
         }
-        let bucket = windowCounts.get(current.text);
-        if (!bucket) {
-          bucket = { count: 0, firstIndex: i, rows: [] };
-          windowCounts.set(current.text, bucket);
+        const prev = run[run.length - 1];
+        const sameText = current.text === prev.text;
+        const gapSec = (current.time - prev.time) / 1e3;
+        if (sameText && gapSec < intervalSec) {
+          run.push(current);
+          continue;
         }
-        bucket.count += 1;
-        bucket.rows.push(current.row);
-        if (bucket.count > 4) {
-          const first = sorted[bucket.firstIndex];
-          violations.push({
-            rows: [...bucket.rows],
-            dupes: bucket.count,
-            raw: first.raw,
-            timeMs: first.time,
-            severity: getSeverity(spamRule),
-            duration: spamRule?.duration ?? 0
-          });
-          break;
-        }
+        flushRun(run);
+        run = [current];
       }
+      flushRun(run);
     }
     return violations;
   }
@@ -1914,7 +1912,8 @@ ${nextMessage}` : nextMessage;
           finalDurationStr = "\u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435";
         }
       } else if (rule.name === "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442") {
-        if (count < 4) {
+        const muteCount = Number(this.spamRules?.muteCount) || 4;
+        if (count < muteCount) {
           finalDuration = 0;
           finalDurationStr = "\u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435";
         }
@@ -2018,7 +2017,58 @@ ${nextMessage}` : nextMessage;
     clearSuggestedMuteReason() {
       this.suggestedMuteReason = null;
     },
+    buildTriggerHtml(trigger) {
+      return `<span
+        class="ioh-trigger-tooltip ioh-trigger-link"
+        data-trigger-id="${trigger.id}"
+        data-full-msg="${this.utils.escapeHtml(trigger.fullMessage)}">
+        ${this.utils.escapeHtml(trigger.keyword)}
+    </span>`;
+    },
+    getTriggerSeparatorHtml() {
+      return '<span class="ioh-trigger-separator">,</span> ';
+    },
+    buildVisibleTriggersHtml() {
+      const sortedTriggers = this._sortedTriggers || [];
+      const visible = sortedTriggers.slice(0, this._visibleTriggerCount);
+      const separator = this.getTriggerSeparatorHtml();
+      let html = visible.map((trigger) => this.buildTriggerHtml(trigger)).join(separator);
+      if (sortedTriggers.length > this._visibleTriggerCount) {
+        html += `${separator}<span class="ioh-trigger-tooltip ioh-more-triggers">\u0435\u0449\u0451</span>`;
+      }
+      return html;
+    },
+    revealMoreTriggers(button) {
+      const all = this._sortedTriggers || [];
+      const step = Number(this.settings?.moreTriggers) || 10;
+      const from = this._visibleTriggerCount;
+      const to = Math.min(from + step, all.length);
+      const extra = all.slice(from, to);
+      if (!extra.length) {
+        this.removeMoreTriggersButton(button);
+        return;
+      }
+      const separator = this.getTriggerSeparatorHtml();
+      const html = extra.map((trigger) => this.buildTriggerHtml(trigger)).join(separator);
+      button.insertAdjacentHTML("beforebegin", `${separator}${html}`);
+      this._visibleTriggerCount = to;
+      if (to >= all.length) {
+        this.removeMoreTriggersButton(button);
+      }
+    },
+    removeMoreTriggersButton(button) {
+      const prev = button.previousElementSibling;
+      if (prev?.classList.contains("ioh-trigger-separator")) {
+        prev.remove();
+      }
+      button.remove();
+    },
     handleTriggerClick(e) {
+      const more = e.target.closest(".ioh-more-triggers");
+      if (more) {
+        this.revealMoreTriggers(more);
+        return;
+      }
       const trigger = e.target.closest(".ioh-trigger-link");
       if (!trigger) return;
       const target = this.triggerRows.get(trigger.dataset.triggerId);
@@ -2036,6 +2086,8 @@ ${nextMessage}` : nextMessage;
     clearTicketRuleBadge() {
       this.document.getElementById("helper-suggest-badge")?.remove();
       this.activePunishmentBadgeByKey.clear();
+      this._sortedTriggers = [];
+      this._visibleTriggerCount = 0;
       this.clearSuggestedMuteReason();
     },
     getAnalysisIcons() {
@@ -5386,12 +5438,13 @@ ${nextMessage}` : nextMessage;
 
   // modules/TicketService.js
   var TicketService = class {
-    constructor({ document: document2, utils, badgeService, settings, rules, muteExceptions = {}, chrome: chrome2 = null }) {
+    constructor({ document: document2, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome: chrome2 = null }) {
       this.document = document2;
       this.utils = utils;
       this.badgeService = badgeService;
       this.settings = settings;
       this._rules = rules;
+      this.spamRules = spamRules;
       this._muteExceptions = muteExceptions;
       this.chrome = chrome2;
       this._ruleMatcher = compileRuleMatcher(rules, muteExceptions);
@@ -5400,6 +5453,8 @@ ${nextMessage}` : nextMessage;
       this._vipRafId = null;
       this._vipPending = /* @__PURE__ */ new Set();
       this.triggerRows = /* @__PURE__ */ new Map();
+      this._sortedTriggers = [];
+      this._visibleTriggerCount = 0;
       this.handleTriggerClick = this.handleTriggerClick.bind(this);
       this.isCheckingServer = false;
       this.offenderProfileCache = /* @__PURE__ */ new Map();
@@ -5587,13 +5642,10 @@ ${nextMessage}` : nextMessage;
         finalDurationStr
       } = this.calculateFinalPunishment(mostSevere.rule, mostSevere.count, ruleCounters);
       const sortedTriggers = allViolations.sort((a, b) => b.severity - a.severity || b.duration - a.duration || a.keyword.localeCompare(b.keyword));
-      const topTriggersHTML = sortedTriggers.map((t) => `
-    <span
-        class="ioh-trigger-tooltip ioh-trigger-link"
-        data-trigger-id="${t.id}"
-        data-full-msg="${this.utils.escapeHtml(t.fullMessage)}">
-        ${this.utils.escapeHtml(t.keyword)}
-    </span>`).join('<span class="ioh-trigger-separator">,</span> ');
+      this._sortedTriggers = sortedTriggers;
+      const initialLimit = Number(this.settings?.maxVisionTriggers) || 30;
+      this._visibleTriggerCount = Math.min(initialLimit, sortedTriggers.length);
+      const topTriggersHTML = this.buildVisibleTriggersHtml();
       let finalDurationForDisplay = finalDurationStr;
       if (finalDuration > 0) {
         const recentSameReasonMute = this.findRecentMuteForReasons(muteHistoryBlock, [finalName]);
@@ -5723,7 +5775,7 @@ ${nextMessage}` : nextMessage;
         });
       }
       const spamRule = (this.rules || []).find((r) => r.name === "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442");
-      for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity)) {
+      for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity, this.spamRules)) {
         const triggerId = crypto.randomUUID();
         this.triggerRows.set(triggerId, spam.rows);
         allViolations.push({
@@ -7297,6 +7349,7 @@ ${nextMessage}` : nextMessage;
       this.document = document2;
       this.chrome = chrome2;
       this.rules = config.muteRules || [];
+      this.spamRules = config.spamRules || {};
       this.muteExceptions = config.muteExceptions || {};
       this.templates = config.templates || {};
       this.settings = config.settings;
@@ -7328,6 +7381,7 @@ ${nextMessage}` : nextMessage;
         badgeService: this.badgeService,
         settings: this.settings,
         rules: this.rules,
+        spamRules: this.spamRules,
         muteExceptions: this.muteExceptions,
         chrome: chrome2
       });

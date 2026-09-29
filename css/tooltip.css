@@ -77,6 +77,16 @@
     visibility: visible;
 }
 
+.ioh-trigger-tooltip.ioh-more-triggers {
+    cursor: pointer;
+}
+
+.ioh-trigger-tooltip.ioh-more-triggers::after,
+.ioh-trigger-tooltip.ioh-more-triggers::before {
+    content: none;
+    display: none;
+}
+
 .ioh-warning-text-tooltip {
     position: relative;
     cursor: help;

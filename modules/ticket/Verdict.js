@@ -117,7 +117,8 @@ export const VerdictMethods = {
                 finalDurationStr = "Предупреждение";
             }
         } else if (rule.name === "Спам в микрофон/чат") {
-            if (count < 4) {
+            const muteCount = Number(this.spamRules?.muteCount) || 4;
+            if (count < muteCount) {
                 finalDuration = 0;
                 finalDurationStr = "Предупреждение";
             }

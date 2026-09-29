@@ -13,6 +13,7 @@ export class App {
         this.document = document;
         this.chrome = chrome;
         this.rules = config.muteRules || [];
+        this.spamRules = config.spamRules || {};
         this.muteExceptions = config.muteExceptions || {};
         this.templates = config.templates || {};
         this.settings = config.settings;
@@ -45,6 +46,7 @@ export class App {
             badgeService: this.badgeService,
             settings: this.settings,
             rules: this.rules,
+            spamRules: this.spamRules,
             muteExceptions: this.muteExceptions,
             chrome
         });

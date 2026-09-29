@@ -106,48 +106,50 @@ export function compileRuleMatcher(rules = [], muteExceptions = {}) {
     };
 }
 
-export function detectSpamLinear(playerChatLog, spamRule, getSeverity) {
+export function detectSpamLinear(playerChatLog, spamRule, getSeverity, spamRules = {}) {
+    const intervalSec = Number(spamRules.interval) || 3;
+    const warningCount = Number(spamRules.warningCount) || 3;
     const violations = [];
+
+    const flushRun = (run) => {
+        if (run.length < warningCount) {
+            return;
+        }
+        const first = run[0];
+        violations.push({
+            rows: run.map(msg => msg.row),
+            dupes: run.length,
+            raw: first.raw,
+            timeMs: first.time,
+            severity: getSeverity(spamRule),
+            duration: spamRule?.duration ?? 0
+        });
+    };
+
     for (const msgs of Object.values(playerChatLog)) {
         const sorted = [...msgs].sort((a, b) => a.time - b.time);
-        const windowCounts = new Map();
-        let windowStart = 0;
+        let run = [];
 
-        for (let i = 0; i < sorted.length; i++) {
-            const current = sorted[i];
-            while (windowStart < i && (current.time - sorted[windowStart].time) / 1000 > 5) {
-                const leaving = sorted[windowStart];
-                const left = windowCounts.get(leaving.text);
-                if (left) {
-                    left.count -= 1;
-                    if (left.count <= 0) {
-                        windowCounts.delete(leaving.text);
-                    }
-                }
-                windowStart += 1;
+        for (const current of sorted) {
+            if (run.length === 0) {
+                run = [current];
+                continue;
             }
 
-            let bucket = windowCounts.get(current.text);
-            if (!bucket) {
-                bucket = {count: 0, firstIndex: i, rows: []};
-                windowCounts.set(current.text, bucket);
+            const prev = run[run.length - 1];
+            const sameText = current.text === prev.text;
+            const gapSec = (current.time - prev.time) / 1000;
+            if (sameText && gapSec < intervalSec) {
+                run.push(current);
+                continue;
             }
-            bucket.count += 1;
-            bucket.rows.push(current.row);
 
-            if (bucket.count > 4) {
-                const first = sorted[bucket.firstIndex];
-                violations.push({
-                    rows: [...bucket.rows],
-                    dupes: bucket.count,
-                    raw: first.raw,
-                    timeMs: first.time,
-                    severity: getSeverity(spamRule),
-                    duration: spamRule?.duration ?? 0
-                });
-                break;
-            }
+            flushRun(run);
+            run = [current];
         }
+
+        flushRun(run);
     }
+
     return violations;
 }

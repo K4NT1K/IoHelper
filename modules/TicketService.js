@@ -12,12 +12,13 @@ import { OffenderProfileMethods } from './ticket/OffenderProfile.js';
 import { OffenderTrackingMethods } from './ticket/OffenderTracking.js';
 
 export class TicketService {
-    constructor({document, utils, badgeService, settings, rules, muteExceptions = {}, chrome = null}) {
+    constructor({document, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome = null}) {
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
         this.settings = settings;
         this._rules = rules;
+        this.spamRules = spamRules;
         this._muteExceptions = muteExceptions;
         this.chrome = chrome;
         this._ruleMatcher = compileRuleMatcher(rules, muteExceptions);
@@ -27,6 +28,8 @@ export class TicketService {
         this._vipPending = new Set();
 
         this.triggerRows = new Map();
+        this._sortedTriggers = [];
+        this._visibleTriggerCount = 0;
         this.handleTriggerClick = this.handleTriggerClick.bind(this);
         this.isCheckingServer = false;
         this.offenderProfileCache = new Map();
@@ -253,13 +256,10 @@ export class TicketService {
         const sortedTriggers = allViolations
             .sort((a, b) => b.severity - a.severity || b.duration - a.duration || a.keyword.localeCompare(b.keyword));
 
-        const topTriggersHTML = sortedTriggers.map(t => `
-    <span
-        class="ioh-trigger-tooltip ioh-trigger-link"
-        data-trigger-id="${t.id}"
-        data-full-msg="${this.utils.escapeHtml(t.fullMessage)}">
-        ${this.utils.escapeHtml(t.keyword)}
-    </span>`).join('<span class="ioh-trigger-separator">,</span> ');
+        this._sortedTriggers = sortedTriggers;
+        const initialLimit = Number(this.settings?.maxVisionTriggers) || 30;
+        this._visibleTriggerCount = Math.min(initialLimit, sortedTriggers.length);
+        const topTriggersHTML = this.buildVisibleTriggersHtml();
 
         let finalDurationForDisplay = finalDurationStr;
         if (finalDuration > 0) {
@@ -414,7 +414,7 @@ export class TicketService {
         }
 
         const spamRule = (this.rules || []).find(r => r.name === 'Спам в микрофон/чат');
-        for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity)) {
+        for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity, this.spamRules)) {
             const triggerId = crypto.randomUUID();
             this.triggerRows.set(triggerId, spam.rows);
             allViolations.push({
