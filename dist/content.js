@@ -4289,11 +4289,14 @@ ${nextMessage}` : nextMessage;
     extractVipName(result) {
       return this.normalizeVipName(result?.basic?.vip_name);
     },
+    extractVerification(result) {
+      return result?.personal_data?.verification ?? result?.verification ?? null;
+    },
     extractProfileVerified(result) {
-      return Boolean(result?.verification?.profile);
+      return Boolean(this.extractVerification(result)?.profile);
     },
     extractIsModerator(result) {
-      return Boolean(result?.verification?.moderation);
+      return Boolean(this.extractVerification(result)?.moderation);
     },
     parseUserDataResult(result) {
       return {
@@ -4675,10 +4678,10 @@ ${nextMessage}` : nextMessage;
     },
     refreshOffenderProfileVerification() {
       this.document.querySelectorAll('a[href*="cybershoke.net/"][data-ioh-profile-verified-source]').forEach((link) => {
-        this.applyOffenderProfileVerification(link, true);
+        this.applyOffenderProfileVerification(link, true, link.closest("tr"));
       });
     },
-    applyOffenderProfileVerification(offenderLink, profileVerified) {
+    applyOffenderProfileVerification(offenderLink, profileVerified, row = null) {
       if (!offenderLink) {
         return;
       }
@@ -4687,8 +4690,17 @@ ${nextMessage}` : nextMessage;
       } else {
         delete offenderLink.dataset.iohProfileVerifiedSource;
       }
-      const show = this.settings.features?.trackOffenderServer && Boolean(profileVerified);
+      const track = Boolean(this.settings.features?.trackOffenderServer);
+      const show = track && Boolean(profileVerified);
+      const moderatorOwnsHighlight = Boolean(offenderLink.dataset.iohModeratorSource);
+      if (row && !moderatorOwnsHighlight) {
+        row.classList.toggle("ioh-highlighted-moderator", show);
+      }
       if (!show) {
+        this.removeOffenderProfileVerification(offenderLink);
+        return;
+      }
+      if (moderatorOwnsHighlight || offenderLink.dataset.iohModeratorBadge) {
         this.removeOffenderProfileVerification(offenderLink);
         return;
       }
@@ -5337,7 +5349,11 @@ ${nextMessage}` : nextMessage;
             this.applyOffenderPunishmentHighlight(targetRow, userData);
             this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
             this.applyOffenderModeratorHighlight(targetRow, offenderLinkToUpdate, userData.isModerator);
-            this.applyOffenderProfileVerification(offenderLinkToUpdate, userData.profileVerified);
+            this.applyOffenderProfileVerification(
+              offenderLinkToUpdate,
+              userData.profileVerified,
+              targetRow
+            );
             this.applyOffenderMuteBanIcons(offenderLinkToUpdate, targetRow, userData);
           });
           targetRow.dataset.lastIpCheck = Date.now().toString();
