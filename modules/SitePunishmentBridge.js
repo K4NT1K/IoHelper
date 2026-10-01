@@ -16,7 +16,6 @@ export class SitePunishmentBridge {
         this.document = document;
         this.ticketService = ticketService;
         this._returnContext = null;
-        this._dialogCleanupObserver = null;
         this._lastFailReason = null;
     }
 
@@ -97,8 +96,6 @@ export class SitePunishmentBridge {
                 return false;
             }
 
-            this._applyManagementTabInitFlags(returnContext);
-
             const hasIssueButton = await this._waitForIssueButton(type, 5000);
             if (!hasIssueButton) {
                 this._lastFailReason = 'issue_button_not_found';
@@ -139,10 +136,6 @@ export class SitePunishmentBridge {
                 }
             }
 
-            this._scheduleManagementTabCleanupOnDialogClose(
-                type,
-                this._shouldCloseManagementTabOnCleanup(returnContext)
-            );
             return true;
         } finally {
             this.ticketService.releasePermissionScan();
@@ -153,66 +146,12 @@ export class SitePunishmentBridge {
         const tabContext = this.ticketService.collectReturnTabContext();
         this._returnContext = {
             ...tabContext,
-            managementType: type || null,
-            managementTabWasOpen: this.ticketService.isManagementSpaTabOpen(type),
-            openedManagementTabForInit: false
+            managementType: type || null
         };
-    }
-
-    _applyManagementTabInitFlags(returnContext) {
-        if (returnContext.managementTabWasOpen) {
-            return;
-        }
-
-        if (this.ticketService.getLastManagementOpenedViaAside()
-            || this.ticketService.isManagementSpaTabOpen(returnContext.managementType)) {
-            returnContext.openedManagementTabForInit = true;
-        }
-    }
-
-    _shouldCloseManagementTabOnCleanup(returnContext) {
-        return returnContext.openedManagementTabForInit && !returnContext.managementTabWasOpen;
     }
 
     _clearReturnContext() {
         this._returnContext = null;
-    }
-
-    _scheduleManagementTabCleanupOnDialogClose(type, shouldClose) {
-        if (!shouldClose) {
-            return;
-        }
-
-        if (this._dialogCleanupObserver) {
-            this._dialogCleanupObserver.disconnect();
-            this._dialogCleanupObserver = null;
-        }
-
-        const cleanup = () => {
-            if (this._isTargetDialogOpen(type)) {
-                return;
-            }
-
-            this._dialogCleanupObserver?.disconnect();
-            this._dialogCleanupObserver = null;
-            console.log('[Helper] SitePunishmentBridge: dialogCleanupObserver teardown');
-
-            this.ticketService.suppressPermissionScan();
-            try {
-                this.ticketService.closeManagementTab(type);
-            } finally {
-                this.ticketService.releasePermissionScan();
-            }
-        };
-
-        this._dialogCleanupObserver = new MutationObserver(cleanup);
-        this._dialogCleanupObserver.observe(this.document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['data-state', 'open']
-        });
-        console.log('[Helper] SitePunishmentBridge: dialogCleanupObserver init');
     }
 
     async _returnToTicketTab(returnContext, options = {}) {

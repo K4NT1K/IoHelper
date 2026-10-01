@@ -917,7 +917,6 @@ ${nextMessage}` : nextMessage;
       this.document = document2;
       this.ticketService = ticketService;
       this._returnContext = null;
-      this._dialogCleanupObserver = null;
       this._lastFailReason = null;
     }
     openMuteForm(steamId) {
@@ -979,7 +978,6 @@ ${nextMessage}` : nextMessage;
           this._debugLog("management_tab_not_created", { type });
           return false;
         }
-        this._applyManagementTabInitFlags(returnContext);
         const hasIssueButton = await this._waitForIssueButton(type, 5e3);
         if (!hasIssueButton) {
           this._lastFailReason = "issue_button_not_found";
@@ -1014,10 +1012,6 @@ ${nextMessage}` : nextMessage;
             return false;
           }
         }
-        this._scheduleManagementTabCleanupOnDialogClose(
-          type,
-          this._shouldCloseManagementTabOnCleanup(returnContext)
-        );
         return true;
       } finally {
         this.ticketService.releasePermissionScan();
@@ -1027,55 +1021,11 @@ ${nextMessage}` : nextMessage;
       const tabContext = this.ticketService.collectReturnTabContext();
       this._returnContext = {
         ...tabContext,
-        managementType: type || null,
-        managementTabWasOpen: this.ticketService.isManagementSpaTabOpen(type),
-        openedManagementTabForInit: false
+        managementType: type || null
       };
-    }
-    _applyManagementTabInitFlags(returnContext) {
-      if (returnContext.managementTabWasOpen) {
-        return;
-      }
-      if (this.ticketService.getLastManagementOpenedViaAside() || this.ticketService.isManagementSpaTabOpen(returnContext.managementType)) {
-        returnContext.openedManagementTabForInit = true;
-      }
-    }
-    _shouldCloseManagementTabOnCleanup(returnContext) {
-      return returnContext.openedManagementTabForInit && !returnContext.managementTabWasOpen;
     }
     _clearReturnContext() {
       this._returnContext = null;
-    }
-    _scheduleManagementTabCleanupOnDialogClose(type, shouldClose) {
-      if (!shouldClose) {
-        return;
-      }
-      if (this._dialogCleanupObserver) {
-        this._dialogCleanupObserver.disconnect();
-        this._dialogCleanupObserver = null;
-      }
-      const cleanup = () => {
-        if (this._isTargetDialogOpen(type)) {
-          return;
-        }
-        this._dialogCleanupObserver?.disconnect();
-        this._dialogCleanupObserver = null;
-        console.log("[Helper] SitePunishmentBridge: dialogCleanupObserver teardown");
-        this.ticketService.suppressPermissionScan();
-        try {
-          this.ticketService.closeManagementTab(type);
-        } finally {
-          this.ticketService.releasePermissionScan();
-        }
-      };
-      this._dialogCleanupObserver = new MutationObserver(cleanup);
-      this._dialogCleanupObserver.observe(this.document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["data-state", "open"]
-      });
-      console.log("[Helper] SitePunishmentBridge: dialogCleanupObserver init");
     }
     async _returnToTicketTab(returnContext, options = {}) {
       const { closeManagementTab = false } = options;
@@ -2917,22 +2867,15 @@ ${nextMessage}` : nextMessage;
       if (!aside) {
         return null;
       }
-      const byReorderId = aside.querySelector(
-        'button.glass-fx[data-reorder-id="6"], button[class*="glass-fx"][data-reorder-id="6"]'
-      );
-      if (byReorderId && !this.isExtensionUiElement(byReorderId)) {
-        return byReorderId;
+      const folderUse = aside.querySelector('use[href="#lc-folder"]');
+      const button = folderUse?.closest("button");
+      if (!button || this.isExtensionUiElement(button)) {
+        return null;
       }
-      const byMenuIcon = Array.from(aside.querySelectorAll("button")).filter((button) => !this.isExtensionUiElement(button)).find((button) => button.querySelector('use[href="#lc-menu"]'));
-      if (byMenuIcon) {
-        return byMenuIcon;
-      }
-      const byAriaExpanded = Array.from(aside.querySelectorAll("button[aria-expanded]")).filter((button) => !this.isExtensionUiElement(button) && !button.closest("nav")).find((button) => button.querySelector("svg"));
-      if (byAriaExpanded) {
-        return byAriaExpanded;
-      }
-      const buttons = Array.from(aside.querySelectorAll('button.glass-fx, button[class*="glass-fx"]')).filter((button) => !this.isExtensionUiElement(button) && !button.closest("nav"));
-      return buttons.find((button) => button.querySelector("svg")) || buttons[0] || null;
+      return button;
+    },
+    getManagementLinkIconHref(type) {
+      return type === "ban" ? "#lc-shield-off" : "#lc-mic-off";
     },
     findAsideManagementLink(type) {
       const route = this.getManagementRouteForType(type);
@@ -2940,13 +2883,15 @@ ${nextMessage}` : nextMessage;
       if (!aside) {
         return null;
       }
-      const link = aside.querySelector(
-        `nav a.glass-fx[href="${route}"], nav a[class*="glass-fx"][href="${route}"]`
+      const byHref = aside.querySelector(
+        `nav a.glass-fx[href="${route}"], nav a[class*="glass-fx"][href="${route}"], nav a[href="${route}"]`
       );
-      if (link && !this.isExtensionUiElement(link)) {
-        return link;
+      if (byHref && !this.isExtensionUiElement(byHref)) {
+        return byHref;
       }
-      return null;
+      const iconHref = this.getManagementLinkIconHref(type);
+      const byIcon = Array.from(aside.querySelectorAll("nav a")).find((link) => !this.isExtensionUiElement(link) && link.querySelector(`use[href="${iconHref}"]`));
+      return byIcon || null;
     },
     isAsideManagementNavVisible() {
       const muteLink = this.findAsideManagementLink("mute");

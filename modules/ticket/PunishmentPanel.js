@@ -316,31 +316,17 @@ export const PunishmentPanelMethods = {
             return null;
         }
 
-        const byReorderId = aside.querySelector(
-            'button.glass-fx[data-reorder-id="6"], button[class*="glass-fx"][data-reorder-id="6"]'
-        );
-        if (byReorderId && !this.isExtensionUiElement(byReorderId)) {
-            return byReorderId;
+        const folderUse = aside.querySelector('use[href="#lc-folder"]');
+        const button = folderUse?.closest('button');
+        if (!button || this.isExtensionUiElement(button)) {
+            return null;
         }
 
-        const byMenuIcon = Array.from(aside.querySelectorAll('button'))
-            .filter(button => !this.isExtensionUiElement(button))
-            .find(button => button.querySelector('use[href="#lc-menu"]'));
-        if (byMenuIcon) {
-            return byMenuIcon;
-        }
+        return button;
+    },
 
-        const byAriaExpanded = Array.from(aside.querySelectorAll('button[aria-expanded]'))
-            .filter(button => !this.isExtensionUiElement(button) && !button.closest('nav'))
-            .find(button => button.querySelector('svg'));
-        if (byAriaExpanded) {
-            return byAriaExpanded;
-        }
-
-        const buttons = Array.from(aside.querySelectorAll('button.glass-fx, button[class*="glass-fx"]'))
-            .filter(button => !this.isExtensionUiElement(button) && !button.closest('nav'));
-
-        return buttons.find(button => button.querySelector('svg')) || buttons[0] || null;
+    getManagementLinkIconHref(type) {
+        return type === 'ban' ? '#lc-shield-off' : '#lc-mic-off';
     },
 
     findAsideManagementLink(type) {
@@ -350,15 +336,18 @@ export const PunishmentPanelMethods = {
             return null;
         }
 
-        const link = aside.querySelector(
-            `nav a.glass-fx[href="${route}"], nav a[class*="glass-fx"][href="${route}"]`
+        const byHref = aside.querySelector(
+            `nav a.glass-fx[href="${route}"], nav a[class*="glass-fx"][href="${route}"], nav a[href="${route}"]`
         );
-
-        if (link && !this.isExtensionUiElement(link)) {
-            return link;
+        if (byHref && !this.isExtensionUiElement(byHref)) {
+            return byHref;
         }
 
-        return null;
+        const iconHref = this.getManagementLinkIconHref(type);
+        const byIcon = Array.from(aside.querySelectorAll('nav a'))
+            .find(link => !this.isExtensionUiElement(link) && link.querySelector(`use[href="${iconHref}"]`));
+
+        return byIcon || null;
     },
 
     isAsideManagementNavVisible() {
