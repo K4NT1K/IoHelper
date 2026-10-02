@@ -428,6 +428,13 @@ export class App {
             this.ticketService.clearFaceitElo();
         }
 
+        if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) {
+            this.ticketService.renderOffenderProjectInfo();
+        } else {
+            this.ticketService.clearCybershokePlaytime();
+            this.ticketService.clearOffenderCountry();
+        }
+
         this.ticketService.refreshComplaintPunishmentButtons();
         this.syncOffenderTrackingForPage();
     }

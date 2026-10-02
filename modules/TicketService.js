@@ -34,6 +34,10 @@ export class TicketService {
         this.isCheckingServer = false;
         this.offenderProfileCache = new Map();
         this.offenderProfileInflight = new Map();
+        this.offenderProjectCache = new Map();
+        this.offenderProjectInflight = new Map();
+        this.offenderTicketProjectCache = new Map();
+        this.offenderTicketProjectInflight = new Map();
         this.autoConnectedServerIps = new Map();
         this._autoConnectSkipLoggedIps = new Set();
         this.chatSignatureByKey = new Map();

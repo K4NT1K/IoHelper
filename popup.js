@@ -75,10 +75,22 @@ const FEATURE_GROUPS = [
                 help: 'Показывает дату создания Steam-аккаунта нарушителя в открытом тикете.'
             },
             {
+                key: 'showCybershokePlaytime',
+                label: 'Часы CYBERSHOKE',
+                desc: '',
+                help: 'Показывает наигранные часы нарушителя на CYBERSHOKE в открытом тикете.'
+            },
+            {
+                key: 'showOffenderCountry',
+                label: 'Флаг страны',
+                desc: '',
+                help: 'Показывает флаг страны нарушителя рядом с ником в открытом тикете.'
+            },
+            {
                 key: 'showFaceitElo',
                 label: 'Faceit ELO',
                 desc: '',
-                help: 'Показывает Faceit ELO и уровень нарушителя в открытом тикете.'
+                help: 'Показывает Faceit ELO нарушителя в открытом тикете, только если у него есть Faceit-аккаунт.'
             },
             {
                 key: 'translateText',

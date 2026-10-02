@@ -102,6 +102,29 @@ export const OffenderTrackingMethods = {
         return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
     },
 
+    normalizeCountryCode(raw) {
+        if (raw == null || raw === '') {
+            return null;
+        }
+
+        const value = String(raw).trim().toLowerCase();
+        return /^[a-z]{2}$/.test(value) ? value : null;
+    },
+
+    extractCountry(result) {
+        return this.normalizeCountryCode(result?.basic?.country);
+    },
+
+    extractPlaytime(result) {
+        const raw = result?.cybershoke?.global?.playtime;
+        if (raw == null || raw === '') {
+            return null;
+        }
+
+        const seconds = Number(raw);
+        return Number.isFinite(seconds) ? seconds : null;
+    },
+
     normalizeVipName(raw) {
         if (raw == null) {
             return null;
@@ -140,7 +163,9 @@ export const OffenderTrackingMethods = {
             isMuted: this.extractActiveMute(result),
             vipName: this.extractVipName(result),
             profileVerified: this.extractProfileVerified(result),
-            isModerator: this.extractIsModerator(result)
+            isModerator: this.extractIsModerator(result),
+            country: this.extractCountry(result),
+            playtime: this.extractPlaytime(result)
         };
     },
 
@@ -158,6 +183,43 @@ export const OffenderTrackingMethods = {
         return entry;
     },
 
+    setOffenderProjectCache(steamId, data) {
+        this.offenderProjectCache.set(steamId, {
+            country: data.country ?? null,
+            playtime: data.playtime ?? null
+        });
+    },
+
+    setOffenderTicketProjectCache(steamId, data) {
+        this.offenderTicketProjectCache.set(steamId, {
+            country: data.country ?? null,
+            playtime: data.playtime ?? null
+        });
+    },
+
+    collectComplaintQueueOffenderSteamIds() {
+        const ids = new Set();
+        for (const table of this.findComplaintQueueTables()) {
+            for (const row of table.querySelectorAll('tbody tr')) {
+                const link = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
+                const match = link?.href?.match(/\d{17,18}/);
+                if (match) {
+                    ids.add(match[0]);
+                }
+            }
+        }
+        return ids;
+    },
+
+    pruneOffenderProjectCache(presentSteamIds = null) {
+        const present = presentSteamIds || this.collectComplaintQueueOffenderSteamIds();
+        for (const steamId of [...this.offenderProjectCache.keys()]) {
+            if (!present.has(steamId)) {
+                this.offenderProjectCache.delete(steamId);
+            }
+        }
+    },
+
     setCachedUserData(steamId, data) {
         this.userDataCache.set(steamId, {
             serverIp: data.serverIp ?? null,
@@ -170,6 +232,103 @@ export const OffenderTrackingMethods = {
             isModerator: Boolean(data.isModerator),
             fetchedAt: Date.now()
         });
+        this.setOffenderProjectCache(steamId, data);
+    },
+
+    async fetchParsedUserData(steamId) {
+        if (this.offenderProjectInflight.has(steamId)) {
+            return this.offenderProjectInflight.get(steamId);
+        }
+
+        const requestPromise = (async () => {
+            const response = await this.fetchUserData(steamId);
+            if (response.status === 429) {
+                this.globalServerCooldown = Date.now() + 660;
+                throw new Error('429');
+            }
+            if (!response.ok) {
+                throw new Error(`fetch failed ${response.status}`);
+            }
+
+            const result = await response.json();
+            const userData = this.parseUserDataResult(result);
+            this.setCachedUserData(steamId, userData);
+            return userData;
+        })().finally(() => {
+            this.offenderProjectInflight.delete(steamId);
+        });
+
+        this.offenderProjectInflight.set(steamId, requestPromise);
+        return requestPromise;
+    },
+
+    async fetchOffenderTicketProjectData(steamId) {
+        if (this.offenderTicketProjectInflight.has(steamId)) {
+            return this.offenderTicketProjectInflight.get(steamId);
+        }
+
+        // Share an in-flight tracker fetch when available; queue cache may fill as a side effect.
+        if (this.offenderProjectInflight.has(steamId)) {
+            const shared = this.offenderProjectInflight.get(steamId).then((userData) => {
+                const fromQueue = this.offenderProjectCache.get(steamId);
+                if (fromQueue) {
+                    return fromQueue;
+                }
+                const project = {
+                    country: userData?.country ?? null,
+                    playtime: userData?.playtime ?? null
+                };
+                this.setOffenderTicketProjectCache(steamId, project);
+                return project;
+            });
+            this.offenderTicketProjectInflight.set(steamId, shared);
+            try {
+                return await shared;
+            } finally {
+                this.offenderTicketProjectInflight.delete(steamId);
+            }
+        }
+
+        const requestPromise = (async () => {
+            const response = await this.fetchUserData(steamId);
+            if (response.status === 429) {
+                this.globalServerCooldown = Date.now() + 660;
+                throw new Error('429');
+            }
+            if (!response.ok) {
+                throw new Error(`fetch failed ${response.status}`);
+            }
+
+            const result = await response.json();
+            const userData = this.parseUserDataResult(result);
+            const project = {
+                country: userData.country ?? null,
+                playtime: userData.playtime ?? null
+            };
+            this.setOffenderTicketProjectCache(steamId, project);
+            return project;
+        })().finally(() => {
+            this.offenderTicketProjectInflight.delete(steamId);
+        });
+
+        this.offenderTicketProjectInflight.set(steamId, requestPromise);
+        return requestPromise;
+    },
+
+    async getOffenderProjectData(steamId, {force = false} = {}) {
+        if (force) {
+            this.offenderTicketProjectCache.delete(steamId);
+        }
+
+        if (!force && this.offenderProjectCache.has(steamId)) {
+            return this.offenderProjectCache.get(steamId);
+        }
+
+        if (!force && this.offenderTicketProjectCache.has(steamId)) {
+            return this.offenderTicketProjectCache.get(steamId);
+        }
+
+        return this.fetchOffenderTicketProjectData(steamId);
     },
 
     getServerLinkLabelElement(link) {
@@ -1272,20 +1431,12 @@ export const OffenderTrackingMethods = {
         let userData = this.getCachedUserData(offenderSteamId, CACHE_INTERVAL);
         if (!userData) {
             try {
-                const response = await this.fetchUserData(offenderSteamId);
-                if (response.status === 429) {
-                    this.globalServerCooldown = Date.now() + 660;
+                userData = await this.fetchParsedUserData(offenderSteamId);
+            } catch (err) {
+                if (err?.message === '429') {
                     console.log('[Helper] Трекер открытого тикета: skip — 429 cooldown');
                     return;
                 }
-                if (!response.ok) {
-                    console.log('[Helper] Трекер открытого тикета: skip — fetch failed', response.status);
-                    return;
-                }
-                const result = await response.json();
-                userData = this.parseUserDataResult(result);
-                this.setCachedUserData(offenderSteamId, userData);
-            } catch (err) {
                 console.log('[Helper] Трекер открытого тикета: skip — ошибка fetch', err);
                 return;
             }
@@ -1418,21 +1569,14 @@ export const OffenderTrackingMethods = {
                 if (!userData) {
                     await new Promise(resolve => setTimeout(resolve, 340));
 
-                    const response = await this.fetchUserData(targetSteamId);
-
-                    if (response.status === 429) {
-                        this.globalServerCooldown = Date.now() + 660;
-                        await new Promise(resolve => setTimeout(resolve, 660));
+                    try {
+                        userData = await this.fetchParsedUserData(targetSteamId);
+                    } catch (err) {
+                        if (err?.message === '429') {
+                            await new Promise(resolve => setTimeout(resolve, 660));
+                        }
                         continue;
                     }
-
-                    if (!response.ok) {
-                        continue;
-                    }
-
-                    const result = await response.json();
-                    userData = this.parseUserDataResult(result);
-                    this.setCachedUserData(targetSteamId, userData);
                 }
 
                 const actionState = this.rowActionIsInReview(targetRow)

@@ -1661,7 +1661,7 @@ ${nextMessage}` : nextMessage;
     },
     isExtensionUiElement(element) {
       return Boolean(
-        element?.closest("[data-ioh], .ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #mod-notif-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row, .ioh-account-created, .ioh-faceit-elo")
+        element?.closest("[data-ioh], .ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #mod-notif-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row, .ioh-account-created, .ioh-cybershoke-playtime, .ioh-offender-country, .ioh-faceit-elo")
       );
     },
     _isElementVisible(element) {
@@ -3919,6 +3919,12 @@ ${nextMessage}` : nextMessage;
     clearSteamAccountCreationDate() {
       this.document.querySelectorAll(".ioh-account-created").forEach((node) => node.remove());
     },
+    clearCybershokePlaytime() {
+      this.document.querySelectorAll(".ioh-cybershoke-playtime").forEach((node) => node.remove());
+    },
+    clearOffenderCountry() {
+      this.document.querySelectorAll(".ioh-offender-country").forEach((node) => node.remove());
+    },
     clearFaceitElo() {
       this.document.querySelectorAll(".ioh-faceit-elo").forEach((node) => node.remove());
     },
@@ -3939,8 +3945,11 @@ ${nextMessage}` : nextMessage;
       valueDiv.className = (originalDiv ? originalDiv.className : "") + " ioh-account-value";
       node.appendChild(labelSpan);
       node.appendChild(valueDiv);
+      const playtimeNode = field.parentNode.querySelector(".ioh-cybershoke-playtime");
       const faceitNode = field.parentNode.querySelector(".ioh-faceit-elo");
-      if (faceitNode) {
+      if (playtimeNode) {
+        playtimeNode.insertAdjacentElement("beforebegin", node);
+      } else if (faceitNode) {
         faceitNode.insertAdjacentElement("beforebegin", node);
       } else {
         field.insertAdjacentElement("afterend", node);
@@ -3964,13 +3973,107 @@ ${nextMessage}` : nextMessage;
       valueDiv.className = (originalDiv ? originalDiv.className : "") + " ioh-faceit-value";
       node.appendChild(labelSpan);
       node.appendChild(valueDiv);
+      const playtimeNode = field.parentNode.querySelector(".ioh-cybershoke-playtime");
       const accountNode = field.parentNode.querySelector(".ioh-account-created");
-      if (accountNode) {
+      if (playtimeNode) {
+        playtimeNode.insertAdjacentElement("afterend", node);
+      } else if (accountNode) {
         accountNode.insertAdjacentElement("afterend", node);
       } else {
         field.insertAdjacentElement("afterend", node);
       }
       return valueDiv;
+    },
+    ensureCybershokePlaytimeNode(field) {
+      let node = field.parentNode.querySelector(".ioh-cybershoke-playtime");
+      if (node) {
+        return node.querySelector(".ioh-cybershoke-value");
+      }
+      node = this.document.createElement("div");
+      node.className = field.className + " ioh-cybershoke-playtime";
+      markIoh(node);
+      const labelSpan = this.document.createElement("span");
+      const originalSpan = field.querySelector("span");
+      labelSpan.className = originalSpan ? originalSpan.className : "";
+      labelSpan.textContent = "CYBERSHOKE";
+      const valueDiv = this.document.createElement("div");
+      const originalDiv = field.querySelector("div");
+      valueDiv.className = (originalDiv ? originalDiv.className : "") + " ioh-cybershoke-value";
+      node.appendChild(labelSpan);
+      node.appendChild(valueDiv);
+      const faceitNode = field.parentNode.querySelector(".ioh-faceit-elo");
+      const accountNode = field.parentNode.querySelector(".ioh-account-created");
+      if (faceitNode) {
+        faceitNode.insertAdjacentElement("beforebegin", node);
+      } else if (accountNode) {
+        accountNode.insertAdjacentElement("afterend", node);
+      } else {
+        field.insertAdjacentElement("afterend", node);
+      }
+      return valueDiv;
+    },
+    findOffenderNickElement(field) {
+      const valueBlock = this.findFieldValueBlock(field);
+      if (!valueBlock) {
+        return null;
+      }
+      const buttons = Array.from(valueBlock.querySelectorAll("button"));
+      const nickButton = buttons.find((btn) => {
+        const text = (btn.textContent || "").trim();
+        return text && !/^\d{17,18}$/.test(text);
+      });
+      if (nickButton) {
+        return nickButton;
+      }
+      const profileLink = valueBlock.querySelector(
+        'a[href*="cybershoke.net/"], a[href*="/moderator/profile/"]'
+      );
+      if (!profileLink) {
+        return null;
+      }
+      const linkRow = profileLink.parentElement;
+      if (linkRow?.previousElementSibling) {
+        const prev = linkRow.previousElementSibling;
+        const prevButton = prev.querySelector?.("button") || (prev.tagName === "BUTTON" ? prev : null);
+        if (prevButton) {
+          return prevButton;
+        }
+        return prev;
+      }
+      return null;
+    },
+    ensureOffenderCountryNode(field) {
+      const valueBlock = this.findFieldValueBlock(field);
+      const existing = valueBlock?.querySelector(".ioh-offender-country") || field.parentNode.querySelector(".ioh-offender-country");
+      if (existing) {
+        return existing;
+      }
+      const node = this.document.createElement("span");
+      node.className = "ioh-offender-country";
+      node.hidden = true;
+      markIoh(node);
+      const nick = this.findOffenderNickElement(field);
+      if (nick?.parentNode) {
+        let insertAfter = nick;
+        let next = nick.nextElementSibling;
+        while (next && (next.classList.contains("ioh-admin-icon") || next.classList.contains("ioh-moderator-badge") || next.classList.contains("ioh-profile-verified") || next.classList.contains("ioh-vip-badge") || next.classList.contains("ioh-punishment-icon"))) {
+          insertAfter = next;
+          next = next.nextElementSibling;
+        }
+        insertAfter.insertAdjacentElement("afterend", node);
+        return node;
+      }
+      const profileLink = valueBlock?.querySelector(
+        'a[href*="cybershoke.net/"], a[href*="/moderator/profile/"]'
+      );
+      if (profileLink) {
+        profileLink.insertAdjacentElement("afterend", node);
+      } else if (valueBlock) {
+        valueBlock.appendChild(node);
+      } else {
+        field.appendChild(node);
+      }
+      return node;
     },
     getOffenderFieldContext() {
       const ticketTextarea = this.findVisibleTicketResolutionTextarea() || this.document.querySelector('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]');
@@ -3995,6 +4098,26 @@ ${nextMessage}` : nextMessage;
         month: "short",
         year: "numeric"
       });
+    },
+    formatCybershokePlaytime(playtime) {
+      const seconds = Number(playtime);
+      if (!Number.isFinite(seconds) || seconds < 0) {
+        return "0\u0447";
+      }
+      return `${Math.floor(seconds / 3600)}\u0447`;
+    },
+    formatCountryTooltip(country) {
+      const code = String(country || "").trim().toUpperCase();
+      if (!/^[A-Z]{2}$/.test(code)) {
+        return code || "";
+      }
+      try {
+        const names = new Intl.DisplayNames(["ru"], { type: "region" });
+        const name = names.of(code);
+        return name ? `${code} ${name}` : code;
+      } catch {
+        return code;
+      }
     },
     extractSkillLevelFromFastmm(faceitProfile, elo, faceitMissing = false) {
       if (faceitMissing) {
@@ -4081,13 +4204,42 @@ ${nextMessage}` : nextMessage;
       this.offenderProfileInflight.set(steamId, requestPromise);
       return requestPromise;
     },
+    renderCybershokePlaytimeValue(valueNode, data) {
+      if (!valueNode) {
+        return;
+      }
+      valueNode.classList.remove("ioh-account-value--error");
+      valueNode.textContent = this.formatCybershokePlaytime(data?.playtime);
+    },
+    renderOffenderCountryValue(containerNode, data) {
+      if (!containerNode) {
+        return;
+      }
+      containerNode.textContent = "";
+      containerNode.classList.remove("ioh-account-value--error");
+      delete containerNode.dataset.countryLabel;
+      const country = data?.country;
+      if (!country) {
+        containerNode.hidden = true;
+        return;
+      }
+      containerNode.hidden = false;
+      containerNode.dataset.countryLabel = this.formatCountryTooltip(country);
+      const img = this.document.createElement("img");
+      img.className = "ioh-offender-flag";
+      img.alt = country;
+      img.width = 16;
+      img.height = 16;
+      img.src = `https://cloud.cybershoke.net/img/flags/${country}.svg`;
+      img.style.flexShrink = "0";
+      containerNode.appendChild(img);
+    },
     renderFaceitEloValue(valueNode, profileData) {
-      if (!valueNode) return;
+      if (!valueNode) return false;
       valueNode.textContent = "";
       valueNode.classList.remove("ioh-account-value--error");
       if (!profileData?.elo) {
-        valueNode.textContent = "\u2014";
-        return;
+        return false;
       }
       if (profileData.rankIconUrl) {
         const img = this.document.createElement("img");
@@ -4101,8 +4253,9 @@ ${nextMessage}` : nextMessage;
       const eloText = this.document.createElement("span");
       eloText.textContent = `${profileData.elo} Elo`;
       valueNode.appendChild(eloText);
+      return true;
     },
-    renderProfileFieldError(valueNode, containerNode, steamId, reloadFn) {
+    renderProfileFieldError(valueNode, containerNode, steamId, reloadFn, cacheMap = this.offenderProfileCache) {
       valueNode.textContent = "";
       valueNode.classList.add("ioh-account-value--error");
       const errorSpan = this.document.createElement("span");
@@ -4116,7 +4269,7 @@ ${nextMessage}` : nextMessage;
       retryBtn.addEventListener("click", () => {
         valueNode.classList.remove("ioh-account-value--error");
         containerNode.dataset.loaded = "false";
-        this.offenderProfileCache.delete(steamId);
+        cacheMap.delete(steamId);
         reloadFn({ force: true });
       });
       valueNode.appendChild(errorSpan);
@@ -4146,28 +4299,8 @@ ${nextMessage}` : nextMessage;
         containerNode.dataset.loaded = "true";
       }
     },
-    async loadFaceitElo(containerNode, steamId, { force = false } = {}) {
-      const valueNode = containerNode.querySelector(".ioh-faceit-value");
-      if (!valueNode) return;
-      if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === "true") {
-        return;
-      }
-      containerNode.dataset.steamId = steamId;
-      containerNode.dataset.loaded = "false";
-      valueNode.textContent = "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...";
-      try {
-        const profileData = await this.fetchOffenderProfile(steamId, { force });
-        this.renderFaceitEloValue(valueNode, profileData);
-        containerNode.dataset.loaded = "true";
-      } catch (error) {
-        this.renderProfileFieldError(
-          valueNode,
-          containerNode,
-          steamId,
-          (opts) => this.loadFaceitElo(containerNode, steamId, opts)
-        );
-        containerNode.dataset.loaded = "true";
-      }
+    async loadFaceitElo(_containerNode, _steamId, { force = false } = {}) {
+      await this.renderFaceitElo({ force });
     },
     async renderSteamAccountCreationDate() {
       const context = this.getOffenderFieldContext();
@@ -4179,15 +4312,138 @@ ${nextMessage}` : nextMessage;
       const containerNode = valueNode.closest(".ioh-account-created");
       await this.loadSteamAccountCreationDate(containerNode, context.offenderSteamId);
     },
-    async renderFaceitElo() {
+    async renderFaceitElo({ force = false } = {}) {
       const context = this.getOffenderFieldContext();
       if (!context) {
         this.clearFaceitElo();
         return;
       }
-      const valueNode = this.ensureFaceitEloNode(context.offenderField);
-      const containerNode = valueNode.closest(".ioh-faceit-elo");
-      await this.loadFaceitElo(containerNode, context.offenderSteamId);
+      const { offenderField, offenderSteamId } = context;
+      const existing = offenderField.parentNode.querySelector(".ioh-faceit-elo");
+      if (!force && existing && existing.dataset.steamId === offenderSteamId && existing.dataset.loaded === "true") {
+        return;
+      }
+      if (!existing || force) {
+        this.clearFaceitElo();
+      }
+      try {
+        const profileData = await this.fetchOffenderProfile(offenderSteamId, { force });
+        if (!profileData?.elo) {
+          this.clearFaceitElo();
+          return;
+        }
+        const valueNode = this.ensureFaceitEloNode(offenderField);
+        const containerNode = valueNode.closest(".ioh-faceit-elo");
+        this.renderFaceitEloValue(valueNode, profileData);
+        containerNode.dataset.steamId = offenderSteamId;
+        containerNode.dataset.loaded = "true";
+        containerNode.hidden = false;
+      } catch (error) {
+        const valueNode = this.ensureFaceitEloNode(offenderField);
+        const containerNode = valueNode.closest(".ioh-faceit-elo");
+        containerNode.dataset.steamId = offenderSteamId;
+        containerNode.hidden = false;
+        this.renderProfileFieldError(
+          valueNode,
+          containerNode,
+          offenderSteamId,
+          (opts) => this.renderFaceitElo(opts)
+        );
+        containerNode.dataset.loaded = "true";
+      }
+    },
+    async renderOffenderProjectInfo({ force = false } = {}) {
+      const showPlaytime = this.settings?.features?.showCybershokePlaytime;
+      const showCountry = this.settings?.features?.showOffenderCountry;
+      if (!showPlaytime) {
+        this.clearCybershokePlaytime();
+      }
+      if (!showCountry) {
+        this.clearOffenderCountry();
+      }
+      if (!showPlaytime && !showCountry) {
+        return;
+      }
+      const context = this.getOffenderFieldContext();
+      if (!context) {
+        this.clearCybershokePlaytime();
+        this.clearOffenderCountry();
+        return;
+      }
+      const { offenderField, offenderSteamId } = context;
+      const playtimeValue = showPlaytime ? this.ensureCybershokePlaytimeNode(offenderField) : null;
+      const playtimeContainer = playtimeValue?.closest(".ioh-cybershoke-playtime") || null;
+      const countryContainer = showCountry ? this.ensureOffenderCountryNode(offenderField) : null;
+      if (!playtimeValue && !countryContainer) {
+        return;
+      }
+      const nodesReady = (!playtimeContainer || playtimeContainer.dataset.steamId === offenderSteamId && playtimeContainer.dataset.loaded === "true") && (!countryContainer || countryContainer.dataset.steamId === offenderSteamId && countryContainer.dataset.loaded === "true");
+      if (!force && nodesReady) {
+        return;
+      }
+      const applyData = (data) => {
+        if (playtimeValue) {
+          this.renderCybershokePlaytimeValue(playtimeValue, data);
+          playtimeContainer.dataset.steamId = offenderSteamId;
+          playtimeContainer.dataset.loaded = "true";
+        }
+        if (countryContainer) {
+          this.renderOffenderCountryValue(countryContainer, data);
+          countryContainer.dataset.steamId = offenderSteamId;
+          countryContainer.dataset.loaded = "true";
+        }
+      };
+      const cached = !force ? this.offenderProjectCache.get(offenderSteamId) || this.offenderTicketProjectCache.get(offenderSteamId) : null;
+      if (cached) {
+        applyData(cached);
+        return;
+      }
+      if (playtimeValue) {
+        playtimeContainer.dataset.steamId = offenderSteamId;
+        playtimeContainer.dataset.loaded = "false";
+        playtimeValue.classList.remove("ioh-account-value--error");
+        playtimeValue.textContent = "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...";
+      }
+      if (countryContainer) {
+        countryContainer.dataset.steamId = offenderSteamId;
+        countryContainer.dataset.loaded = "false";
+        countryContainer.classList.remove("ioh-account-value--error");
+        delete countryContainer.dataset.countryLabel;
+        if (showPlaytime) {
+          countryContainer.textContent = "";
+          countryContainer.hidden = true;
+        } else {
+          countryContainer.hidden = false;
+          countryContainer.textContent = "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...";
+        }
+      }
+      try {
+        const data = await this.getOffenderProjectData(offenderSteamId, { force });
+        applyData(data);
+      } catch (error) {
+        const reloadFn = (opts) => this.renderOffenderProjectInfo(opts);
+        if (playtimeValue) {
+          this.renderProfileFieldError(
+            playtimeValue,
+            playtimeContainer,
+            offenderSteamId,
+            reloadFn,
+            this.offenderTicketProjectCache
+          );
+          playtimeContainer.dataset.loaded = "true";
+        }
+        if (countryContainer) {
+          countryContainer.hidden = false;
+          this.renderProfileFieldError(
+            countryContainer,
+            countryContainer,
+            offenderSteamId,
+            reloadFn,
+            this.offenderTicketProjectCache
+          );
+          countryContainer.dataset.loaded = "true";
+        }
+      }
     }
   };
 
@@ -4273,6 +4529,24 @@ ${nextMessage}` : nextMessage;
       const seconds = Number(raw);
       return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
     },
+    normalizeCountryCode(raw) {
+      if (raw == null || raw === "") {
+        return null;
+      }
+      const value = String(raw).trim().toLowerCase();
+      return /^[a-z]{2}$/.test(value) ? value : null;
+    },
+    extractCountry(result) {
+      return this.normalizeCountryCode(result?.basic?.country);
+    },
+    extractPlaytime(result) {
+      const raw = result?.cybershoke?.global?.playtime;
+      if (raw == null || raw === "") {
+        return null;
+      }
+      const seconds = Number(raw);
+      return Number.isFinite(seconds) ? seconds : null;
+    },
     normalizeVipName(raw) {
       if (raw == null) {
         return null;
@@ -4304,7 +4578,9 @@ ${nextMessage}` : nextMessage;
         isMuted: this.extractActiveMute(result),
         vipName: this.extractVipName(result),
         profileVerified: this.extractProfileVerified(result),
-        isModerator: this.extractIsModerator(result)
+        isModerator: this.extractIsModerator(result),
+        country: this.extractCountry(result),
+        playtime: this.extractPlaytime(result)
       };
     },
     getCachedUserData(steamId, ttlMs = 5e3) {
@@ -4318,6 +4594,39 @@ ${nextMessage}` : nextMessage;
       }
       return entry;
     },
+    setOffenderProjectCache(steamId, data) {
+      this.offenderProjectCache.set(steamId, {
+        country: data.country ?? null,
+        playtime: data.playtime ?? null
+      });
+    },
+    setOffenderTicketProjectCache(steamId, data) {
+      this.offenderTicketProjectCache.set(steamId, {
+        country: data.country ?? null,
+        playtime: data.playtime ?? null
+      });
+    },
+    collectComplaintQueueOffenderSteamIds() {
+      const ids = /* @__PURE__ */ new Set();
+      for (const table of this.findComplaintQueueTables()) {
+        for (const row of table.querySelectorAll("tbody tr")) {
+          const link = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
+          const match = link?.href?.match(/\d{17,18}/);
+          if (match) {
+            ids.add(match[0]);
+          }
+        }
+      }
+      return ids;
+    },
+    pruneOffenderProjectCache(presentSteamIds = null) {
+      const present = presentSteamIds || this.collectComplaintQueueOffenderSteamIds();
+      for (const steamId of [...this.offenderProjectCache.keys()]) {
+        if (!present.has(steamId)) {
+          this.offenderProjectCache.delete(steamId);
+        }
+      }
+    },
     setCachedUserData(steamId, data) {
       this.userDataCache.set(steamId, {
         serverIp: data.serverIp ?? null,
@@ -4330,6 +4639,89 @@ ${nextMessage}` : nextMessage;
         isModerator: Boolean(data.isModerator),
         fetchedAt: Date.now()
       });
+      this.setOffenderProjectCache(steamId, data);
+    },
+    async fetchParsedUserData(steamId) {
+      if (this.offenderProjectInflight.has(steamId)) {
+        return this.offenderProjectInflight.get(steamId);
+      }
+      const requestPromise = (async () => {
+        const response = await this.fetchUserData(steamId);
+        if (response.status === 429) {
+          this.globalServerCooldown = Date.now() + 660;
+          throw new Error("429");
+        }
+        if (!response.ok) {
+          throw new Error(`fetch failed ${response.status}`);
+        }
+        const result = await response.json();
+        const userData = this.parseUserDataResult(result);
+        this.setCachedUserData(steamId, userData);
+        return userData;
+      })().finally(() => {
+        this.offenderProjectInflight.delete(steamId);
+      });
+      this.offenderProjectInflight.set(steamId, requestPromise);
+      return requestPromise;
+    },
+    async fetchOffenderTicketProjectData(steamId) {
+      if (this.offenderTicketProjectInflight.has(steamId)) {
+        return this.offenderTicketProjectInflight.get(steamId);
+      }
+      if (this.offenderProjectInflight.has(steamId)) {
+        const shared = this.offenderProjectInflight.get(steamId).then((userData) => {
+          const fromQueue = this.offenderProjectCache.get(steamId);
+          if (fromQueue) {
+            return fromQueue;
+          }
+          const project = {
+            country: userData?.country ?? null,
+            playtime: userData?.playtime ?? null
+          };
+          this.setOffenderTicketProjectCache(steamId, project);
+          return project;
+        });
+        this.offenderTicketProjectInflight.set(steamId, shared);
+        try {
+          return await shared;
+        } finally {
+          this.offenderTicketProjectInflight.delete(steamId);
+        }
+      }
+      const requestPromise = (async () => {
+        const response = await this.fetchUserData(steamId);
+        if (response.status === 429) {
+          this.globalServerCooldown = Date.now() + 660;
+          throw new Error("429");
+        }
+        if (!response.ok) {
+          throw new Error(`fetch failed ${response.status}`);
+        }
+        const result = await response.json();
+        const userData = this.parseUserDataResult(result);
+        const project = {
+          country: userData.country ?? null,
+          playtime: userData.playtime ?? null
+        };
+        this.setOffenderTicketProjectCache(steamId, project);
+        return project;
+      })().finally(() => {
+        this.offenderTicketProjectInflight.delete(steamId);
+      });
+      this.offenderTicketProjectInflight.set(steamId, requestPromise);
+      return requestPromise;
+    },
+    async getOffenderProjectData(steamId, { force = false } = {}) {
+      if (force) {
+        this.offenderTicketProjectCache.delete(steamId);
+      }
+      if (!force && this.offenderProjectCache.has(steamId)) {
+        return this.offenderProjectCache.get(steamId);
+      }
+      if (!force && this.offenderTicketProjectCache.has(steamId)) {
+        return this.offenderTicketProjectCache.get(steamId);
+      }
+      return this.fetchOffenderTicketProjectData(steamId);
     },
     getServerLinkLabelElement(link) {
       return link.querySelector(":scope > span") || link.querySelector("span");
@@ -5197,20 +5589,12 @@ ${nextMessage}` : nextMessage;
       let userData = this.getCachedUserData(offenderSteamId, CACHE_INTERVAL);
       if (!userData) {
         try {
-          const response = await this.fetchUserData(offenderSteamId);
-          if (response.status === 429) {
-            this.globalServerCooldown = Date.now() + 660;
+          userData = await this.fetchParsedUserData(offenderSteamId);
+        } catch (err) {
+          if (err?.message === "429") {
             console.log("[Helper] \u0422\u0440\u0435\u043A\u0435\u0440 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0433\u043E \u0442\u0438\u043A\u0435\u0442\u0430: skip \u2014 429 cooldown");
             return;
           }
-          if (!response.ok) {
-            console.log("[Helper] \u0422\u0440\u0435\u043A\u0435\u0440 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0433\u043E \u0442\u0438\u043A\u0435\u0442\u0430: skip \u2014 fetch failed", response.status);
-            return;
-          }
-          const result = await response.json();
-          userData = this.parseUserDataResult(result);
-          this.setCachedUserData(offenderSteamId, userData);
-        } catch (err) {
           console.log("[Helper] \u0422\u0440\u0435\u043A\u0435\u0440 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0433\u043E \u0442\u0438\u043A\u0435\u0442\u0430: skip \u2014 \u043E\u0448\u0438\u0431\u043A\u0430 fetch", err);
           return;
         }
@@ -5313,18 +5697,14 @@ ${nextMessage}` : nextMessage;
           let userData = this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
           if (!userData) {
             await new Promise((resolve) => setTimeout(resolve, 340));
-            const response = await this.fetchUserData(targetSteamId);
-            if (response.status === 429) {
-              this.globalServerCooldown = Date.now() + 660;
-              await new Promise((resolve) => setTimeout(resolve, 660));
+            try {
+              userData = await this.fetchParsedUserData(targetSteamId);
+            } catch (err) {
+              if (err?.message === "429") {
+                await new Promise((resolve) => setTimeout(resolve, 660));
+              }
               continue;
             }
-            if (!response.ok) {
-              continue;
-            }
-            const result = await response.json();
-            userData = this.parseUserDataResult(result);
-            this.setCachedUserData(targetSteamId, userData);
           }
           const actionState = this.rowActionIsInReview(targetRow) ? "review" : targetRow.querySelector(".ioh-punishment-action") ? "custom" : "accept";
           const snapshotKey = `${targetSteamId}|${userData.serverIp || ""}|${userData.vipName || ""}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
@@ -5404,6 +5784,10 @@ ${nextMessage}` : nextMessage;
       this.isCheckingServer = false;
       this.offenderProfileCache = /* @__PURE__ */ new Map();
       this.offenderProfileInflight = /* @__PURE__ */ new Map();
+      this.offenderProjectCache = /* @__PURE__ */ new Map();
+      this.offenderProjectInflight = /* @__PURE__ */ new Map();
+      this.offenderTicketProjectCache = /* @__PURE__ */ new Map();
+      this.offenderTicketProjectInflight = /* @__PURE__ */ new Map();
       this.autoConnectedServerIps = /* @__PURE__ */ new Map();
       this._autoConnectSkipLoggedIps = /* @__PURE__ */ new Set();
       this.chatSignatureByKey = /* @__PURE__ */ new Map();
@@ -6957,6 +7341,7 @@ ${nextMessage}` : nextMessage;
     handleComplaintQueueTableMutations(mutations) {
       const newRows = /* @__PURE__ */ new Set();
       const updatedRows = /* @__PURE__ */ new Set();
+      let structureChanged = false;
       for (const mutation of mutations) {
         if (isIohNode(mutation.target)) {
           continue;
@@ -6965,12 +7350,21 @@ ${nextMessage}` : nextMessage;
           if (!node || node.nodeType !== 1 || isIohNode(node)) {
             continue;
           }
+          structureChanged = true;
           if (node.matches?.("tr")) {
             newRows.add(node);
             continue;
           }
           const nestedRows = node.querySelectorAll?.("tr") || [];
           nestedRows.forEach((row2) => newRows.add(row2));
+        }
+        for (const node of mutation.removedNodes || []) {
+          if (!node || node.nodeType !== 1 || isIohNode(node)) {
+            continue;
+          }
+          if (node.matches?.("tr") || node.querySelector?.("tr")) {
+            structureChanged = true;
+          }
         }
         const target = mutation.target;
         const row = target?.nodeType === 1 ? target.closest?.("tbody tr") : target?.parentElement?.closest?.("tbody tr");
@@ -6983,6 +7377,9 @@ ${nextMessage}` : nextMessage;
       }
       if (updatedRows.size) {
         this.scheduleRowHighlights(updatedRows);
+      }
+      if (structureChanged) {
+        this.app.ticketService.pruneOffenderProjectCache();
       }
     }
     observeComplaintQueueTable(table) {
@@ -7629,6 +8026,12 @@ ${nextMessage}` : nextMessage;
         this.ticketService.renderFaceitElo();
       } else {
         this.ticketService.clearFaceitElo();
+      }
+      if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) {
+        this.ticketService.renderOffenderProjectInfo();
+      } else {
+        this.ticketService.clearCybershokePlaytime();
+        this.ticketService.clearOffenderCountry();
       }
       this.ticketService.refreshComplaintPunishmentButtons();
       this.syncOffenderTrackingForPage();

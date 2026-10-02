@@ -92,6 +92,7 @@ export class DOMCoordinator {
     handleComplaintQueueTableMutations(mutations) {
         const newRows = new Set();
         const updatedRows = new Set();
+        let structureChanged = false;
 
         for (const mutation of mutations) {
             if (isIohNode(mutation.target)) {
@@ -101,12 +102,22 @@ export class DOMCoordinator {
                 if (!node || node.nodeType !== 1 || isIohNode(node)) {
                     continue;
                 }
+                structureChanged = true;
                 if (node.matches?.('tr')) {
                     newRows.add(node);
                     continue;
                 }
                 const nestedRows = node.querySelectorAll?.('tr') || [];
                 nestedRows.forEach(row => newRows.add(row));
+            }
+
+            for (const node of mutation.removedNodes || []) {
+                if (!node || node.nodeType !== 1 || isIohNode(node)) {
+                    continue;
+                }
+                if (node.matches?.('tr') || node.querySelector?.('tr')) {
+                    structureChanged = true;
+                }
             }
 
             const target = mutation.target;
@@ -123,6 +134,9 @@ export class DOMCoordinator {
         }
         if (updatedRows.size) {
             this.scheduleRowHighlights(updatedRows);
+        }
+        if (structureChanged) {
+            this.app.ticketService.pruneOffenderProjectCache();
         }
     }
 

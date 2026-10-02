@@ -5,6 +5,14 @@ export const OffenderProfileMethods = {
         this.document.querySelectorAll('.ioh-account-created').forEach(node => node.remove());
     },
 
+    clearCybershokePlaytime() {
+        this.document.querySelectorAll('.ioh-cybershoke-playtime').forEach(node => node.remove());
+    },
+
+    clearOffenderCountry() {
+        this.document.querySelectorAll('.ioh-offender-country').forEach(node => node.remove());
+    },
+
     clearFaceitElo() {
         this.document.querySelectorAll('.ioh-faceit-elo').forEach(node => node.remove());
     },
@@ -31,8 +39,11 @@ export const OffenderProfileMethods = {
         node.appendChild(labelSpan);
         node.appendChild(valueDiv);
 
+        const playtimeNode = field.parentNode.querySelector('.ioh-cybershoke-playtime');
         const faceitNode = field.parentNode.querySelector('.ioh-faceit-elo');
-        if (faceitNode) {
+        if (playtimeNode) {
+            playtimeNode.insertAdjacentElement('beforebegin', node);
+        } else if (faceitNode) {
             faceitNode.insertAdjacentElement('beforebegin', node);
         } else {
             field.insertAdjacentElement('afterend', node);
@@ -63,14 +74,136 @@ export const OffenderProfileMethods = {
         node.appendChild(labelSpan);
         node.appendChild(valueDiv);
 
+        const playtimeNode = field.parentNode.querySelector('.ioh-cybershoke-playtime');
         const accountNode = field.parentNode.querySelector('.ioh-account-created');
-        if (accountNode) {
+        if (playtimeNode) {
+            playtimeNode.insertAdjacentElement('afterend', node);
+        } else if (accountNode) {
             accountNode.insertAdjacentElement('afterend', node);
         } else {
             field.insertAdjacentElement('afterend', node);
         }
 
         return valueDiv;
+    },
+
+    ensureCybershokePlaytimeNode(field) {
+        let node = field.parentNode.querySelector('.ioh-cybershoke-playtime');
+        if (node) {
+            return node.querySelector('.ioh-cybershoke-value');
+        }
+
+        node = this.document.createElement('div');
+        node.className = field.className + ' ioh-cybershoke-playtime';
+        markIoh(node);
+
+        const labelSpan = this.document.createElement('span');
+        const originalSpan = field.querySelector('span');
+        labelSpan.className = originalSpan ? originalSpan.className : '';
+        labelSpan.textContent = 'CYBERSHOKE';
+
+        const valueDiv = this.document.createElement('div');
+        const originalDiv = field.querySelector('div');
+        valueDiv.className = (originalDiv ? originalDiv.className : '') + ' ioh-cybershoke-value';
+
+        node.appendChild(labelSpan);
+        node.appendChild(valueDiv);
+
+        const faceitNode = field.parentNode.querySelector('.ioh-faceit-elo');
+        const accountNode = field.parentNode.querySelector('.ioh-account-created');
+        if (faceitNode) {
+            faceitNode.insertAdjacentElement('beforebegin', node);
+        } else if (accountNode) {
+            accountNode.insertAdjacentElement('afterend', node);
+        } else {
+            field.insertAdjacentElement('afterend', node);
+        }
+
+        return valueDiv;
+    },
+
+    findOffenderNickElement(field) {
+        const valueBlock = this.findFieldValueBlock(field);
+        if (!valueBlock) {
+            return null;
+        }
+
+        const buttons = Array.from(valueBlock.querySelectorAll('button'));
+        const nickButton = buttons.find((btn) => {
+            const text = (btn.textContent || '').trim();
+            return text && !/^\d{17,18}$/.test(text);
+        });
+        if (nickButton) {
+            return nickButton;
+        }
+
+        const profileLink = valueBlock.querySelector(
+            'a[href*="cybershoke.net/"], a[href*="/moderator/profile/"]'
+        );
+        if (!profileLink) {
+            return null;
+        }
+
+        // Nick is usually a sibling/ancestor node above the steamid link row.
+        const linkRow = profileLink.parentElement;
+        if (linkRow?.previousElementSibling) {
+            const prev = linkRow.previousElementSibling;
+            const prevButton = prev.querySelector?.('button') || (prev.tagName === 'BUTTON' ? prev : null);
+            if (prevButton) {
+                return prevButton;
+            }
+            return prev;
+        }
+
+        return null;
+    },
+
+    ensureOffenderCountryNode(field) {
+        const valueBlock = this.findFieldValueBlock(field);
+        const existing = valueBlock?.querySelector('.ioh-offender-country')
+            || field.parentNode.querySelector('.ioh-offender-country');
+        if (existing) {
+            return existing;
+        }
+
+        const node = this.document.createElement('span');
+        node.className = 'ioh-offender-country';
+        node.hidden = true;
+        markIoh(node);
+
+        const nick = this.findOffenderNickElement(field);
+        if (nick?.parentNode) {
+            let insertAfter = nick;
+            let next = nick.nextElementSibling;
+            while (
+                next
+                && (
+                    next.classList.contains('ioh-admin-icon')
+                    || next.classList.contains('ioh-moderator-badge')
+                    || next.classList.contains('ioh-profile-verified')
+                    || next.classList.contains('ioh-vip-badge')
+                    || next.classList.contains('ioh-punishment-icon')
+                )
+            ) {
+                insertAfter = next;
+                next = next.nextElementSibling;
+            }
+            insertAfter.insertAdjacentElement('afterend', node);
+            return node;
+        }
+
+        const profileLink = valueBlock?.querySelector(
+            'a[href*="cybershoke.net/"], a[href*="/moderator/profile/"]'
+        );
+        if (profileLink) {
+            profileLink.insertAdjacentElement('afterend', node);
+        } else if (valueBlock) {
+            valueBlock.appendChild(node);
+        } else {
+            field.appendChild(node);
+        }
+
+        return node;
     },
 
     getOffenderFieldContext() {
@@ -102,6 +235,30 @@ export const OffenderProfileMethods = {
             month: 'short',
             year: 'numeric'
         });
+    },
+
+    formatCybershokePlaytime(playtime) {
+        const seconds = Number(playtime);
+        if (!Number.isFinite(seconds) || seconds < 0) {
+            return '0ч';
+        }
+
+        return `${Math.floor(seconds / 3600)}ч`;
+    },
+
+    formatCountryTooltip(country) {
+        const code = String(country || '').trim().toUpperCase();
+        if (!/^[A-Z]{2}$/.test(code)) {
+            return code || '';
+        }
+
+        try {
+            const names = new Intl.DisplayNames(['ru'], {type: 'region'});
+            const name = names.of(code);
+            return name ? `${code} ${name}` : code;
+        } catch {
+            return code;
+        }
     },
 
     extractSkillLevelFromFastmm(faceitProfile, elo, faceitMissing = false) {
@@ -210,15 +367,51 @@ export const OffenderProfileMethods = {
         return requestPromise;
     },
 
+    renderCybershokePlaytimeValue(valueNode, data) {
+        if (!valueNode) {
+            return;
+        }
+
+        valueNode.classList.remove('ioh-account-value--error');
+        valueNode.textContent = this.formatCybershokePlaytime(data?.playtime);
+    },
+
+    renderOffenderCountryValue(containerNode, data) {
+        if (!containerNode) {
+            return;
+        }
+
+        containerNode.textContent = '';
+        containerNode.classList.remove('ioh-account-value--error');
+        delete containerNode.dataset.countryLabel;
+
+        const country = data?.country;
+        if (!country) {
+            containerNode.hidden = true;
+            return;
+        }
+
+        containerNode.hidden = false;
+        containerNode.dataset.countryLabel = this.formatCountryTooltip(country);
+
+        const img = this.document.createElement('img');
+        img.className = 'ioh-offender-flag';
+        img.alt = country;
+        img.width = 16;
+        img.height = 16;
+        img.src = `https://cloud.cybershoke.net/img/flags/${country}.svg`;
+        img.style.flexShrink = '0';
+        containerNode.appendChild(img);
+    },
+
     renderFaceitEloValue(valueNode, profileData) {
-        if (!valueNode) return;
+        if (!valueNode) return false;
 
         valueNode.textContent = '';
         valueNode.classList.remove('ioh-account-value--error');
 
         if (!profileData?.elo) {
-            valueNode.textContent = '—';
-            return;
+            return false;
         }
 
         if (profileData.rankIconUrl) {
@@ -236,9 +429,10 @@ export const OffenderProfileMethods = {
         const eloText = this.document.createElement('span');
         eloText.textContent = `${profileData.elo} Elo`;
         valueNode.appendChild(eloText);
+        return true;
     },
 
-    renderProfileFieldError(valueNode, containerNode, steamId, reloadFn) {
+    renderProfileFieldError(valueNode, containerNode, steamId, reloadFn, cacheMap = this.offenderProfileCache) {
         valueNode.textContent = '';
         valueNode.classList.add('ioh-account-value--error');
 
@@ -254,7 +448,7 @@ export const OffenderProfileMethods = {
         retryBtn.addEventListener('click', () => {
             valueNode.classList.remove('ioh-account-value--error');
             containerNode.dataset.loaded = 'false';
-            this.offenderProfileCache.delete(steamId);
+            cacheMap.delete(steamId);
             reloadFn({force: true});
         });
 
@@ -291,32 +485,8 @@ export const OffenderProfileMethods = {
         }
     },
 
-    async loadFaceitElo(containerNode, steamId, {force = false} = {}) {
-        const valueNode = containerNode.querySelector('.ioh-faceit-value');
-        if (!valueNode) return;
-
-        if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === 'true') {
-            return;
-        }
-
-        containerNode.dataset.steamId = steamId;
-        containerNode.dataset.loaded = 'false';
-        valueNode.textContent = 'Загрузка...';
-
-        try {
-            const profileData = await this.fetchOffenderProfile(steamId, {force});
-            // Successful fetch with no Faceit / no ELO → dash via renderFaceitEloValue.
-            this.renderFaceitEloValue(valueNode, profileData);
-            containerNode.dataset.loaded = 'true';
-        } catch (error) {
-            this.renderProfileFieldError(
-                valueNode,
-                containerNode,
-                steamId,
-                (opts) => this.loadFaceitElo(containerNode, steamId, opts)
-            );
-            containerNode.dataset.loaded = 'true';
-        }
+    async loadFaceitElo(_containerNode, _steamId, {force = false} = {}) {
+        await this.renderFaceitElo({force});
     },
 
     async renderSteamAccountCreationDate() {
@@ -331,15 +501,165 @@ export const OffenderProfileMethods = {
         await this.loadSteamAccountCreationDate(containerNode, context.offenderSteamId);
     },
 
-    async renderFaceitElo() {
+    async renderFaceitElo({force = false} = {}) {
         const context = this.getOffenderFieldContext();
         if (!context) {
             this.clearFaceitElo();
             return;
         }
 
-        const valueNode = this.ensureFaceitEloNode(context.offenderField);
-        const containerNode = valueNode.closest('.ioh-faceit-elo');
-        await this.loadFaceitElo(containerNode, context.offenderSteamId);
+        const {offenderField, offenderSteamId} = context;
+        const existing = offenderField.parentNode.querySelector('.ioh-faceit-elo');
+        if (
+            !force
+            && existing
+            && existing.dataset.steamId === offenderSteamId
+            && existing.dataset.loaded === 'true'
+        ) {
+            return;
+        }
+
+        // Do not mount the Faceit row until we know the offender has Faceit.
+        if (!existing || force) {
+            this.clearFaceitElo();
+        }
+
+        try {
+            const profileData = await this.fetchOffenderProfile(offenderSteamId, {force});
+            if (!profileData?.elo) {
+                this.clearFaceitElo();
+                return;
+            }
+
+            const valueNode = this.ensureFaceitEloNode(offenderField);
+            const containerNode = valueNode.closest('.ioh-faceit-elo');
+            this.renderFaceitEloValue(valueNode, profileData);
+            containerNode.dataset.steamId = offenderSteamId;
+            containerNode.dataset.loaded = 'true';
+            containerNode.hidden = false;
+        } catch (error) {
+            const valueNode = this.ensureFaceitEloNode(offenderField);
+            const containerNode = valueNode.closest('.ioh-faceit-elo');
+            containerNode.dataset.steamId = offenderSteamId;
+            containerNode.hidden = false;
+            this.renderProfileFieldError(
+                valueNode,
+                containerNode,
+                offenderSteamId,
+                (opts) => this.renderFaceitElo(opts)
+            );
+            containerNode.dataset.loaded = 'true';
+        }
+    },
+
+    async renderOffenderProjectInfo({force = false} = {}) {
+        const showPlaytime = this.settings?.features?.showCybershokePlaytime;
+        const showCountry = this.settings?.features?.showOffenderCountry;
+
+        if (!showPlaytime) {
+            this.clearCybershokePlaytime();
+        }
+        if (!showCountry) {
+            this.clearOffenderCountry();
+        }
+        if (!showPlaytime && !showCountry) {
+            return;
+        }
+
+        const context = this.getOffenderFieldContext();
+        if (!context) {
+            this.clearCybershokePlaytime();
+            this.clearOffenderCountry();
+            return;
+        }
+
+        const {offenderField, offenderSteamId} = context;
+        const playtimeValue = showPlaytime ? this.ensureCybershokePlaytimeNode(offenderField) : null;
+        const playtimeContainer = playtimeValue?.closest('.ioh-cybershoke-playtime') || null;
+        const countryContainer = showCountry ? this.ensureOffenderCountryNode(offenderField) : null;
+
+        if (!playtimeValue && !countryContainer) {
+            return;
+        }
+
+        const nodesReady = (!playtimeContainer || (
+            playtimeContainer.dataset.steamId === offenderSteamId && playtimeContainer.dataset.loaded === 'true'
+        )) && (!countryContainer || (
+            countryContainer.dataset.steamId === offenderSteamId && countryContainer.dataset.loaded === 'true'
+        ));
+
+        if (!force && nodesReady) {
+            return;
+        }
+
+        const applyData = (data) => {
+            if (playtimeValue) {
+                this.renderCybershokePlaytimeValue(playtimeValue, data);
+                playtimeContainer.dataset.steamId = offenderSteamId;
+                playtimeContainer.dataset.loaded = 'true';
+            }
+            if (countryContainer) {
+                this.renderOffenderCountryValue(countryContainer, data);
+                countryContainer.dataset.steamId = offenderSteamId;
+                countryContainer.dataset.loaded = 'true';
+            }
+        };
+
+        const cached = !force
+            ? (this.offenderProjectCache.get(offenderSteamId)
+                || this.offenderTicketProjectCache.get(offenderSteamId))
+            : null;
+        if (cached) {
+            applyData(cached);
+            return;
+        }
+
+        if (playtimeValue) {
+            playtimeContainer.dataset.steamId = offenderSteamId;
+            playtimeContainer.dataset.loaded = 'false';
+            playtimeValue.classList.remove('ioh-account-value--error');
+            playtimeValue.textContent = 'Загрузка...';
+        }
+        if (countryContainer) {
+            countryContainer.dataset.steamId = offenderSteamId;
+            countryContainer.dataset.loaded = 'false';
+            countryContainer.classList.remove('ioh-account-value--error');
+            delete countryContainer.dataset.countryLabel;
+            if (showPlaytime) {
+                countryContainer.textContent = '';
+                countryContainer.hidden = true;
+            } else {
+                countryContainer.hidden = false;
+                countryContainer.textContent = 'Загрузка...';
+            }
+        }
+
+        try {
+            const data = await this.getOffenderProjectData(offenderSteamId, {force});
+            applyData(data);
+        } catch (error) {
+            const reloadFn = (opts) => this.renderOffenderProjectInfo(opts);
+            if (playtimeValue) {
+                this.renderProfileFieldError(
+                    playtimeValue,
+                    playtimeContainer,
+                    offenderSteamId,
+                    reloadFn,
+                    this.offenderTicketProjectCache
+                );
+                playtimeContainer.dataset.loaded = 'true';
+            }
+            if (countryContainer) {
+                countryContainer.hidden = false;
+                this.renderProfileFieldError(
+                    countryContainer,
+                    countryContainer,
+                    offenderSteamId,
+                    reloadFn,
+                    this.offenderTicketProjectCache
+                );
+                countryContainer.dataset.loaded = 'true';
+            }
+        }
     },
 };

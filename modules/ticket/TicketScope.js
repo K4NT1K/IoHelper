@@ -454,7 +454,7 @@ export const TicketScopeMethods = {
 
     isExtensionUiElement(element) {
         return Boolean(
-            element?.closest('[data-ioh], .ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #mod-notif-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row, .ioh-account-created, .ioh-faceit-elo')
+            element?.closest('[data-ioh], .ioh-analysis-row, .ioh-analysis-label, .ioh-analysis-value, #mod-ticket-panel, #mod-notif-panel, #helper-suggest-badge, #ioh-ticket-punishment-actions, #ioh-ticket-issue-mute, #ioh-ticket-issue-ban, .ioh-badge-row, .ioh-account-created, .ioh-cybershoke-playtime, .ioh-offender-country, .ioh-faceit-elo')
         );
     },
 
