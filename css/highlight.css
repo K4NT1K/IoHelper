@@ -307,7 +307,7 @@ td.ioh-offender-vip-cell {
 }
 
 .ioh-vip-name-row {
-    --ioh-vip-color: #feb611;
+    --ioh-vip-color: #f0b358;
     display: inline-flex !important;
     align-items: center;
     flex-wrap: nowrap;
@@ -325,7 +325,7 @@ td.ioh-offender-vip-cell {
 }
 
 .ioh-vip-name-row.ioh-vip-nick--lite {
-    --ioh-vip-color: #32a0ef;
+    --ioh-vip-color: #6080ff;
 }
 
 .ioh-vip-name-row > button,
@@ -367,7 +367,7 @@ td.ioh-offender-vip-cell {
 }
 
 .ioh-vip-badge {
-    --ioh-vip-color: #feb611;
+    --ioh-vip-color: #f0b358;
     position: absolute;
     top: 0;
     left: 0;
@@ -398,7 +398,7 @@ td.ioh-offender-vip-cell {
 }
 
 .ioh-vip-badge--lite {
-    --ioh-vip-color: #32a0ef;
+    --ioh-vip-color: #6080ff;
 }
 
 .ioh-vip-badge img {

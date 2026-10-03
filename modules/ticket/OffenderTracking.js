@@ -1307,7 +1307,7 @@ export const OffenderTrackingMethods = {
         badge.appendChild(icon);
         badge.appendChild(label);
 
-        const vipColor = meta.variant === 'lite' ? '#32a0ef' : '#feb611';
+        const vipColor = meta.variant === 'lite' ? '#6080ff' : '#f0b358';
         const nameButton = ctx.nameButton;
         let nameRow = null;
 
