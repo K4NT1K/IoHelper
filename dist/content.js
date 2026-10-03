@@ -4561,7 +4561,7 @@ ${nextMessage}` : nextMessage;
       return this.normalizeVipName(result?.basic?.vip_name);
     },
     extractVerification(result) {
-      return result?.personal_data?.verification ?? result?.verification ?? null;
+      return result?.basic?.verification ?? result?.personal_data?.verification ?? result?.verification ?? null;
     },
     extractProfileVerified(result) {
       return Boolean(this.extractVerification(result)?.profile);
