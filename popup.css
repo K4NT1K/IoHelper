@@ -8,11 +8,14 @@
     --text: #f5f7fb;
     --subtext: rgba(245, 247, 251, 0.68);
     --muted: rgba(245, 247, 251, 0.42);
-    --blue: #0c4bb0;
-    --blue-2: #1370d8;
-    --blue-glow: rgba(59, 130, 246, 0.36);
+    /* CYBERSHOKE brand: LITE #6080ff, PREMIUM #f0b358 */
+    --lite: #6080ff;
+    --premium: #f0b358;
+    --blue: #31469b;
+    --blue-2: #6080ff;
+    --blue-glow: rgba(96, 128, 255, 0.36);
     --danger: #fb7185;
-    --success: #60a5fa;
+    --success: #6080ff;
     --shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
     --radius-xl: 24px;
     --radius-lg: 18px;
@@ -47,7 +50,7 @@ body {
     margin: 0;
     font-family: var(--font);
     color: var(--text);
-    background: linear-gradient(160deg, #050711 0%, #0b1020 52%, #05070d 100%);
+    background: linear-gradient(160deg, #050711 0%, #0f1624 52%, #05070d 100%);
     letter-spacing: 0;
 }
 
@@ -66,7 +69,7 @@ button {
     padding: 18px;
     overflow: hidden;
     isolation: isolate;
-    background: linear-gradient(145deg, rgb(0 28 73 / 0.95), rgb(9 24 70));
+    background: linear-gradient(145deg, rgb(15 22 36 / 0.98), rgb(25 36 90 / 0.95));
     border: 1px solid var(--stroke);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow);
@@ -94,7 +97,7 @@ button {
     height: 46px;
     flex: 0 0 auto;
     border-radius: 15px;
-    background: linear-gradient(145deg, rgb(0 28 73 / 0.95), rgb(3 56 181 / 0.42));
+    background: linear-gradient(145deg, rgb(15 22 36 / 0.95), rgb(49 70 155 / 0.45));
     box-shadow: 0 16px 34px var(--blue-glow), inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
@@ -127,9 +130,9 @@ button {
     font-weight: 650;
     color: var(--blue-2);
     padding: 5px 9px;
-    border: 1px solid rgba(125, 211, 252, 0.2);
+    border: 1px solid rgba(144, 168, 255, 0.2);
     border-radius: 999px;
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(96, 128, 255, 0.12);
 }
 
 .hero-panel {
@@ -143,7 +146,7 @@ button {
     border: 1px solid var(--stroke);
     border-radius: var(--radius-lg);
     background:
-        linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(255, 255, 255, 0.045)),
+        linear-gradient(135deg, rgba(96, 128, 255, 0.2), rgba(255, 255, 255, 0.045)),
         rgba(255, 255, 255, 0.045);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
@@ -173,8 +176,8 @@ h1 {
     font-size: 12px;
     font-weight: 660;
     border-radius: 999px;
-    border: 1px solid rgba(96, 165, 250, 0.28);
-    background: rgba(96, 165, 250, 0.14);
+    border: 1px solid rgba(96, 128, 255, 0.28);
+    background: rgba(96, 128, 255, 0.14);
 }
 
 .status-dot {
@@ -335,9 +338,9 @@ h1 {
 
     border-radius: 6px;
 
-    background: rgba(19, 112, 216, .15);
+    background: rgba(49, 70, 155, .15);
 
-    border: 1px solid rgba(125,211,252,.35);
+    border: 1px solid rgba(144, 168, 255,.35);
 
     transition: .2s;
 
@@ -347,7 +350,7 @@ h1 {
 }
 
 .reason-checkbox input:hover {
-    background: rgba(19,112,216,.22);
+    background: rgba(49, 70, 155,.22);
 }
 
 .reason-checkbox input:checked {
@@ -445,9 +448,9 @@ h1 {
     font-size: 10px;
     font-weight: 780;
     line-height: 1;
-    border: 1px solid rgba(125, 211, 252, 0.28);
+    border: 1px solid rgba(144, 168, 255, 0.28);
     border-radius: 50%;
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(96, 128, 255, 0.12);
     cursor: help;
     transition: var(--spring);
 }
@@ -455,9 +458,9 @@ h1 {
 .info-dot:hover,
 .info-dot:focus-visible {
     color: #fff;
-    background: rgba(59, 130, 246, 0.28);
-    border-color: rgba(125, 211, 252, 0.58);
-    box-shadow: 0 0 18px rgba(59, 130, 246, 0.28);
+    background: rgba(96, 128, 255, 0.28);
+    border-color: rgba(144, 168, 255, 0.58);
+    box-shadow: 0 0 18px rgba(96, 128, 255, 0.28);
     outline: none;
 }
 
@@ -520,7 +523,7 @@ h1 {
     width: 21px;
     left: 2px;
     bottom: 2px;
-    background: linear-gradient(145deg, #ffffff, #dbeafe);
+    background: linear-gradient(145deg, #ffffff, #dbe2ff);
     border-radius: 50%;
     transition: var(--spring);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.38);
@@ -528,7 +531,7 @@ h1 {
 
 .switch-ios input:checked+.slider {
     background: linear-gradient(135deg, var(--blue), var(--blue-2));
-    border-color: rgba(125, 211, 252, 0.55);
+    border-color: rgba(144, 168, 255, 0.55);
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18), 0 0 20px var(--blue-glow);
 }
 
@@ -648,9 +651,9 @@ h1 {
     gap: 4px;
     max-width: 100%;
     padding: 5px 7px 5px 10px;
-    color: #dbeafe;
-    background: rgba(59, 130, 246, 0.14);
-    border: 1px solid rgba(125, 211, 252, 0.2);
+    color: #dbe2ff;
+    background: rgba(96, 128, 255, 0.14);
+    border: 1px solid rgba(144, 168, 255, 0.2);
     border-radius: 10px;
     font-size: 12px;
     font-weight: 620;
@@ -704,8 +707,8 @@ h1 {
 }
 
 .triggers-input-row input[type="text"]:focus {
-    border-color: rgba(125, 211, 252, 0.5);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+    border-color: rgba(144, 168, 255, 0.5);
+    box-shadow: 0 0 0 3px rgba(96, 128, 255, 0.18);
 }
 
 .triggers-input-row input[type="text"]::placeholder {
