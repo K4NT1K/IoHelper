@@ -14,7 +14,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "icons/logo_small_outline.png"
+    "default_icon": "icons/logo_small_monochrome.png"
   },
   "host_permissions": [
     "https://raw.githubusercontent.com/K4NT1K/*",
