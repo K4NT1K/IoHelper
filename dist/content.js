@@ -1801,7 +1801,8 @@ ${nextMessage}` : nextMessage;
         const isMute = finalDuration > 0 ? 1 : 0;
         let score = this.getRuleSeverity(rule);
         if (rule.name === "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435" && count > 4) {
-          score = 720;
+          const toxicityRule = this.rules.find((r) => r.name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C");
+          score = this.getRuleSeverity(toxicityRule);
         }
         if (isMute > bestIsMute || isMute === bestIsMute && score > bestScore) {
           bestIsMute = isMute;
@@ -1868,6 +1869,9 @@ ${nextMessage}` : nextMessage;
           finalDurationStr = "\u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435";
         }
       } else if (rule.name === "\u0420\u0430\u0441\u0438\u0437\u043C / \u0434\u0438\u0441\u043A\u0440\u0438\u043C\u0438\u043D\u0430\u0446\u0438\u044F" && count < 2) {
+        finalDuration = 0;
+        finalDurationStr = "\u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435";
+      } else if (rule.name === "\u0420\u0435\u043A\u043B\u0430\u043C\u0430" && count < 2) {
         finalDuration = 0;
         finalDurationStr = "\u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435";
       }

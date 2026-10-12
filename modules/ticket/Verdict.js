@@ -41,11 +41,15 @@ export const VerdictMethods = {
 
             // Mute for any reason beats a warning for a heavier reason
             // (e.g. Racism×1 → warning vs Toxicity×N → mute → pick mute).
+            // Among the same tier (mute/mute or warn/warn): max severity wins.
             const {finalDuration} = this.calculateFinalPunishment(rule, count, ruleCounters);
             const isMute = finalDuration > 0 ? 1 : 0;
             let score = this.getRuleSeverity(rule);
+            // Insult×5+ raises punishment hardness to toxicity level only —
+            // must not outrank reasons above toxicity (Racism, Ads, …).
             if (rule.name === "Оскорбление" && count > 4) {
-                score = 720;
+                const toxicityRule = this.rules.find(r => r.name === "Токсичность");
+                score = this.getRuleSeverity(toxicityRule);
             }
 
             if (isMute > bestIsMute || (isMute === bestIsMute && score > bestScore)) {
@@ -123,6 +127,9 @@ export const VerdictMethods = {
                 finalDurationStr = "Предупреждение";
             }
         } else if (rule.name === "Расизм / дискриминация" && count < 2) {
+            finalDuration = 0;
+            finalDurationStr = "Предупреждение";
+        } else if (rule.name === "Реклама" && count < 2) {
             finalDuration = 0;
             finalDurationStr = "Предупреждение";
         }
