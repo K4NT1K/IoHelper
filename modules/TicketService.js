@@ -87,8 +87,7 @@ export class TicketService {
     }
 
     set rules(value) {
-        this._rules = value;
-        this._ruleMatcher = compileRuleMatcher(value, this._muteExceptions);
+        this.setRuleInputs(value, this._muteExceptions);
     }
 
     get muteExceptions() {
@@ -96,8 +95,13 @@ export class TicketService {
     }
 
     set muteExceptions(value) {
-        this._muteExceptions = value || {};
-        this._ruleMatcher = compileRuleMatcher(this._rules, this._muteExceptions);
+        this.setRuleInputs(this._rules, value);
+    }
+
+    setRuleInputs(rules, muteExceptions) {
+        this._rules = rules;
+        this._muteExceptions = muteExceptions || {};
+        this.recompileRuleMatcher();
     }
 
     recompileRuleMatcher() {

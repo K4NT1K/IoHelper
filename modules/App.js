@@ -21,6 +21,9 @@ export class App {
         this.reasonTriggers = this.settings.reasonTriggers;
         this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
         this.ipTrackTimeoutId = null;
+        this._offenderTrackingPassPromise = null;
+        this._offenderTrackingGeneration = 0;
+        this._offenderTrackingRestartRequested = false;
         this.ticketChatHistoryObservers = new Map();
         this.visibilityCatchUpInstalled = false;
         this.visibilityCatchUpDebounceId = null;
@@ -30,6 +33,8 @@ export class App {
         this._lastVisibleTicketTextarea = null;
         this._lastAutoConnectTicketKey = null;
         this._wasOnComplaintDetail = this.isComplaintDetailPage();
+        this._offenderTrackingHref = this._lastHref;
+        this._offenderTrackingTextarea = null;
 
         this.utils = new Utils({document});
         this.badgeService = new BadgeService({document});
@@ -172,9 +177,9 @@ export class App {
         this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
         this.messageService.settings = this.settings;
         this.ticketService.settings = this.settings;
-        this.ticketService.rules = this.rules;
-        this.ticketService.muteExceptions = this.muteExceptions;
-        this.ticketService.recompileRuleMatcher();
+        if (this.ticketService.rules !== this.rules || this.ticketService.muteExceptions !== this.muteExceptions) {
+            this.ticketService.setRuleInputs(this.rules, this.muteExceptions);
+        }
 
         if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
             this._lastAutoConnectTicketKey = null;
@@ -212,14 +217,28 @@ export class App {
         const reviewIntervalChanged = prevReviewInterval !== undefined && prevReviewInterval !== currentReviewInterval;
 
         if (!isEnabled || intervalChanged || reviewIntervalChanged) {
-            if (this.ipTrackTimeoutId) {
-                clearTimeout(this.ipTrackTimeoutId);
-                this.ipTrackTimeoutId = null;
-            }
+            this.restartOffenderTracking();
+            return;
         }
 
-        if (isEnabled && !this.ipTrackTimeoutId) {
+        if (this.ipTrackTimeoutId == null && !this._offenderTrackingPassPromise) {
             void this.runOffenderTrackingPass();
+        }
+    }
+
+    restartOffenderTracking({immediate = true} = {}) {
+        this._offenderTrackingGeneration++;
+        if (this.ipTrackTimeoutId != null) {
+            clearTimeout(this.ipTrackTimeoutId);
+            this.ipTrackTimeoutId = null;
+        }
+        this._offenderTrackingRestartRequested = Boolean(this.features.trackOffenderServer && immediate);
+        if (this._offenderTrackingPassPromise || !this.features.trackOffenderServer) {
+            return;
+        }
+        if (immediate) {
+            void this.runOffenderTrackingPass();
+        } else {
             this.scheduleNextOffenderInterval();
         }
     }
@@ -249,58 +268,70 @@ export class App {
 
     syncOffenderTrackingForPage() {
         const next = this.isComplaintDetailPage();
+        const href = this.window.location.href;
+        const textarea = next ? this.ticketService.findVisibleTicketResolutionTextarea() : null;
 
-        if (this._wasOnComplaintDetail === next) {
+        if (this._wasOnComplaintDetail === next
+            && this._offenderTrackingHref === href
+            && this._offenderTrackingTextarea === textarea) {
             return;
         }
 
-        const exitedDetail = this._wasOnComplaintDetail && !next;
         this._wasOnComplaintDetail = next;
+        this._offenderTrackingHref = href;
+        this._offenderTrackingTextarea = textarea;
 
-        if (!this.features.trackOffenderServer) {
-            return;
+        this.restartOffenderTracking({immediate: !next});
+    }
+
+    runOffenderTrackingPass() {
+        if (this._offenderTrackingPassPromise) {
+            return this._offenderTrackingPassPromise;
         }
-
-        if (this.ipTrackTimeoutId) {
+        if (!this.features.trackOffenderServer) {
+            return Promise.resolve();
+        }
+        if (this.ipTrackTimeoutId != null) {
             clearTimeout(this.ipTrackTimeoutId);
             this.ipTrackTimeoutId = null;
         }
+        this._offenderTrackingRestartRequested = false;
+        const generation = this._offenderTrackingGeneration;
+        const href = this.window.location.href;
+        const isCurrent = () => this.features.trackOffenderServer
+            && !this.document.hidden
+            && generation === this._offenderTrackingGeneration
+            && this.window.location.href === href;
 
-        if (exitedDetail) {
-            void (async () => {
-                await this.runOffenderTrackingPass();
-                this.scheduleNextOffenderInterval();
-            })();
-            return;
-        }
-
-        this.scheduleNextOffenderInterval();
-    }
-
-    async runOffenderTrackingPass() {
-        if (!this.features.trackOffenderServer) {
-            return;
-        }
-
-        if (this.document.hidden) {
-            return;
-        }
-
-        try {
+        const pass = Promise.resolve().then(async () => {
+            if (!isCurrent()) {
+                return;
+            }
             const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1000;
             if (this.isComplaintDetailPage()) {
-                await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs);
+                await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, {isCurrent});
             }
-            await this.ticketService.checkOffendersServers(cacheIntervalMs, {
-                singleRowPerPass: this.isComplaintDetailPage()
-            });
-        } catch (err) {
+            if (isCurrent()) {
+                await this.ticketService.checkOffendersServers(cacheIntervalMs, {isCurrent});
+            }
+        }).catch(err => {
             console.error(err);
-        }
+        }).finally(() => {
+            this._offenderTrackingPassPromise = null;
+            const restart = this._offenderTrackingRestartRequested;
+            this._offenderTrackingRestartRequested = false;
+            if (restart && this.features.trackOffenderServer) {
+                void this.runOffenderTrackingPass();
+            } else {
+                this.scheduleNextOffenderInterval();
+            }
+        });
+        this._offenderTrackingPassPromise = pass;
+        return pass;
     }
 
     scheduleNextOffenderInterval() {
-        if (!this.features.trackOffenderServer) {
+        if (!this.features.trackOffenderServer || this._offenderTrackingPassPromise || this.ipTrackTimeoutId != null) {
             return;
         }
 
@@ -309,7 +340,6 @@ export class App {
         this.ipTrackTimeoutId = setTimeout(async () => {
             this.ipTrackTimeoutId = null;
             await this.runOffenderTrackingPass();
-            this.scheduleNextOffenderInterval();
         }, intervalMs);
     }
 
@@ -341,14 +371,6 @@ export class App {
 
         if (!nextFeatures.translateText && previousFeatures.translateText !== false) {
             this.messageService.clearTranslationDecorations();
-        }
-
-        const intervalChanged = previousSettings?.trackOffenderInterval !== nextSettings.trackOffenderInterval
-            || previousSettings?.trackOffenderIntervalWhileReviewing !== nextSettings.trackOffenderIntervalWhileReviewing;
-
-        if ((!nextFeatures.trackOffenderServer || intervalChanged) && this.ipTrackTimeoutId) {
-            clearTimeout(this.ipTrackTimeoutId);
-            this.ipTrackTimeoutId = null;
         }
 
         if (

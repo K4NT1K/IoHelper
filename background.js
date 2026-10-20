@@ -106,11 +106,12 @@ async function writeTranslateCacheEntry(cacheKey, translated) {
 
 async function waitForGoogleSlot() {
     const now = Date.now();
-    const waitMs = Math.max(0, googleNextAllowedAt - now);
+    const slotAt = Math.max(now, googleNextAllowedAt);
+    googleNextAllowedAt = slotAt + GOOGLE_MIN_GAP_MS;
+    const waitMs = slotAt - now;
     if (waitMs > 0) {
         await new Promise(resolve => setTimeout(resolve, waitMs));
     }
-    googleNextAllowedAt = Date.now() + GOOGLE_MIN_GAP_MS;
 }
 
 async function translateTextViaGoogle(text, targetLang = 'ru') {
@@ -119,6 +120,11 @@ async function translateTextViaGoogle(text, targetLang = 'ru') {
     }
 
     await waitForGoogleSlot();
+
+    // Another queued request may have received 429 while this one waited.
+    if (Date.now() < googleCooldownUntil) {
+        throw new Error('Google cooldown');
+    }
 
     const lang = String(targetLang || 'ru').toLowerCase();
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(lang)}&dt=t&q=${encodeURIComponent(text)}`;

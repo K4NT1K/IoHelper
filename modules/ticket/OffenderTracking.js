@@ -1394,8 +1394,8 @@ export const OffenderTrackingMethods = {
         this.clearOffenderOffline(targetSteamId);
     },
 
-    async trackOpenTicketOffenderServer(cacheIntervalMs = null) {
-        if (!this.settings?.features?.trackOffenderServer) {
+    async trackOpenTicketOffenderServer(cacheIntervalMs = null, {isCurrent = () => true} = {}) {
+        if (!this.settings?.features?.trackOffenderServer || this.document.hidden || !isCurrent()) {
             return;
         }
 
@@ -1423,7 +1423,9 @@ export const OffenderTrackingMethods = {
         );
 
         const now = Date.now();
-        if (now - this._openTicketOffenderLastCheck < CACHE_INTERVAL) {
+        if (this._openTicketOffenderScope === scope
+            && this._openTicketOffenderSteamId === offenderSteamId
+            && now - this._openTicketOffenderLastCheck < CACHE_INTERVAL) {
             return;
         }
 
@@ -1445,7 +1447,16 @@ export const OffenderTrackingMethods = {
             }
         }
 
+        if (!isCurrent() || !this.settings?.features?.trackOffenderServer || this.document.hidden
+            || this.getAutoConnectScope() !== scope || !this.isActiveComplaintScope(scope)
+            || !this.scopeHasInProgressStatus(scope)
+            || this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope)) !== offenderSteamId) {
+            return;
+        }
+
         this._openTicketOffenderLastCheck = Date.now();
+        this._openTicketOffenderScope = scope;
+        this._openTicketOffenderSteamId = offenderSteamId;
 
         const currentIp = userData?.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
         if (!currentIp) {
@@ -1481,7 +1492,7 @@ export const OffenderTrackingMethods = {
         }
     },
 
-    async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false } = {}) {
+    async checkOffendersServers(cacheIntervalMs = null, {singleRowPerPass = false, isCurrent = () => true} = {}) {
         const path = window.location.pathname || '';
         const href = window.location.href || '';
         const isQueuePage = href.includes('/support/reports') || href.includes('/support/tickets');
@@ -1504,82 +1515,88 @@ export const OffenderTrackingMethods = {
             1000
         );
         const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1000;
+        const passIsCurrent = () => this.settings.features.trackOffenderServer
+            && !this.document.hidden && window.location.href === href && isCurrent();
+        const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"]';
+        const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
 
         try {
-            while (this.settings.features.trackOffenderServer) {
+            // Snapshot once: a row cannot become a candidate again during this pass.
+            const now = Date.now();
+            const candidates = Array.from(this.document.querySelectorAll('table tbody tr')).reverse()
+                .map(row => {
+                    const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
+                    if (timeCell) {
+                        const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText)
+                            || new Date(timeCell.textContent.trim()).getTime();
+                        if (ticketTimeMs && now - ticketTimeMs < TICKET_AGE_LIMIT) {
+                            return null;
+                        }
+                    }
+                    const offenderLink = row.querySelector(offenderSelector);
+                    const serverLink = row.querySelector(serverSelector);
+                    const steamId = offenderLink?.href.match(/\d{17,18}/)?.[0];
+                    if (!steamId || !serverLink) {
+                        return null;
+                    }
+                    const lastCheck = Math.max(
+                        Number.parseInt(row.dataset.lastIpCheck || '0', 10) || 0,
+                        Number.parseInt(row.dataset.lastIpAttempt || '0', 10) || 0
+                    );
+                    if (now - lastCheck < CACHE_INTERVAL) {
+                        return null;
+                    }
+                    return {row, offenderLink, serverLink, steamId, lastCheck,
+                        ip: this.ensureServerLinkOriginalIp(serverLink)};
+                }).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
+            const dataBySteamId = new Map();
+
+            for (const candidate of candidates) {
+                if (!passIsCurrent()) {
+                    break;
+                }
                 if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
                     const waitMs = this.globalServerCooldown - Date.now();
                     await new Promise(resolve => setTimeout(resolve, waitMs));
+                }
+
+                const {row: targetRow, steamId: targetSteamId, ip: targetIp, offenderLink, serverLink} = candidate;
+                const rowIsCurrent = () => targetRow.isConnected
+                    && targetRow.querySelector(offenderSelector) === offenderLink
+                    && offenderLink.href.match(/\d{17,18}/)?.[0] === targetSteamId
+                    && targetRow.querySelector(serverSelector) === serverLink
+                    && this.ensureServerLinkOriginalIp(serverLink) === targetIp;
+                if (!passIsCurrent() || !rowIsCurrent()) {
                     continue;
                 }
 
-                const rows = this.document.querySelectorAll('table tbody tr');
-                if (!rows.length) {
-                    break;
-                }
-
-                let targetRow = null;
-                let targetIp = null;
-                let targetSteamId = null;
-                let oldestCheck = Infinity;
-                const now = Date.now();
-
-                for (let i = rows.length - 1; i >= 0; i--) {
-                    const row = rows[i];
-
-                    const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
-                    if (timeCell) {
-                        const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
-                        if (ticketTimeMs && (now - ticketTimeMs) < TICKET_AGE_LIMIT) {
-                            continue;
-                        }
-                    }
-
-                    const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
-                    const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
-
-                    if (!offenderLink || !serverIpLink) continue;
-
-                    const ticketServerIp = this.ensureServerLinkOriginalIp(serverIpLink);
-
-                    const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
-                    if (!steamIdMatch) continue;
-
-                    const lastCheck = parseInt(row.dataset.lastIpCheck || '0');
-
-                    if (now - lastCheck < CACHE_INTERVAL) continue;
-
-                    if (lastCheck === 0) {
-                        targetRow = row;
-                        targetIp = ticketServerIp;
-                        targetSteamId = steamIdMatch[0];
+                let userData = dataBySteamId.has(targetSteamId)
+                    ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
+                if (!userData && !dataBySteamId.has(targetSteamId)) {
+                    await new Promise(resolve => setTimeout(resolve, 340));
+                    if (!passIsCurrent()) {
                         break;
                     }
-
-                    if (lastCheck < oldestCheck) {
-                        oldestCheck = lastCheck;
-                        targetRow = row;
-                        targetIp = ticketServerIp;
-                        targetSteamId = steamIdMatch[0];
+                    if (!rowIsCurrent()) {
+                        continue;
                     }
-                }
 
-                if (!targetRow) {
-                    break;
-                }
-
-                let userData = this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
-                if (!userData) {
-                    await new Promise(resolve => setTimeout(resolve, 340));
-
+                    targetRow.dataset.lastIpAttempt = Date.now().toString();
                     try {
                         userData = await this.fetchParsedUserData(targetSteamId);
                     } catch (err) {
+                        dataBySteamId.set(targetSteamId, null);
                         if (err?.message === '429') {
                             await new Promise(resolve => setTimeout(resolve, 660));
                         }
                         continue;
                     }
+                }
+                if (userData) {
+                    dataBySteamId.set(targetSteamId, userData);
+                }
+                if (!userData || !passIsCurrent() || !rowIsCurrent()) {
+                    continue;
                 }
 
                 const actionState = this.rowActionIsInReview(targetRow)
@@ -1596,21 +1613,21 @@ export const OffenderTrackingMethods = {
                     }
                     continue;
                 }
-                this._offenderRowSnapshots.set(targetRow, snapshotKey);
-
-                const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
-                const offenderLinkToUpdate = targetRow.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
                 this.scheduleOffenderUi(() => {
-                    this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
+                    if (!passIsCurrent() || !rowIsCurrent()) {
+                        return;
+                    }
+                    this._offenderRowSnapshots.set(targetRow, snapshotKey);
+                    this.applyOffenderServerStatus(serverLink, targetSteamId, targetIp, userData);
                     this.applyOffenderPunishmentHighlight(targetRow, userData);
-                    this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
-                    this.applyOffenderModeratorHighlight(targetRow, offenderLinkToUpdate, userData.isModerator);
+                    this.applyOffenderVipBadge(offenderLink, userData.vipName);
+                    this.applyOffenderModeratorHighlight(targetRow, offenderLink, userData.isModerator);
                     this.applyOffenderProfileVerification(
-                        offenderLinkToUpdate,
+                        offenderLink,
                         userData.profileVerified,
                         targetRow
                     );
-                    this.applyOffenderMuteBanIcons(offenderLinkToUpdate, targetRow, userData);
+                    this.applyOffenderMuteBanIcons(offenderLink, targetRow, userData);
                 });
                 targetRow.dataset.lastIpCheck = Date.now().toString();
 

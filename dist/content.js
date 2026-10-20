@@ -5560,8 +5560,8 @@ ${nextMessage}` : nextMessage;
       this.markOffenderRelocated(targetSteamId, currentIp);
       this.clearOffenderOffline(targetSteamId);
     },
-    async trackOpenTicketOffenderServer(cacheIntervalMs = null) {
-      if (!this.settings?.features?.trackOffenderServer) {
+    async trackOpenTicketOffenderServer(cacheIntervalMs = null, { isCurrent = () => true } = {}) {
+      if (!this.settings?.features?.trackOffenderServer || this.document.hidden || !isCurrent()) {
         return;
       }
       const scope = this.getAutoConnectScope();
@@ -5584,7 +5584,7 @@ ${nextMessage}` : nextMessage;
         1e3
       );
       const now = Date.now();
-      if (now - this._openTicketOffenderLastCheck < CACHE_INTERVAL) {
+      if (this._openTicketOffenderScope === scope && this._openTicketOffenderSteamId === offenderSteamId && now - this._openTicketOffenderLastCheck < CACHE_INTERVAL) {
         return;
       }
       if (this.globalServerCooldown && now < this.globalServerCooldown) {
@@ -5603,7 +5603,12 @@ ${nextMessage}` : nextMessage;
           return;
         }
       }
+      if (!isCurrent() || !this.settings?.features?.trackOffenderServer || this.document.hidden || this.getAutoConnectScope() !== scope || !this.isActiveComplaintScope(scope) || !this.scopeHasInProgressStatus(scope) || this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope)) !== offenderSteamId) {
+        return;
+      }
       this._openTicketOffenderLastCheck = Date.now();
+      this._openTicketOffenderScope = scope;
+      this._openTicketOffenderSteamId = offenderSteamId;
       const currentIp = userData?.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
       if (!currentIp) {
         this.markOffenderOffline(offenderSteamId);
@@ -5631,7 +5636,7 @@ ${nextMessage}` : nextMessage;
         this.connectToCurrentServer({ forceRelocate: true });
       }
     },
-    async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false } = {}) {
+    async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false, isCurrent = () => true } = {}) {
       const path = window.location.pathname || "";
       const href = window.location.href || "";
       const isQueuePage = href.includes("/support/reports") || href.includes("/support/tickets");
@@ -5649,66 +5654,80 @@ ${nextMessage}` : nextMessage;
         1e3
       );
       const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1e3;
+      const passIsCurrent = () => this.settings.features.trackOffenderServer && !this.document.hidden && window.location.href === href && isCurrent();
+      const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"]';
+      const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
       try {
-        while (this.settings.features.trackOffenderServer) {
+        const now = Date.now();
+        const candidates = Array.from(this.document.querySelectorAll("table tbody tr")).reverse().map((row) => {
+          const timeCell = row.querySelector(".ticket-time, td:nth-child(1), td:nth-child(2)");
+          if (timeCell) {
+            const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
+            if (ticketTimeMs && now - ticketTimeMs < TICKET_AGE_LIMIT) {
+              return null;
+            }
+          }
+          const offenderLink = row.querySelector(offenderSelector);
+          const serverLink = row.querySelector(serverSelector);
+          const steamId = offenderLink?.href.match(/\d{17,18}/)?.[0];
+          if (!steamId || !serverLink) {
+            return null;
+          }
+          const lastCheck = Math.max(
+            Number.parseInt(row.dataset.lastIpCheck || "0", 10) || 0,
+            Number.parseInt(row.dataset.lastIpAttempt || "0", 10) || 0
+          );
+          if (now - lastCheck < CACHE_INTERVAL) {
+            return null;
+          }
+          return {
+            row,
+            offenderLink,
+            serverLink,
+            steamId,
+            lastCheck,
+            ip: this.ensureServerLinkOriginalIp(serverLink)
+          };
+        }).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
+        const dataBySteamId = /* @__PURE__ */ new Map();
+        for (const candidate of candidates) {
+          if (!passIsCurrent()) {
+            break;
+          }
           if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
             const waitMs = this.globalServerCooldown - Date.now();
             await new Promise((resolve) => setTimeout(resolve, waitMs));
+          }
+          const { row: targetRow, steamId: targetSteamId, ip: targetIp, offenderLink, serverLink } = candidate;
+          const rowIsCurrent = () => targetRow.isConnected && targetRow.querySelector(offenderSelector) === offenderLink && offenderLink.href.match(/\d{17,18}/)?.[0] === targetSteamId && targetRow.querySelector(serverSelector) === serverLink && this.ensureServerLinkOriginalIp(serverLink) === targetIp;
+          if (!passIsCurrent() || !rowIsCurrent()) {
             continue;
           }
-          const rows = this.document.querySelectorAll("table tbody tr");
-          if (!rows.length) {
-            break;
-          }
-          let targetRow = null;
-          let targetIp = null;
-          let targetSteamId = null;
-          let oldestCheck = Infinity;
-          const now = Date.now();
-          for (let i = rows.length - 1; i >= 0; i--) {
-            const row = rows[i];
-            const timeCell = row.querySelector(".ticket-time, td:nth-child(1), td:nth-child(2)");
-            if (timeCell) {
-              const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
-              if (ticketTimeMs && now - ticketTimeMs < TICKET_AGE_LIMIT) {
-                continue;
-              }
-            }
-            const offenderLink = row.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
-            const serverIpLink = row.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
-            if (!offenderLink || !serverIpLink) continue;
-            const ticketServerIp = this.ensureServerLinkOriginalIp(serverIpLink);
-            const steamIdMatch = offenderLink.href.match(/\d{17,18}/);
-            if (!steamIdMatch) continue;
-            const lastCheck = parseInt(row.dataset.lastIpCheck || "0");
-            if (now - lastCheck < CACHE_INTERVAL) continue;
-            if (lastCheck === 0) {
-              targetRow = row;
-              targetIp = ticketServerIp;
-              targetSteamId = steamIdMatch[0];
+          let userData = dataBySteamId.has(targetSteamId) ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
+          if (!userData && !dataBySteamId.has(targetSteamId)) {
+            await new Promise((resolve) => setTimeout(resolve, 340));
+            if (!passIsCurrent()) {
               break;
             }
-            if (lastCheck < oldestCheck) {
-              oldestCheck = lastCheck;
-              targetRow = row;
-              targetIp = ticketServerIp;
-              targetSteamId = steamIdMatch[0];
+            if (!rowIsCurrent()) {
+              continue;
             }
-          }
-          if (!targetRow) {
-            break;
-          }
-          let userData = this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
-          if (!userData) {
-            await new Promise((resolve) => setTimeout(resolve, 340));
+            targetRow.dataset.lastIpAttempt = Date.now().toString();
             try {
               userData = await this.fetchParsedUserData(targetSteamId);
             } catch (err) {
+              dataBySteamId.set(targetSteamId, null);
               if (err?.message === "429") {
                 await new Promise((resolve) => setTimeout(resolve, 660));
               }
               continue;
             }
+          }
+          if (userData) {
+            dataBySteamId.set(targetSteamId, userData);
+          }
+          if (!userData || !passIsCurrent() || !rowIsCurrent()) {
+            continue;
           }
           const actionState = this.rowActionIsInReview(targetRow) ? "review" : targetRow.querySelector(".ioh-punishment-action") ? "custom" : "accept";
           const snapshotKey = `${targetSteamId}|${userData.serverIp || ""}|${userData.vipName || ""}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
@@ -5722,20 +5741,21 @@ ${nextMessage}` : nextMessage;
             }
             continue;
           }
-          this._offenderRowSnapshots.set(targetRow, snapshotKey);
-          const linkToUpdate = targetRow.querySelector('td:nth-child(2) a[href^="steam://connect/"]');
-          const offenderLinkToUpdate = targetRow.querySelector('td:nth-child(4) a[href*="cybershoke.net/"]');
           this.scheduleOffenderUi(() => {
-            this.applyOffenderServerStatus(linkToUpdate, targetSteamId, targetIp, userData);
+            if (!passIsCurrent() || !rowIsCurrent()) {
+              return;
+            }
+            this._offenderRowSnapshots.set(targetRow, snapshotKey);
+            this.applyOffenderServerStatus(serverLink, targetSteamId, targetIp, userData);
             this.applyOffenderPunishmentHighlight(targetRow, userData);
-            this.applyOffenderVipBadge(offenderLinkToUpdate, userData.vipName);
-            this.applyOffenderModeratorHighlight(targetRow, offenderLinkToUpdate, userData.isModerator);
+            this.applyOffenderVipBadge(offenderLink, userData.vipName);
+            this.applyOffenderModeratorHighlight(targetRow, offenderLink, userData.isModerator);
             this.applyOffenderProfileVerification(
-              offenderLinkToUpdate,
+              offenderLink,
               userData.profileVerified,
               targetRow
             );
-            this.applyOffenderMuteBanIcons(offenderLinkToUpdate, targetRow, userData);
+            this.applyOffenderMuteBanIcons(offenderLink, targetRow, userData);
           });
           targetRow.dataset.lastIpCheck = Date.now().toString();
           if (singleRowPerPass) {
@@ -5838,15 +5858,18 @@ ${nextMessage}` : nextMessage;
       return this._rules;
     }
     set rules(value) {
-      this._rules = value;
-      this._ruleMatcher = compileRuleMatcher(value, this._muteExceptions);
+      this.setRuleInputs(value, this._muteExceptions);
     }
     get muteExceptions() {
       return this._muteExceptions;
     }
     set muteExceptions(value) {
-      this._muteExceptions = value || {};
-      this._ruleMatcher = compileRuleMatcher(this._rules, this._muteExceptions);
+      this.setRuleInputs(this._rules, value);
+    }
+    setRuleInputs(rules, muteExceptions) {
+      this._rules = rules;
+      this._muteExceptions = muteExceptions || {};
+      this.recompileRuleMatcher();
     }
     recompileRuleMatcher() {
       this._ruleMatcher = compileRuleMatcher(this._rules, this._muteExceptions);
@@ -7272,6 +7295,7 @@ ${nextMessage}` : nextMessage;
       this.bodyDebounceId = null;
       this._ticketMountedLeadingFlushed = false;
       this.tablesRowsRafId = null;
+      this.pendingHighlightRows = /* @__PURE__ */ new Set();
       this.complaintQueueTableObservers = /* @__PURE__ */ new Map();
       this.ticketPanelVisibilityObserver = null;
       this.ticketPanelVisibilityDebounceId = null;
@@ -7310,10 +7334,11 @@ ${nextMessage}` : nextMessage;
       this.teardownBodyObserver();
       this.teardownComplaintQueueTableObservers();
       this.teardownTicketPanelVisibilityObserver();
-      if (this.tablesRowsRafId) {
+      if (this.tablesRowsRafId != null) {
         cancelAnimationFrame(this.tablesRowsRafId);
         this.tablesRowsRafId = null;
       }
+      this.pendingHighlightRows.clear();
       this.pending.clear();
     }
     teardownBodyObserver() {
@@ -7597,13 +7622,19 @@ ${nextMessage}` : nextMessage;
       if (!rows.size) {
         return;
       }
-      if (this.tablesRowsRafId) {
-        cancelAnimationFrame(this.tablesRowsRafId);
+      rows.forEach((row) => this.pendingHighlightRows.add(row));
+      if (this.tablesRowsRafId != null) {
+        return;
       }
-      const rowsToUpdate = rows;
       this.tablesRowsRafId = requestAnimationFrame(() => {
         this.tablesRowsRafId = null;
-        rowsToUpdate.forEach((row) => this.app._applyRowHighlights(row));
+        const rowsToUpdate = [...this.pendingHighlightRows];
+        this.pendingHighlightRows.clear();
+        rowsToUpdate.forEach((row) => {
+          if (row.isConnected) {
+            this.app._applyRowHighlights(row);
+          }
+        });
       });
     }
     findTicketPanelRoots() {
@@ -7703,6 +7734,9 @@ ${nextMessage}` : nextMessage;
       this.reasonTriggers = this.settings.reasonTriggers;
       this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
       this.ipTrackTimeoutId = null;
+      this._offenderTrackingPassPromise = null;
+      this._offenderTrackingGeneration = 0;
+      this._offenderTrackingRestartRequested = false;
       this.ticketChatHistoryObservers = /* @__PURE__ */ new Map();
       this.visibilityCatchUpInstalled = false;
       this.visibilityCatchUpDebounceId = null;
@@ -7712,6 +7746,8 @@ ${nextMessage}` : nextMessage;
       this._lastVisibleTicketTextarea = null;
       this._lastAutoConnectTicketKey = null;
       this._wasOnComplaintDetail = this.isComplaintDetailPage();
+      this._offenderTrackingHref = this._lastHref;
+      this._offenderTrackingTextarea = null;
       this.utils = new Utils({ document: document2 });
       this.badgeService = new BadgeService({ document: document2 });
       this.panelService = new PanelService({ document: document2 });
@@ -7837,9 +7873,9 @@ ${nextMessage}` : nextMessage;
       this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
       this.messageService.settings = this.settings;
       this.ticketService.settings = this.settings;
-      this.ticketService.rules = this.rules;
-      this.ticketService.muteExceptions = this.muteExceptions;
-      this.ticketService.recompileRuleMatcher();
+      if (this.ticketService.rules !== this.rules || this.ticketService.muteExceptions !== this.muteExceptions) {
+        this.ticketService.setRuleInputs(this.rules, this.muteExceptions);
+      }
       if (!previousSettings.features?.autoConnectServer && this.settings.features.autoConnectServer) {
         this._lastAutoConnectTicketKey = null;
         this.maybeAutoConnectOnTicketMount();
@@ -7869,13 +7905,26 @@ ${nextMessage}` : nextMessage;
       const intervalChanged = prevInterval !== void 0 && prevInterval !== currentInterval;
       const reviewIntervalChanged = prevReviewInterval !== void 0 && prevReviewInterval !== currentReviewInterval;
       if (!isEnabled || intervalChanged || reviewIntervalChanged) {
-        if (this.ipTrackTimeoutId) {
-          clearTimeout(this.ipTrackTimeoutId);
-          this.ipTrackTimeoutId = null;
-        }
+        this.restartOffenderTracking();
+        return;
       }
-      if (isEnabled && !this.ipTrackTimeoutId) {
+      if (this.ipTrackTimeoutId == null && !this._offenderTrackingPassPromise) {
         void this.runOffenderTrackingPass();
+      }
+    }
+    restartOffenderTracking({ immediate = true } = {}) {
+      this._offenderTrackingGeneration++;
+      if (this.ipTrackTimeoutId != null) {
+        clearTimeout(this.ipTrackTimeoutId);
+        this.ipTrackTimeoutId = null;
+      }
+      this._offenderTrackingRestartRequested = Boolean(this.features.trackOffenderServer && immediate);
+      if (this._offenderTrackingPassPromise || !this.features.trackOffenderServer) {
+        return;
+      }
+      if (immediate) {
+        void this.runOffenderTrackingPass();
+      } else {
         this.scheduleNextOffenderInterval();
       }
     }
@@ -7898,55 +7947,65 @@ ${nextMessage}` : nextMessage;
     }
     syncOffenderTrackingForPage() {
       const next = this.isComplaintDetailPage();
-      if (this._wasOnComplaintDetail === next) {
+      const href = this.window.location.href;
+      const textarea = next ? this.ticketService.findVisibleTicketResolutionTextarea() : null;
+      if (this._wasOnComplaintDetail === next && this._offenderTrackingHref === href && this._offenderTrackingTextarea === textarea) {
         return;
       }
-      const exitedDetail = this._wasOnComplaintDetail && !next;
       this._wasOnComplaintDetail = next;
-      if (!this.features.trackOffenderServer) {
-        return;
+      this._offenderTrackingHref = href;
+      this._offenderTrackingTextarea = textarea;
+      this.restartOffenderTracking({ immediate: !next });
+    }
+    runOffenderTrackingPass() {
+      if (this._offenderTrackingPassPromise) {
+        return this._offenderTrackingPassPromise;
       }
-      if (this.ipTrackTimeoutId) {
+      if (!this.features.trackOffenderServer) {
+        return Promise.resolve();
+      }
+      if (this.ipTrackTimeoutId != null) {
         clearTimeout(this.ipTrackTimeoutId);
         this.ipTrackTimeoutId = null;
       }
-      if (exitedDetail) {
-        void (async () => {
-          await this.runOffenderTrackingPass();
-          this.scheduleNextOffenderInterval();
-        })();
-        return;
-      }
-      this.scheduleNextOffenderInterval();
-    }
-    async runOffenderTrackingPass() {
-      if (!this.features.trackOffenderServer) {
-        return;
-      }
-      if (this.document.hidden) {
-        return;
-      }
-      try {
+      this._offenderTrackingRestartRequested = false;
+      const generation = this._offenderTrackingGeneration;
+      const href = this.window.location.href;
+      const isCurrent = () => this.features.trackOffenderServer && !this.document.hidden && generation === this._offenderTrackingGeneration && this.window.location.href === href;
+      const pass = Promise.resolve().then(async () => {
+        if (!isCurrent()) {
+          return;
+        }
         const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1e3;
         if (this.isComplaintDetailPage()) {
-          await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs);
+          await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, { isCurrent });
         }
-        await this.ticketService.checkOffendersServers(cacheIntervalMs, {
-          singleRowPerPass: this.isComplaintDetailPage()
-        });
-      } catch (err) {
+        if (isCurrent()) {
+          await this.ticketService.checkOffendersServers(cacheIntervalMs, { isCurrent });
+        }
+      }).catch((err) => {
         console.error(err);
-      }
+      }).finally(() => {
+        this._offenderTrackingPassPromise = null;
+        const restart = this._offenderTrackingRestartRequested;
+        this._offenderTrackingRestartRequested = false;
+        if (restart && this.features.trackOffenderServer) {
+          void this.runOffenderTrackingPass();
+        } else {
+          this.scheduleNextOffenderInterval();
+        }
+      });
+      this._offenderTrackingPassPromise = pass;
+      return pass;
     }
     scheduleNextOffenderInterval() {
-      if (!this.features.trackOffenderServer) {
+      if (!this.features.trackOffenderServer || this._offenderTrackingPassPromise || this.ipTrackTimeoutId != null) {
         return;
       }
       const intervalMs = this.getOffenderTrackIntervalSec() * 1e3;
       this.ipTrackTimeoutId = setTimeout(async () => {
         this.ipTrackTimeoutId = null;
         await this.runOffenderTrackingPass();
-        this.scheduleNextOffenderInterval();
       }, intervalMs);
     }
     cleanupChangedSettings(previousSettings, nextSettings) {
@@ -7970,11 +8029,6 @@ ${nextMessage}` : nextMessage;
       }
       if (!nextFeatures.translateText && previousFeatures.translateText !== false) {
         this.messageService.clearTranslationDecorations();
-      }
-      const intervalChanged = previousSettings?.trackOffenderInterval !== nextSettings.trackOffenderInterval || previousSettings?.trackOffenderIntervalWhileReviewing !== nextSettings.trackOffenderIntervalWhileReviewing;
-      if ((!nextFeatures.trackOffenderServer || intervalChanged) && this.ipTrackTimeoutId) {
-        clearTimeout(this.ipTrackTimeoutId);
-        this.ipTrackTimeoutId = null;
       }
       if (!nextFeatures.trackOffenderServer && previousFeatures.trackOffenderServer || !nextFeatures.showOffenderVipBadge && previousFeatures.showOffenderVipBadge !== false) {
         this.ticketService.clearOffenderVipBadges();

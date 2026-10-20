@@ -10,6 +10,7 @@ export class DOMCoordinator {
         this.bodyDebounceId = null;
         this._ticketMountedLeadingFlushed = false;
         this.tablesRowsRafId = null;
+        this.pendingHighlightRows = new Set();
         this.complaintQueueTableObservers = new Map();
         this.ticketPanelVisibilityObserver = null;
         this.ticketPanelVisibilityDebounceId = null;
@@ -53,10 +54,11 @@ export class DOMCoordinator {
         this.teardownBodyObserver();
         this.teardownComplaintQueueTableObservers();
         this.teardownTicketPanelVisibilityObserver();
-        if (this.tablesRowsRafId) {
+        if (this.tablesRowsRafId != null) {
             cancelAnimationFrame(this.tablesRowsRafId);
             this.tablesRowsRafId = null;
         }
+        this.pendingHighlightRows.clear();
         this.pending.clear();
     }
 
@@ -402,14 +404,20 @@ export class DOMCoordinator {
             return;
         }
 
-        if (this.tablesRowsRafId) {
-            cancelAnimationFrame(this.tablesRowsRafId);
+        rows.forEach(row => this.pendingHighlightRows.add(row));
+        if (this.tablesRowsRafId != null) {
+            return;
         }
 
-        const rowsToUpdate = rows;
         this.tablesRowsRafId = requestAnimationFrame(() => {
             this.tablesRowsRafId = null;
-            rowsToUpdate.forEach(row => this.app._applyRowHighlights(row));
+            const rowsToUpdate = [...this.pendingHighlightRows];
+            this.pendingHighlightRows.clear();
+            rowsToUpdate.forEach(row => {
+                if (row.isConnected) {
+                    this.app._applyRowHighlights(row);
+                }
+            });
         });
     }
 
