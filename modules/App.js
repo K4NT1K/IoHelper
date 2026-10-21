@@ -65,8 +65,6 @@ export class App {
         };
         this.punishmentService = new PunishmentService({
             document,
-            durations: config.punishmentDurations,
-            utils: this.utils,
             ticketService: this.ticketService
         });
         this.domCoordinator = new DOMCoordinator(this);
@@ -92,9 +90,7 @@ export class App {
             this._reapplyTicketRowHighlights();
         });
         this.domCoordinator.on('punishmentDialog', () => {
-            if (this.features.autoPunishmentDuration !== false) {
-                this.punishmentService.scheduleScan();
-            }
+            this.punishmentService.scheduleScan();
         });
         this.domCoordinator.on('chatChanged', () => {
             if (this.features.translateText) {
@@ -197,10 +193,7 @@ export class App {
             this.ticketService.teardownTicketPunishmentButtons();
         }
 
-        this.punishmentService.setEnabled(this.features.autoPunishmentDuration !== false);
-        if (this.features.autoPunishmentDuration !== false) {
-            this.initPunishmentFormObserver();
-        }
+        this.initPunishmentFormObserver();
         this.runDOMUpdates();
         this.domCoordinator.init();
         this.handleTrackOffenderLoop(previousSettings);
@@ -637,11 +630,6 @@ export class App {
     }
 
     initPunishmentFormObserver() {
-        if (this.features.autoPunishmentDuration === false) {
-            this.punishmentService.teardown();
-            return;
-        }
-
         this.punishmentService.init();
     }
 

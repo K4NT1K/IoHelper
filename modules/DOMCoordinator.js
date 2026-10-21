@@ -268,6 +268,12 @@ export class DOMCoordinator {
                     }
                     this.inspectAddedNode(node, rowsToUpdate);
                 }
+
+                // Release form listeners/observers when a mute dialog is closed.
+                for (const node of mutation.removedNodes || []) {
+                    if (!node || node.nodeType !== 1 || isIohNode(node)) continue;
+                    if (this.isPunishmentDialogNode(node)) this.emit('punishmentDialog');
+                }
             }
 
             if (this.pending.size) {

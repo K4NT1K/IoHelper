@@ -110,12 +110,6 @@ const FEATURE_GROUPS = [
         id: 'other',
         entries: [
             {
-                key: 'autoPunishmentDuration',
-                label: 'Автоподстановка срока наказания',
-                desc: '',
-                help: 'Автоматически выбирает срок при выборе причины в формах мута и бана. Учитывает X2-опции сайта.'
-            },
-            {
                 key: 'squareTickets',
                 label: 'Квадратные тикеты',
                 desc: 'BETA TEST',
@@ -512,10 +506,6 @@ async function loadSettings() {
     storage.get(["helperSettings"], ({helperSettings}) => {
         currentSettings = structuredClone(defaultSettings);
 
-        if (currentSettings.features.autoPunishmentDuration === undefined) {
-            currentSettings.features.autoPunishmentDuration = true;
-        }
-
         if (helperSettings) {
             currentSettings = {
                 ...currentSettings,
@@ -525,9 +515,6 @@ async function loadSettings() {
                 ...defaultSettings.features,
                 ...(helperSettings.features || {})
             };
-            if (currentSettings.features.autoPunishmentDuration === undefined) {
-                currentSettings.features.autoPunishmentDuration = true;
-            }
             currentSettings.reasonTriggers =
                 helperSettings.reasonTriggers ??
                 currentSettings.reasonTriggers;
