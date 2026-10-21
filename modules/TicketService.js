@@ -47,7 +47,7 @@ export class TicketService {
         this.offenderOffline = new Map();
         this.offenderRelocated = new Map();
         this.userDataCache = new Map();
-        this._openTicketOffenderLastCheck = 0;
+        this._openTicketTrackingSessions = new Map();
         this.LEFT_OFFENDER_TTL_MS = 8 * 60 * 1000;
 
         this.MODERATOR_PERMISSIONS_KEY = 'iohModeratorPermissions';

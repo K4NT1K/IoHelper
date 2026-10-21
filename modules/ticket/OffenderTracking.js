@@ -1,4 +1,4 @@
-import { markIoh } from '../shared/dom.js';
+import { isIohNode, markIoh } from '../shared/dom.js';
 
 export const OffenderTrackingMethods = {
     extractServerLabel(result) {
@@ -1394,38 +1394,143 @@ export const OffenderTrackingMethods = {
         this.clearOffenderOffline(targetSteamId);
     },
 
-    async trackOpenTicketOffenderServer(cacheIntervalMs = null, {isCurrent = () => true} = {}) {
-        if (!this.settings?.features?.trackOffenderServer || this.document.hidden || !isCurrent()) {
-            return;
+    getOpenTicketOffenderTrackingContext() {
+        // This extra polling only serves automatic Steam connections.
+        if (!this.settings?.features?.autoConnectServer
+            || !this.settings?.features?.trackOffenderServer) {
+            return null;
         }
-
+        const href = window.location.href;
+        const path = window.location.pathname || '';
+        if (/\/support\/(tickets|reports)\b/i.test(path) || !/\/ticket\/|\/reports?\//i.test(path)) {
+            return null;
+        }
         const scope = this.getAutoConnectScope();
-        if (!scope || !this.isActiveComplaintScope(scope)) {
-            return;
+        if (!scope || !this.isActiveComplaintScope(scope) || !this.scopeHasInProgressStatus(scope)) {
+            return null;
         }
-
-        if (!this.scopeHasInProgressStatus(scope)) {
-            return;
-        }
-
         const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
-        const offenderSteamId = this.extractSteamIdFromField(offenderField);
-        if (!offenderSteamId) {
-            console.log('[Helper] Трекер открытого тикета: skip — steamId нарушителя не найден');
-            return;
+        if (offenderField?.closest?.('[aria-hidden="true"]')) {
+            return null;
         }
+        const steamId = this.extractSteamIdFromField(offenderField);
+        return steamId ? {scope, steamId, href} : null;
+    },
+
+    ticketServerShowsOffenderLeft(scope) {
+        const field = this.findInfoFieldScoped('Сервер', scope);
+        return Array.from(field?.querySelectorAll('button, span, p') || []).some(node => {
+            const hidden = node.closest('[aria-hidden="true"]');
+            return !isIohNode(node) && (!hidden || hidden === scope || hidden.contains?.(scope))
+                && /^вышел\s+с\s+сервера(?:\s|$)/iu.test((node.textContent || '').trim());
+        });
+    },
+
+    getOpenTicketOfflineIntervalMs() {
+        const seconds = Number(this.settings.trackOpenTicketOfflineInterval);
+        return (Number.isFinite(seconds) && seconds > 0 ? Math.max(seconds, 1) : 5) * 1000;
+    },
+
+    isOpenTicketTrackingSessionCurrent(session) {
+        if (!this.settings?.features?.autoConnectServer || !this.settings?.features?.trackOffenderServer
+            || !session || this._openTicketTrackingSessions?.get(session.scope) !== session) {
+            return false;
+        }
+        return this.document.contains(session.scope) && this.isOpenComplaintScope(session.scope)
+            && this.scopeHasInProgressStatus(session.scope, {includeActivePanel: false})
+            && this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', session.scope)) === session.steamId;
+    },
+
+    stopOpenTicketOffenderTracking(session = null) {
+        const sessions = session ? [session] : [...(this._openTicketTrackingSessions?.values() || [])];
+        for (const entry of sessions) {
+            if (entry.timer != null) clearTimeout(entry.timer);
+            entry.observer?.disconnect();
+            this._openTicketTrackingSessions.delete(entry.scope);
+        }
+    },
+
+    syncOpenTicketOffenderTracking() {
+        if (!this.settings?.features?.autoConnectServer || !this.settings?.features?.trackOffenderServer) {
+            this.stopOpenTicketOffenderTracking();
+            return null;
+        }
+        this._openTicketTrackingSessions ||= new Map();
+        for (const session of this._openTicketTrackingSessions.values()) {
+            if (!this.isOpenTicketTrackingSessionCurrent(session)) this.stopOpenTicketOffenderTracking(session);
+        }
+        const context = this.getOpenTicketOffenderTrackingContext();
+        if (context && !this._openTicketTrackingSessions.has(context.scope)) {
+            this._openTicketTrackingSessions.set(context.scope, {...context,
+                waitingForReturn: this.isOffenderOffline(context.steamId), siteOffline: false,
+                timer: null, pending: false, observer: null, serverField: null, lastCheck: 0});
+        }
+        for (const session of this._openTicketTrackingSessions.values()) {
+            this.refreshOpenTicketTrackingSession(session);
+        }
+        return context ? this._openTicketTrackingSessions.get(context.scope) : null;
+    },
+
+    refreshOpenTicketTrackingSession(session) {
+        const siteOffline = this.ticketServerShowsOffenderLeft(session.scope);
+        // A stale site label must not re-arm tracking after the API has seen the return.
+        if (siteOffline && !session.siteOffline) {
+            session.waitingForReturn = true;
+        }
+        session.siteOffline = siteOffline;
+
+        const serverField = this.findInfoFieldScoped('Сервер', session.scope);
+        if (serverField !== session.serverField) {
+            session.observer?.disconnect();
+            session.serverField = serverField;
+            session.observer = serverField ? new MutationObserver(mutations => {
+                if (!mutations.every(mutation => isIohNode(mutation.target)
+                    || (mutation.type === 'childList' && [...mutation.addedNodes, ...mutation.removedNodes].length > 0
+                        && [...mutation.addedNodes, ...mutation.removedNodes].every(isIohNode)))) {
+                    this.syncOpenTicketOffenderTracking();
+                }
+            }) : null;
+            session.observer?.observe(serverField, {childList: true, subtree: true, characterData: true});
+        }
+        if (session.waitingForReturn && session.timer == null && !session.pending) {
+            session.timer = setTimeout(() => {
+                session.timer = null;
+                if (!this.isOpenTicketTrackingSessionCurrent(session)) {
+                    this.syncOpenTicketOffenderTracking();
+                    return;
+                }
+                session.pending = true;
+                void this.trackOpenTicketOffenderServer(this.getOpenTicketOfflineIntervalMs(), {
+                    session,
+                    isCurrent: () => this.isOpenTicketTrackingSessionCurrent(session)
+                }).catch(err => console.error(err)).finally(() => {
+                    session.pending = false;
+                    this.syncOpenTicketOffenderTracking();
+                });
+            }, this.getOpenTicketOfflineIntervalMs());
+        } else if (!session.waitingForReturn && session.timer != null) {
+            clearTimeout(session.timer);
+            session.timer = null;
+        }
+    },
+
+    async trackOpenTicketOffenderServer(cacheIntervalMs = null, {isCurrent = () => true, session = null} = {}) {
+        if (!isCurrent()) return;
+        session ||= this.syncOpenTicketOffenderTracking();
+        if (!this.isOpenTicketTrackingSessionCurrent(session)) return;
+        const {scope, steamId: offenderSteamId} = session;
 
         const ticketConnectLink = this.findTicketServerConnectLink(scope);
         const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
-        const CACHE_INTERVAL = Math.max(
+        const normalInterval = Math.max(
             Number(cacheIntervalMs) || ((this.settings.trackOffenderIntervalWhileReviewing || 30) * 1000),
             1000
         );
+        const CACHE_INTERVAL = session.waitingForReturn
+            ? Math.min(normalInterval, this.getOpenTicketOfflineIntervalMs()) : normalInterval;
 
         const now = Date.now();
-        if (this._openTicketOffenderScope === scope
-            && this._openTicketOffenderSteamId === offenderSteamId
-            && now - this._openTicketOffenderLastCheck < CACHE_INTERVAL) {
+        if (session.lastCheck && now - session.lastCheck < CACHE_INTERVAL) {
             return;
         }
 
@@ -1447,16 +1552,11 @@ export const OffenderTrackingMethods = {
             }
         }
 
-        if (!isCurrent() || !this.settings?.features?.trackOffenderServer || this.document.hidden
-            || this.getAutoConnectScope() !== scope || !this.isActiveComplaintScope(scope)
-            || !this.scopeHasInProgressStatus(scope)
-            || this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope)) !== offenderSteamId) {
+        if (!isCurrent() || !this.isOpenTicketTrackingSessionCurrent(session)) {
             return;
         }
 
-        this._openTicketOffenderLastCheck = Date.now();
-        this._openTicketOffenderScope = scope;
-        this._openTicketOffenderSteamId = offenderSteamId;
+        session.lastCheck = Date.now();
 
         const currentIp = userData?.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
         if (!currentIp) {
@@ -1466,9 +1566,14 @@ export const OffenderTrackingMethods = {
             return;
         }
 
+        const returned = session.waitingForReturn;
+        for (const trackedSession of this._openTicketTrackingSessions.values()) {
+            if (trackedSession.steamId === offenderSteamId) trackedSession.waitingForReturn = false;
+        }
         this.clearOffenderOffline(offenderSteamId);
+        this.syncOpenTicketOffenderTracking();
 
-        if (ticketServerIp && currentIp === ticketServerIp) {
+        if (!returned && ticketServerIp && currentIp === ticketServerIp) {
             this.clearOffenderRelocated(offenderSteamId);
             return;
         }
@@ -1476,11 +1581,11 @@ export const OffenderTrackingMethods = {
         const previousRelocated = this.getOffenderRelocatedServer(offenderSteamId);
         this.markOffenderRelocated(offenderSteamId, currentIp);
 
-        if (previousRelocated === currentIp) {
+        if (!returned && (previousRelocated === currentIp || session.lastConnectedIp === currentIp)) {
             return;
         }
 
-        console.log('[Helper] Трекер открытого тикета: переезд обнаружен', {
+        console.log(`[Helper] Трекер открытого тикета: ${returned ? 'возврат на сервер' : 'переезд'} обнаружен`, {
             offenderSteamId,
             ticketServerIp,
             currentIp,
@@ -1488,7 +1593,10 @@ export const OffenderTrackingMethods = {
         });
 
         if (this.settings?.features?.autoConnectServer) {
-            this.connectToCurrentServer({forceRelocate: true});
+            this.connectToTrackedOffenderServer(session, currentIp);
+        }
+        if (currentIp === ticketServerIp) {
+            this.clearOffenderRelocated(offenderSteamId);
         }
     },
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {OffenderTrackingMethods} from '../modules/ticket/OffenderTracking.js';
 import {App} from '../modules/App.js';
+import {AutoConnectMethods} from '../modules/ticket/AutoConnect.js';
 import {clock, deferred} from './clock.mjs';
 
 function location(t, pathname = '/support/tickets') {
@@ -150,7 +151,7 @@ function scheduler(t, pathname = '/support/tickets') {
         _offenderTrackingGeneration: 0, _offenderTrackingRestartRequested: false,
         _wasOnComplaintDetail: pathname.includes('/ticket/'),
         _offenderTrackingHref: view.location.href, _offenderTrackingTextarea: null,
-        ticketService: {findVisibleTicketResolutionTextarea: () => null,
+        ticketService: {findVisibleTicketResolutionTextarea: () => null, syncOpenTicketOffenderTracking() {},
             async checkOffendersServers() {}, async trackOpenTicketOffenderServer() {}}
     });
     return ctx;
@@ -259,19 +260,23 @@ test('Interval changes wait for the old pass and restart exactly one loop', asyn
     assert.equal(calls, 3);
 });
 
-test('Open-ticket result cannot mark another scope or trigger Steam after switching tickets', async t => {
+test('Open-ticket result cannot mark another scope or trigger Steam after closing its ticket', async t => {
     const time = clock(t);
     const pending = deferred();
     let scope = {};
     const originalScope = scope;
     const effects = [];
+    location(t, '/ticket/1983900');
     const ctx = {
+        ...AutoConnectMethods, ...OffenderTrackingMethods,
         settings: {features: {trackOffenderServer: true, autoConnectServer: true}},
-        document: {hidden: false},
+        document: {hidden: false, contains: node => node.connected !== false},
         getAutoConnectScope: () => scope,
         isActiveComplaintScope: () => true,
+        isOpenComplaintScope: () => true,
         scopeHasInProgressStatus: () => true,
-        findInfoFieldScoped: () => ({}),
+        findInfoFieldScoped: label => label === 'Нарушитель' ? {} : null,
+        isOffenderOffline: () => false,
         extractSteamIdFromField: () => '76561198000000000',
         findTicketServerConnectLink: () => null,
         extractServerIpFromConnectLink: () => '127.0.0.1:27015',
@@ -283,10 +288,10 @@ test('Open-ticket result cannot mark another scope or trigger Steam after switch
         connectToCurrentServer: () => effects.push('connect')
     };
     const pass = OffenderTrackingMethods.trackOpenTicketOffenderServer.call(ctx, 30000);
+    originalScope.connected = false;
     scope = {};
     assert.notEqual(scope, originalScope);
     pending.resolve({serverIp: '127.0.0.2:27015'});
     await time.finish(pass);
     assert.deepEqual(effects, []);
-    assert.equal(ctx._openTicketOffenderLastCheck, undefined);
 });

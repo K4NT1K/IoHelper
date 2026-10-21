@@ -200,6 +200,7 @@ export class App {
     }
 
     handleTrackOffenderLoop(previousSettings = null) {
+        this.ticketService.syncOpenTicketOffenderTracking();
         const isEnabled = this.features.trackOffenderServer;
         const currentInterval = this.settings.trackOffenderInterval || 5;
         const currentReviewInterval = this.settings.trackOffenderIntervalWhileReviewing || 30;
@@ -260,6 +261,7 @@ export class App {
     }
 
     syncOffenderTrackingForPage() {
+        this.ticketService.syncOpenTicketOffenderTracking();
         const next = this.isComplaintDetailPage();
         const href = this.window.location.href;
         const textarea = next ? this.ticketService.findVisibleTicketResolutionTextarea() : null;
@@ -501,6 +503,7 @@ export class App {
     }
 
     _handlePageReturnCatchUp() {
+        this.ticketService.syncOpenTicketOffenderTracking();
         if (this.features.highlightComplaintTriggers) {
             this._getHighlightTargetRows().forEach(row => this.messageService.highlightComplaintTriggers(row));
         }

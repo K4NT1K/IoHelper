@@ -19,6 +19,7 @@
     "newAccountHours": 7,
     "trackOffenderInterval": 5,
     "trackOffenderIntervalWhileReviewing": 30,
+    "trackOpenTicketOfflineInterval": 5,
     "ticketAgeLimit": 0,
     "maxVisionTriggers": 30,
     "moreTriggers": 10,

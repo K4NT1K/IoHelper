@@ -1,3 +1,5 @@
+import { markIoh } from '../shared/dom.js';
+
 export const AutoConnectMethods = {
     clearAutoConnectedServers() {
         this.autoConnectedServerIps.clear();
@@ -67,6 +69,16 @@ export const AutoConnectMethods = {
     markOffenderOffline(steamId) {
         if (!steamId) return;
         this.offenderOffline.set(steamId, Date.now() + this.LEFT_OFFENDER_TTL_MS);
+        let tracked = false;
+        for (const session of this._openTicketTrackingSessions?.values() || []) {
+            if (session.steamId !== steamId) continue;
+            session.waitingForReturn = true;
+            session.lastConnectedIp = null;
+            tracked = true;
+        }
+        if (tracked) {
+            this.syncOpenTicketOffenderTracking();
+        }
     },
 
     clearOffenderOffline(steamId) {
@@ -189,13 +201,13 @@ export const AutoConnectMethods = {
         return this.findActiveComplaintScope();
     },
 
-    scopeHasInProgressStatus(scope) {
+    scopeHasInProgressStatus(scope, {includeActivePanel = true} = {}) {
         if (!scope) {
             return false;
         }
 
         const roots = [scope];
-        const activePanel = this.findActiveComplaintScope();
+        const activePanel = includeActivePanel ? this.findActiveComplaintScope() : null;
         if (activePanel && activePanel !== scope) {
             roots.push(activePanel);
         }
@@ -258,7 +270,8 @@ export const AutoConnectMethods = {
         const connectTarget = relocatedIp || ticketServerIp || null;
         const connectSource = relocatedIp ? 'relocated-server' : (ticketServerIp ? 'ticket-server' : null);
 
-        if (offenderSteamId && this.isOffenderOffline(offenderSteamId)) {
+        if (offenderSteamId && (this.isOffenderOffline(offenderSteamId)
+            || this.ticketServerShowsOffenderLeft(scope))) {
             return {
                 allowed: false,
                 reason: 'нарушитель недавно вышел с сервера',
@@ -339,12 +352,25 @@ export const AutoConnectMethods = {
         }
 
         const link = this.document.createElement('a');
+        markIoh(link);
         link.href = `steam://connect/${normalized}`;
         link.style.display = 'none';
         this.document.body.appendChild(link);
         link.click();
         link.remove();
         return true;
+    },
+
+    connectToTrackedOffenderServer(session, serverIp) {
+        if (!this.isOpenTicketTrackingSessionCurrent(session)) {
+            return false;
+        }
+        console.log('[Helper] Авто-подключение (трекер открытой жалобы) к серверу:', serverIp);
+        for (const tracked of this._openTicketTrackingSessions.values()) {
+            if (tracked.steamId === session.steamId) tracked.lastConnectedIp = serverIp;
+        }
+        this.markAutoConnected(serverIp);
+        return this.connectToSteamServer(serverIp);
     },
 
     connectToRelocatedServerForced() {
