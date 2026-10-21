@@ -95,7 +95,7 @@ test('T2: removing the first row cannot lose its shared result for a later dupli
     assert.equal(s.jobs.length, 19);
 });
 
-test('T2: 429 waits without retrying the same player in the pass', async t => {
+test('T2: 429 retries the same player before advancing the queue', async t => {
     const time = clock(t);
     let attempts = 0;
     const s = tracker(t, 3, async (_id, ctx) => {
@@ -106,10 +106,67 @@ test('T2: 429 waits without retrying the same player in the pass', async t => {
         return {};
     });
     await time.finish(s.run());
-    assert.equal(s.calls.length, 3);
+    assert.equal(s.calls.length, 4);
     assert.equal(new Set(s.calls).size, 3);
+    assert.deepEqual(s.calls, [s.rows[2], s.rows[2], s.rows[1], s.rows[0]].map(row => row.offenderLink.href.split('/').at(-1)));
+    assert.equal(s.jobs.length, 3);
+    assert(s.rows.every(row => row.dataset.lastIpCheck));
+});
+
+test('T2: repeated 429 respects cooldown and shares eventual success with duplicate rows', async t => {
+    const time = clock(t);
+    const requestTimes = [];
+    const s = tracker(t, 6, async (_id, ctx) => {
+        requestTimes.push(Date.now());
+        if (requestTimes.length <= 3) {
+            ctx.globalServerCooldown = Date.now() + 2000;
+            throw new Error('429');
+        }
+        return {};
+    }, 2);
+    await time.finish(s.run());
+    assert.equal(s.calls.length, 5);
+    assert(s.calls.slice(0, 4).every(id => id === s.calls[0]));
+    for (let i = 1; i <= 3; i++) assert(requestTimes[i] - requestTimes[i - 1] >= 2000);
+    assert.equal(s.jobs.length, 6);
+    assert.equal(s.ctx.isCheckingServer, false);
+});
+
+test('T2: a non-429 failure after a retry lets the remaining queue proceed', async t => {
+    const time = clock(t);
+    let attempts = 0;
+    const s = tracker(t, 3, async () => {
+        if (++attempts === 1) throw new Error('429');
+        if (attempts === 2) throw new Error('HTTP 500');
+        return {};
+    });
+    await time.finish(s.run());
+    assert.equal(s.calls.length, 4);
+    assert.equal(s.calls[0], s.calls[1]);
     assert.equal(s.jobs.length, 2);
 });
+
+for (const change of ['navigation', 'disabled', 'hidden', 'player replaced', 'row removed', 'generation']) {
+    test('T2: 429 retry stops after ' + change, async t => {
+        const time = clock(t);
+        const s = tracker(t, 1, async () => { throw new Error('429'); });
+        let current = true;
+        const pass = s.run({isCurrent: () => current});
+        await time.advance(340);
+        assert.equal(s.calls.length, 1);
+        assert.equal(s.rows[0].dataset.lastIpCheck, undefined);
+        if (change === 'navigation') s.view.location.href += '/other';
+        if (change === 'disabled') s.ctx.settings.features.trackOffenderServer = false;
+        if (change === 'hidden') s.ctx.document.hidden = true;
+        if (change === 'player replaced') s.rows[0].offenderLink.href = 'https://cybershoke.net/76561198999999999';
+        if (change === 'row removed') s.rows[0].isConnected = false;
+        if (change === 'generation') current = false;
+        await time.finish(pass);
+        assert.equal(s.calls.length, 1);
+        assert.equal(s.jobs.length, 0);
+        assert.equal(s.ctx.isCheckingServer, false);
+    });
+}
 
 for (const change of ['navigation', 'disabled', 'hidden', 'player replaced']) {
     test('Pending request cannot render after ' + change, async t => {

@@ -5851,23 +5851,31 @@ ${nextMessage}` : nextMessage;
             continue;
           }
           let userData = dataBySteamId.has(targetSteamId) ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
-          if (!userData && !dataBySteamId.has(targetSteamId)) {
-            await new Promise((resolve) => setTimeout(resolve, 340));
-            if (!passIsCurrent()) {
+          while (!userData && !dataBySteamId.has(targetSteamId)) {
+            if (!passIsCurrent() || !rowIsCurrent()) {
               break;
             }
-            if (!rowIsCurrent()) {
+            if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
+              await new Promise((resolve) => setTimeout(resolve, this.globalServerCooldown - Date.now()));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 340));
+            if (!passIsCurrent() || !rowIsCurrent()) {
+              break;
+            }
+            if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
               continue;
             }
             targetRow.dataset.lastIpAttempt = Date.now().toString();
             try {
               userData = await this.fetchParsedUserData(targetSteamId);
+              break;
             } catch (err) {
-              dataBySteamId.set(targetSteamId, null);
               if (err?.message === "429") {
                 await new Promise((resolve) => setTimeout(resolve, 660));
+                continue;
               }
-              continue;
+              dataBySteamId.set(targetSteamId, null);
+              break;
             }
           }
           if (userData) {
