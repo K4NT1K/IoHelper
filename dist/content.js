@@ -841,6 +841,24 @@ ${nextMessage}` : nextMessage;
         this.highlightNewAccounts(row);
       });
     }
+    highlightHighHs(row) {
+      if (!row?.querySelectorAll) return;
+      const configured = this.settings.headshotPercentage;
+      const threshold = configured !== null && configured !== "" && Number.isFinite(Number(configured)) ? Math.min(100, Math.max(0, Number(configured))) : 95;
+      row.querySelectorAll("span").forEach((span) => {
+        const match = (span.textContent || "").match(/^\s*HS:\s*(\d+(?:[.,]\d+)?)\s*%\s*$/i);
+        const value = match ? Number(match[1].replace(",", ".")) : NaN;
+        const highlight = value >= threshold && value <= 100;
+        if (span.classList.contains("ioh-high-hs") !== highlight) {
+          span.classList.toggle("ioh-high-hs", highlight);
+        }
+      });
+    }
+    clearHighHsHighlights() {
+      this.document.querySelectorAll(".ioh-high-hs").forEach((span) => {
+        span.classList.remove("ioh-high-hs");
+      });
+    }
     highlightDuplicateServerIps() {
       this.clearDuplicateServerHighlights();
       const serverMap = /* @__PURE__ */ new Map();
@@ -6894,6 +6912,7 @@ ${nextMessage}` : nextMessage;
       this.muteExceptions = config.muteExceptions || {};
       this.templates = config.templates || {};
       this.settings = config.settings;
+      this.settings.features.highlightHighHs ??= true;
       this.features = this.settings.features;
       this.reasonTriggers = this.settings.reasonTriggers;
       this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
@@ -6952,7 +6971,7 @@ ${nextMessage}` : nextMessage;
       this.domCoordinator.on("ticketMounted", () => {
         this.initTicketSectionFeatures();
         this.domCoordinator.refreshComplaintQueueVisibilityObserver();
-        if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers) {
+        if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers || this.features.highlightHighHs) {
           this._reapplyTicketRowHighlights();
         }
       });
@@ -7020,9 +7039,11 @@ ${nextMessage}` : nextMessage;
       this.settings = {
         ...this.settings,
         ...settings,
+        headshotPercentage: settings.headshotPercentage ?? 95,
         features: {
           ...this.settings.features,
-          ...settings.features || {}
+          ...settings.features || {},
+          highlightHighHs: settings.features?.highlightHighHs ?? true
         }
       };
       if (settings.reasonTriggersAutoconnect) {
@@ -7178,6 +7199,9 @@ ${nextMessage}` : nextMessage;
       if (!nextFeatures.highlightNewAccounts || newAccountHoursChanged) {
         this.messageService.clearNewAccountHighlights();
       }
+      if (!nextFeatures.highlightHighHs) {
+        this.messageService.clearHighHsHighlights();
+      }
       if (!nextFeatures.highlightDuplicateServers && previousFeatures.highlightDuplicateServers !== false) {
         this.messageService.clearDuplicateServerHighlights();
       }
@@ -7291,6 +7315,9 @@ ${nextMessage}` : nextMessage;
     }
     _handlePageReturnCatchUp() {
       this.ticketService.syncOpenTicketOffenderTracking();
+      if (this.features.highlightHighHs) {
+        this._getHighlightTargetRows().forEach((row) => this.messageService.highlightHighHs(row));
+      }
       if (this.features.highlightComplaintTriggers) {
         this._getHighlightTargetRows().forEach((row) => this.messageService.highlightComplaintTriggers(row));
       }
@@ -7401,6 +7428,9 @@ ${nextMessage}` : nextMessage;
       this.punishmentService.init();
     }
     initTableFeatures() {
+      if (this.features.highlightHighHs) {
+        this._getHighlightTargetRows().forEach((row) => this.messageService.highlightHighHs(row));
+      }
       if (this.features.squareTickets) {
         this.ticketService.renderSquareTicketCards();
       } else {
@@ -7477,6 +7507,9 @@ ${nextMessage}` : nextMessage;
         this.maybeAutoConnectOnTicketMount();
       }
       this.ticketService.refreshComplaintPunishmentButtons();
+      if (this.features.highlightHighHs) {
+        this._getHighlightTargetRows().forEach((row) => this.messageService.highlightHighHs(row));
+      }
       if (this.features.highlightComplaintTriggers) {
         this._getHighlightTargetRows().forEach((row) => this.messageService.highlightComplaintTriggers(row));
       }
@@ -7691,6 +7724,9 @@ ${nextMessage}` : nextMessage;
       return Array.from(this.document.querySelectorAll("table tbody tr"));
     }
     _reapplyTicketRowHighlights() {
+      if (this.features.highlightHighHs) {
+        this._getHighlightTargetRows().forEach((row) => this.messageService.highlightHighHs(row));
+      }
       if (this.features.highlightComplaintTriggers) {
         this._getHighlightTargetRows().forEach((row) => this.messageService.highlightComplaintTriggers(row));
       }
@@ -7703,6 +7739,9 @@ ${nextMessage}` : nextMessage;
       }
     }
     _applyRowHighlights(row) {
+      if (this.features.highlightHighHs) {
+        this.messageService.highlightHighHs(row);
+      }
       if (this.features.highlightComplaintTriggers) {
         this.messageService.highlightComplaintTriggers(row);
       }

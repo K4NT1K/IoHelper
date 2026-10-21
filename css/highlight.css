@@ -42,7 +42,8 @@
     }
 }
 
-.ioh-new-account-hours {
+.ioh-new-account-hours,
+.ioh-high-hs {
     background-color: color-mix(in srgb, var(--color-danger, #ef4444) 17%, transparent) !important;
     color: var(--color-danger, #ef4444) !important;
     padding: 2px 4px !important;

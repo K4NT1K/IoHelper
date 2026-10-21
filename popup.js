@@ -2,6 +2,7 @@ import { ConfigService } from './modules/ConfigService.js';
 
 const featureTogglesEl = document.getElementById('featureToggles');
 const hoursInput = document.getElementById('newAccountHours');
+const headshotInput = document.getElementById('headshotPercentage');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const trackIntervalInput = document.getElementById('trackOffenderInterval');
@@ -56,6 +57,12 @@ const FEATURE_GROUPS = [
                 label: 'Подсветка новых аккаунтов',
                 desc: '',
                 help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
+            },
+            {
+                key: 'highlightHighHs',
+                label: 'Подсветка высокого HS',
+                desc: '',
+                help: 'Подсвечивает надпись HS и процент попаданий в голову, если значение равно порогу или выше.'
             }
         ]
     },
@@ -440,6 +447,7 @@ function loadSettingsToUI(settings) {
     });
 
     hoursInput.value = settings.newAccountHours;
+    headshotInput.value = settings.headshotPercentage ?? 95;
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
     currentSettings.reasonTriggersAutoconnect = [...(settings.reasonTriggersAutoconnect || [])];
     trackIntervalInput.value = settings.trackOffenderInterval;
@@ -476,6 +484,9 @@ function collectSettingsFromUI() {
 
     return {
         features,
+        headshotPercentage: headshotInput.value.trim() !== '' && Number.isFinite(Number(headshotInput.value))
+            ? Math.min(100, Math.max(0, Number(headshotInput.value)))
+            : 95,
         newAccountHours: Math.max(
             parseInt(hoursInput.value, 10) || 1,
             1
@@ -500,6 +511,8 @@ async function loadSettings() {
     const config = await ConfigService.load(chrome);
 
     defaultSettings = structuredClone(config.settings);
+    defaultSettings.headshotPercentage ??= 95;
+    defaultSettings.features.highlightHighHs ??= true;
     renderToggles(defaultSettings.features);
     initAccordions();
 
@@ -579,6 +592,7 @@ autoConnectTriggerInput.addEventListener('keydown', (e) => {
 });
 
 hoursInput && bindNumberField(hoursInput);
+headshotInput && bindNumberField(headshotInput);
 trackIntervalInput && bindNumberField(trackIntervalInput);
 trackIntervalWhileReviewingInput && bindNumberField(trackIntervalWhileReviewingInput);
 

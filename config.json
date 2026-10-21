@@ -3,6 +3,7 @@
     "features": {
       "highlightComplaintTriggers": true,
       "highlightNewAccounts": true,
+      "highlightHighHs": true,
       "highlightDuplicateServers": false,
       "processTicketRules": true,
       "translateText": true,
@@ -17,6 +18,7 @@
       "squareTickets": false
     },
     "newAccountHours": 7,
+    "headshotPercentage": 95,
     "trackOffenderInterval": 5,
     "trackOffenderIntervalWhileReviewing": 30,
     "trackOpenTicketOfflineInterval": 5,

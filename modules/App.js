@@ -17,6 +17,7 @@ export class App {
         this.muteExceptions = config.muteExceptions || {};
         this.templates = config.templates || {};
         this.settings = config.settings;
+        this.settings.features.highlightHighHs ??= true;
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
         this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
@@ -77,7 +78,7 @@ export class App {
         this.domCoordinator.on('ticketMounted', () => {
             this.initTicketSectionFeatures();
             this.domCoordinator.refreshComplaintQueueVisibilityObserver();
-            if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers) {
+            if (this.features.highlightNewAccounts || this.features.highlightComplaintTriggers || this.features.highlightHighHs) {
                 this._reapplyTicketRowHighlights();
             }
         });
@@ -158,9 +159,11 @@ export class App {
         this.settings = {
             ...this.settings,
             ...settings,
+            headshotPercentage: settings.headshotPercentage ?? 95,
             features: {
                 ...this.settings.features,
-                ...(settings.features || {})
+                ...(settings.features || {}),
+                highlightHighHs: settings.features?.highlightHighHs ?? true
             }
         };
 
@@ -352,6 +355,10 @@ export class App {
             this.messageService.clearNewAccountHighlights();
         }
 
+        if (!nextFeatures.highlightHighHs) {
+            this.messageService.clearHighHsHighlights();
+        }
+
         if (
             !nextFeatures.highlightDuplicateServers && previousFeatures.highlightDuplicateServers !== false
         ) {
@@ -504,6 +511,9 @@ export class App {
 
     _handlePageReturnCatchUp() {
         this.ticketService.syncOpenTicketOffenderTracking();
+        if (this.features.highlightHighHs) {
+            this._getHighlightTargetRows().forEach(row => this.messageService.highlightHighHs(row));
+        }
         if (this.features.highlightComplaintTriggers) {
             this._getHighlightTargetRows().forEach(row => this.messageService.highlightComplaintTriggers(row));
         }
@@ -637,6 +647,9 @@ export class App {
     }
 
     initTableFeatures() {
+        if (this.features.highlightHighHs) {
+            this._getHighlightTargetRows().forEach(row => this.messageService.highlightHighHs(row));
+        }
         if (this.features.squareTickets) {
             this.ticketService.renderSquareTicketCards();
         } else {
@@ -730,6 +743,10 @@ export class App {
         }
 
         this.ticketService.refreshComplaintPunishmentButtons();
+
+        if (this.features.highlightHighHs) {
+            this._getHighlightTargetRows().forEach(row => this.messageService.highlightHighHs(row));
+        }
 
         if (this.features.highlightComplaintTriggers) {
             this._getHighlightTargetRows().forEach(row => this.messageService.highlightComplaintTriggers(row));
@@ -983,6 +1000,9 @@ export class App {
     }
 
     _reapplyTicketRowHighlights() {
+        if (this.features.highlightHighHs) {
+            this._getHighlightTargetRows().forEach(row => this.messageService.highlightHighHs(row));
+        }
         if (this.features.highlightComplaintTriggers) {
             this._getHighlightTargetRows().forEach(row => this.messageService.highlightComplaintTriggers(row));
         }
@@ -996,6 +1016,9 @@ export class App {
     }
 
     _applyRowHighlights(row) {
+        if (this.features.highlightHighHs) {
+            this.messageService.highlightHighHs(row);
+        }
         if (this.features.highlightComplaintTriggers) {
             this.messageService.highlightComplaintTriggers(row);
         }

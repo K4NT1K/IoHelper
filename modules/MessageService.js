@@ -305,6 +305,32 @@ export class MessageService {
         });
     }
 
+    highlightHighHs(row) {
+        if (!row?.querySelectorAll) return;
+
+        const configured = this.settings.headshotPercentage;
+        const threshold = configured !== null && configured !== '' && Number.isFinite(Number(configured))
+            ? Math.min(100, Math.max(0, Number(configured)))
+            : 95;
+
+        // Reuse the site's HS span so React can keep updating its text.
+        // Do not mark site-owned nodes as IOH: their mutations must still be observed.
+        row.querySelectorAll('span').forEach(span => {
+            const match = (span.textContent || '').match(/^\s*HS:\s*(\d+(?:[.,]\d+)?)\s*%\s*$/i);
+            const value = match ? Number(match[1].replace(',', '.')) : NaN;
+            const highlight = value >= threshold && value <= 100;
+            if (span.classList.contains('ioh-high-hs') !== highlight) {
+                span.classList.toggle('ioh-high-hs', highlight);
+            }
+        });
+    }
+
+    clearHighHsHighlights() {
+        this.document.querySelectorAll('.ioh-high-hs').forEach(span => {
+            span.classList.remove('ioh-high-hs');
+        });
+    }
+
     highlightDuplicateServerIps() {
         this.clearDuplicateServerHighlights();
 
