@@ -264,7 +264,7 @@ export class MessageService {
 
         const hours = parseInt(match[1], 10);
 
-        if (hours >= this.settings.newAccountHours) {
+        if (hours > this.settings.newAccountHours) {
             this._clearRowHoursHighlight(row);
             return;
         }

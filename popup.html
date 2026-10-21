@@ -77,10 +77,10 @@
                     <label class="number-card" for="newAccountHours">
                         <span>
                             <strong>Порог нового аккаунта</strong>
-                            <small>Аккаунты с CYBERSHOKE часами меньше этого значения будут подсвечены</small>
+                            <small>Подсвечивать часы CYBERSHOKE до этого значения включительно. При 0 — только аккаунты с 0 часами</small>
                         </span>
                         <span class="number-control">
-                            <input type="number" id="newAccountHours" min="1" max="1000" value="7"/>
+                            <input type="number" id="newAccountHours" min="0" max="1000" value="7"/>
                             <span class="unit">ч</span>
                         </span>
                     </label>

@@ -56,7 +56,7 @@ const FEATURE_GROUPS = [
                 key: 'highlightNewAccounts',
                 label: 'Подсветка новых аккаунтов',
                 desc: '',
-                help: 'Подсвечивает часы CYBERSHOKE меньше указанного порога.'
+                help: 'Подсвечивает часы CYBERSHOKE до указанного порога включительно. При пороге 0 — только аккаунты с 0 часами.'
             },
             {
                 key: 'highlightHighHs',
@@ -488,8 +488,8 @@ function collectSettingsFromUI() {
             ? Math.min(100, Math.max(0, Number(headshotInput.value)))
             : 95,
         newAccountHours: Math.max(
-            parseInt(hoursInput.value, 10) || 1,
-            1
+            parseInt(hoursInput.value, 10) || 0,
+            0
         ),
         trackOffenderInterval: Math.min(60, Math.max(parseInt(trackIntervalInput.value, 10) || 1, 1)),
         trackOffenderIntervalWhileReviewing: Math.min(
