@@ -308,6 +308,9 @@ export class MessageService {
     highlightHighHs(row) {
         if (!row?.querySelectorAll) return;
 
+        const serverCell = row.querySelector('a[href^="steam://connect/"]')?.closest('td')
+            || row.querySelectorAll('td')[1];
+        const isHeadshotsOnly = /HSDM/i.test(serverCell?.textContent || '');
         const configured = this.settings.headshotPercentage;
         const threshold = configured !== null && configured !== '' && Number.isFinite(Number(configured))
             ? Math.min(100, Math.max(0, Number(configured)))
@@ -318,7 +321,7 @@ export class MessageService {
         row.querySelectorAll('span').forEach(span => {
             const match = (span.textContent || '').match(/^\s*HS:\s*(\d+(?:[.,]\d+)?)\s*%\s*$/i);
             const value = match ? Number(match[1].replace(',', '.')) : NaN;
-            const highlight = value >= threshold && value <= 100;
+            const highlight = !isHeadshotsOnly && value >= threshold && value <= 100;
             if (span.classList.contains('ioh-high-hs') !== highlight) {
                 span.classList.toggle('ioh-high-hs', highlight);
             }
