@@ -5,7 +5,7 @@
 
 This Privacy Policy describes how **IO HELPER**, a Chrome Manifest V3 browser extension for CYBERSHOKE moderators, handles information.
 
-IO HELPER is developed for use on the official CYBERSHOKE moderation website (`cybershoke.net` and `cybershoke.ru`). It is not a general-purpose browsing tool.
+IO HELPER is developed for use only on the official CYBERSHOKE moderation website (`https://io.cybershoke.net` and `https://io.cybershoke.ru`). It is not a general-purpose browsing tool.
 
 ## Summary
 
@@ -55,7 +55,7 @@ This data remains in the browser profile unless the user clears extension data o
 
 The extension may make requests to:
 
-- the official CYBERSHOKE moderation website (`*.cybershoke.net`, `*.cybershoke.ru`), including the user-data API used by offender tracking;
+- the official CYBERSHOKE moderation website (`https://io.cybershoke.net`, `https://io.cybershoke.ru`), including the user-data API used by offender tracking;
 - Steam avatar CDN (`*.steamstatic.com`), to display the public avatar URL returned by the moderator profile;
 - this project’s GitHub repository, to download the latest `config.json`;
 - FastMM (`mobile.fastmm.win`), to look up public Steam profile metadata (account creation date and Faceit ELO) when those features are enabled;

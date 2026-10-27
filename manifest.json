@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.12.1",
+  "version": "2.12.2",
   "description": "Улучшает функционал IO сайта",
   "background": {
     "service_worker": "background.js",
@@ -33,8 +33,8 @@
         "dist/chunks/*"
       ],
       "matches": [
-        "*://*.cybershoke.net/*",
-        "*://*.cybershoke.ru/*"
+        "https://io.cybershoke.net/*",
+        "https://io.cybershoke.ru/*"
       ]
     }
   ],
@@ -47,8 +47,8 @@
     },
     {
       "matches": [
-        "*://*.cybershoke.net/*",
-        "*://*.cybershoke.ru/*"
+        "https://io.cybershoke.net/*",
+        "https://io.cybershoke.ru/*"
       ],
       "css": [
         "css/panel.css",

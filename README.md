@@ -1,6 +1,6 @@
 # IO HELPER
 
-Chrome-расширение (Manifest V3) для модераторов проекта [CYBERSHOKE](https://cybershoke.net). Работает на страницах модерации `cybershoke.net` и `cybershoke.ru`.
+Chrome-расширение (Manifest V3) для модераторов проекта [CYBERSHOKE](https://cybershoke.net). Работает только в админке `https://io.cybershoke.net` и `https://io.cybershoke.ru`.
 
 Расширение не заменяет штатный интерфейс сайта: оно дополняет очередь жалоб и открытый тикет подсказками, подсветкой и автоматизацией рутинных действий. Обработка идёт в браузере; удалённо запрашиваются только конфигурация, данные игрока и перевод — см. [Privacy Policy](privacy-policy).
 
