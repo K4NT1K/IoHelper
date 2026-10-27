@@ -1,511 +1,61 @@
-import { markIoh } from './shared/dom.js';
-import { ConfigService } from './ConfigService.js';
+import {markIoh} from './shared/dom.js';
+import {flattenModeratorGroup, validScheduleSnapshot} from './shared/moderators.js';
 
 export class ModeratorService {
-    static WEEKDAY_LABELS = [
-        'Понедельник',
-        'Вторник',
-        'Среда',
-        'Четверг',
-        'Пятница',
-        'Суббота',
-        'Воскресенье'
-    ];
-
     static MODERATOR_CATEGORIES = ['Tier', 'Movement', 'Hns', 'Jail'];
-
     static CATEGORY_KEYS = ['verification', 'Tier', 'Movement', 'Hns', 'Jail'];
 
-    constructor({ document, chrome }) {
+    constructor({document, chrome, isEnabled = () => true}) {
         this.document = document;
         this.chrome = chrome;
-        this.isScanning = false;
+        this.isEnabled = isEnabled;
         this.hasCompletedWeeklyScan = false;
+        this._scanNextAt = 0;
     }
 
+    // Compatibility entry point. Collection is owned by the daily API scheduler;
+    // this service never navigates or clicks the native worktime controls.
     scanSchedulePage() {
-        if (!window.location.href.includes('/worktime')) {
-            return;
-        }
-
-        if (this.isScanning || this.hasCompletedWeeklyScan) {
-            return;
-        }
-
-        void this.runWeeklyScheduleScan();
+        if (!this.isEnabled() || this._scanRequest || Date.now() < this._scanNextAt) return this._scanRequest;
+        this._scanNextAt = Date.now() + 60000;
+        this._scanRequest = this.chrome.runtime.sendMessage({action: 'requestScheduleScan'}).then(response => {
+            if (response?.nextAt) this._scanNextAt = response.nextAt;
+            this.hasCompletedWeeklyScan = response?.status === 'complete';
+            return response;
+        }).catch(error => {
+            console.warn('[IO HELPER] API расписания:', error.message);
+            return {success: false, error: error.message};
+        }).finally(() => {this._scanRequest = null;});
+        return this._scanRequest;
     }
 
-    async runWeeklyScheduleScan() {
-        this.isScanning = true;
-        console.log('[IO HELPER] Недельный скан расписания запущен.');
+    runWeeklyScheduleScan() {return this.scanSchedulePage();}
 
-        try {
-            const dayButtons = await this.waitForDayButtons();
-            if (!dayButtons) {
-                console.log('[IO HELPER] Кнопки дней недели не найдены. Остановка.');
-                return;
-            }
-
-            const scheduleModerators = {};
-
-            let previousFingerprint = null;
-
-            for (const dayLabel of ModeratorService.WEEKDAY_LABELS) {
-                const button = dayButtons[dayLabel];
-                if (!button) {
-                    console.log(`[IO HELPER] Кнопка «${dayLabel}» не найдена, пропуск.`);
-                    continue;
-                }
-
-                console.log(`[IO HELPER] Сканирование дня: ${dayLabel}`);
-                button.click();
-
-                const ready = await this.waitForScheduleContent(previousFingerprint);
-                if (!ready) {
-                    console.log(`[IO HELPER] Контент расписания для «${dayLabel}» не загрузился вовремя.`);
-                }
-
-                const dayMods = this.collectModeratorsFromPage();
-                previousFingerprint = this.getScheduleFingerprint();
-                const dayCount = Object.keys(dayMods).length;
-                console.log(`[IO HELPER] «${dayLabel}»: найдено ${dayCount} модераторов.`);
-
-                Object.assign(scheduleModerators, dayMods);
-            }
-
-            const totalFound = Object.keys(scheduleModerators).length;
-            if (totalFound === 0) {
-                console.log('[IO HELPER] Модераторы на странице не найдены. Остановка.');
-                return;
-            }
-
-            await this.applyTierDiffAndReport(scheduleModerators);
-        } catch (error) {
-            console.error('[IO HELPER] Ошибка недельного скана расписания:', error);
-        } finally {
-            this.hasCompletedWeeklyScan = true;
-            this.isScanning = false;
-        }
+    cancelScan() {
+        void this.chrome.runtime.sendMessage({action: 'cancelScheduleScan'}).catch(() => {});
     }
 
-    waitForDayButtons(timeoutMs = 15000) {
-        return new Promise((resolve) => {
-            const find = () => this.findDayButtons();
-            const existing = find();
-            if (existing) {
-                resolve(existing);
-                return;
-            }
-
-            let settled = false;
-            const finish = (value, reason) => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                observer.disconnect();
-                console.log(`[Helper] ModeratorService: waitForDayButtons finish — ${reason}`);
-                resolve(value);
-            };
-
-            console.log('[Helper] ModeratorService: waitForDayButtons start');
-            const observer = new MutationObserver(() => {
-                const buttons = find();
-                if (buttons) {
-                    finish(buttons, 'found');
-                }
-            });
-
-            observer.observe(this.document.body, { childList: true, subtree: true });
-            setTimeout(() => finish(find(), 'timeout'), timeoutMs);
-        });
-    }
-
-    findDayButtons() {
-        const buttons = {};
-        const allButtons = this.document.querySelectorAll('button[type="button"]');
-
-        allButtons.forEach((button) => {
-            const label = (button.textContent || '').replace(/\s+/g, ' ').trim();
-            if (ModeratorService.WEEKDAY_LABELS.includes(label)) {
-                buttons[label] = button;
-            }
-        });
-
-        const foundCount = Object.keys(buttons).length;
-        return foundCount >= 7 ? buttons : null;
-    }
-
-    waitForScheduleContent(previousFingerprint, timeoutMs = 10000) {
-        return new Promise((resolve) => {
-            const isReady = () => {
-                const fingerprint = this.getScheduleFingerprint();
-                if (!fingerprint) {
-                    return false;
-                }
-
-                // First day: any content is enough. Later days: wait until content changes.
-                if (previousFingerprint == null) {
-                    return true;
-                }
-
-                return fingerprint !== previousFingerprint;
-            };
-
-            const finish = (ok) => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                observer?.disconnect();
-                setTimeout(() => resolve(ok), 350);
-            };
-
-            let settled = false;
-            let observer = null;
-
-            if (isReady()) {
-                finish(true);
-                return;
-            }
-
-            console.log('[Helper] ModeratorService: waitForScheduleContent start');
-            observer = new MutationObserver(() => {
-                if (isReady()) {
-                    console.log('[Helper] ModeratorService: waitForScheduleContent finish — ready');
-                    finish(true);
-                }
-            });
-
-            observer.observe(this.document.body, { childList: true, subtree: true });
-            setTimeout(() => {
-                if (settled) {
-                    return;
-                }
-                console.log('[Helper] ModeratorService: waitForScheduleContent finish — timeout');
-                finish(this.countScheduleMarkers() > 0);
-            }, timeoutMs);
-        });
-    }
-
-    countScheduleMarkers() {
-        return this.document.querySelectorAll(
-            'a[href*="/moderator/profile/"], [data-steamid64]'
-        ).length;
-    }
-
-    getScheduleFingerprint() {
-        const ids = new Set();
-
-        this.document.querySelectorAll('[data-steamid64]').forEach((node) => {
-            const steamId = (node.getAttribute('data-steamid64') || '').trim();
-            if (this.isSteamId64(steamId)) {
-                ids.add(steamId);
-            }
-        });
-
-        this.document.querySelectorAll('a[href*="/moderator/profile/"]').forEach((link) => {
-            const match = (link.getAttribute('href') || link.href || '')
-                .match(/\/moderator\/profile\/(\d{17,18})/);
-            if (match) {
-                ids.add(match[1]);
-            }
-        });
-
-        if (ids.size === 0) {
-            return null;
-        }
-
-        return Array.from(ids).sort().join(',');
-    }
-
-    collectModeratorsFromPage() {
-        const result = {};
-
-        this.document.querySelectorAll('[data-steamid64]').forEach((node) => {
-            const steamId = (node.getAttribute('data-steamid64') || '').trim();
-            if (!this.isSteamId64(steamId)) {
-                return;
-            }
-
-            const nick = this.extractNickFromSteamidNode(node, steamId);
-            if (nick) {
-                result[steamId] = nick;
-            }
-        });
-
-        this.document.querySelectorAll('a[href*="/moderator/profile/"]').forEach((link) => {
-            const match = (link.getAttribute('href') || link.href || '')
-                .match(/\/moderator\/profile\/(\d{17,18})/);
-            if (!match) {
-                return;
-            }
-
-            const steamId = match[1];
-            if (result[steamId]) {
-                return;
-            }
-
-            const nick = this.extractNickFromProfileLink(link, steamId);
-            if (nick) {
-                result[steamId] = nick;
-            }
-        });
-
-        return result;
-    }
-
-    normalizeNick(name) {
-        if (!name || typeof name !== 'string') {
-            return '';
-        }
-
-        let nick = name.replace(/\s+/g, ' ').trim();
-        while (/^аватар игрока\s+/i.test(nick)) {
-            nick = nick.replace(/^аватар игрока\s+/i, '').trim();
-        }
-
-        return nick;
-    }
-
-    extractNickFromSteamidNode(node, steamId) {
-        const roleLinks = node.querySelectorAll('[role="link"]');
-        for (const el of roleLinks) {
-            const text = this.normalizeNick(el.textContent || '');
-            if (this.isValidNick(text, steamId) && !/^\d{1,2}:\d{2}/.test(text)) {
-                return text;
-            }
-        }
-
-        const withoutTime = this.normalizeNick(
-            (node.textContent || '').replace(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g, '')
-        );
-        if (this.isValidNick(withoutTime, steamId)) {
-            return withoutTime;
-        }
-
-        const title = this.normalizeNick(
-            node.closest('[title]')?.getAttribute('title') || ''
-        );
-        if (this.isValidNick(title, steamId)) {
-            return title;
-        }
-
-        const img = node.querySelector('img[alt]');
-        if (img) {
-            const alt = this.normalizeNick(img.getAttribute('alt') || '');
-            if (this.isValidNick(alt, steamId)) {
-                return alt;
-            }
-        }
-
-        return null;
-    }
-
-    extractNickFromProfileLink(link, steamId) {
-        const span = link.querySelector('span');
-        if (span) {
-            const text = this.normalizeNick(span.textContent || '');
-            if (this.isValidNick(text, steamId)) {
-                return text;
-            }
-        }
-
-        const card = link.closest('[data-player-card="true"]');
-        if (card) {
-            const nickLink = Array.from(card.querySelectorAll('a[href*="/moderator/profile/"]'))
-                .find((a) => {
-                    const text = this.normalizeNick(a.textContent || '');
-                    return this.isValidNick(text, steamId);
-                });
-            if (nickLink) {
-                return this.normalizeNick(nickLink.textContent || '');
-            }
-
-            const imgAlt = card.querySelector('img[alt]');
-            if (imgAlt) {
-                const alt = this.normalizeNick(imgAlt.getAttribute('alt') || '');
-                if (this.isValidNick(alt, steamId)) {
-                    return alt;
-                }
-            }
-        }
-
-        const img = link.querySelector('img[alt]');
-        if (img) {
-            const alt = this.normalizeNick(img.getAttribute('alt') || '');
-            if (this.isValidNick(alt, steamId)) {
-                return alt;
-            }
-        }
-
-        const text = this.normalizeNick(link.textContent || '');
-        if (this.isValidNick(text, steamId)) {
-            return text;
-        }
-
-        return null;
-    }
-
-    isSteamId64(value) {
-        return typeof value === 'string' && /^\d{17,18}$/.test(value);
-    }
-
-    isValidNick(name, steamId) {
-        if (!name || typeof name !== 'string') {
-            return false;
-        }
-
-        const trimmed = this.normalizeNick(name);
-        if (trimmed.length < 1) {
-            return false;
-        }
-
-        if (trimmed.includes('ID:')) {
-            return false;
-        }
-
-        if (trimmed === steamId || /^\d{17,18}$/.test(trimmed)) {
-            return false;
-        }
-
-        if (/^аватар игрока$/i.test(trimmed)) {
-            return false;
-        }
-
-        return true;
-    }
+    isSteamId64(value) {return typeof value === 'string' && /^\d{17}$/.test(value);}
 
     async loadBaselineModerators() {
-        try {
-            const response = await fetch(ConfigService.DEFAULT_CONFIG_URL, { cache: 'no-cache' });
-            if (response.ok) {
-                const remote = await response.json();
-                console.log('[IO HELPER] Baseline Tier загружен с GitHub.');
-                return this.normalizeModerators(remote.moderators);
-            }
-        } catch (e) {
-            console.log('[IO HELPER] GitHub baseline недоступен, пробуем bundled config.');
-        }
-
-        try {
-            const bundled = await fetch(this.chrome.runtime.getURL('config.json')).then(r => r.json());
-            console.log('[IO HELPER] Baseline Tier загружен из bundled config.json.');
-            return this.normalizeModerators(bundled.moderators);
-        } catch (e) {
-            console.log('[IO HELPER] Bundled config недоступен для baseline.');
-            return null;
-        }
-    }
-
-    applyTierDiffAndReport(scheduleModerators) {
-        return new Promise(async (resolve) => {
-            const baselineModerators = await this.loadBaselineModerators();
-
-            this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
-                if (!helperConfig) {
-                    console.log('[IO HELPER] helperConfig не найден в storage.');
-                    resolve();
-                    return;
-                }
-
-                const moderators = this.normalizeModerators(helperConfig.moderators);
-                const oldTier = baselineModerators
-                    ? { ...(baselineModerators.Tier || {}) }
-                    : { ...(moderators.Tier || {}) };
-
-                if (!baselineModerators) {
-                    console.log('[IO HELPER] Baseline недоступен — diff против local helperConfig.Tier.');
-                }
-
-                const added = {};
-                const removed = {};
-                const newTier = {};
-
-                for (const [steamId, nick] of Object.entries(scheduleModerators)) {
-                    newTier[steamId] = nick;
-                    if (!oldTier[steamId]) {
-                        added[steamId] = nick;
-                    }
-                }
-
-                for (const [steamId, nick] of Object.entries(oldTier)) {
-                    if (!scheduleModerators[steamId]) {
-                        removed[steamId] = nick;
-                    }
-                }
-
-                moderators.Tier = newTier;
-                helperConfig.moderators = moderators;
-
-                if (helperConfig.weeklySchedule) {
-                    delete helperConfig.weeklySchedule;
-                }
-
-                this.chrome.storage.local.set({ helperConfig }, () => {
-                    console.log('[IO HELPER] === Результат недельного скана Tier ===');
-                    console.log('[IO HELPER] Добавленные модераторы:', added);
-                    console.log('[IO HELPER] Удалённые модераторы:', removed);
-                    console.log('[IO HELPER] Полный JSON модераторов (для копипаста):');
-                    console.log(JSON.stringify(moderators, null, 2));
-                    console.log(
-                        `[IO HELPER] Итого в Tier: ${Object.keys(newTier).length}`
-                        + ` (добавлено: ${Object.keys(added).length},`
-                        + ` удалено: ${Object.keys(removed).length})`
-                    );
-                    resolve();
-                });
-            });
-        });
+        const {helperConfig, helperScheduleModerators} = await this.chrome.storage.local.get(['helperConfig', 'helperScheduleModerators']);
+        return this.normalizeModerators({...helperConfig?.moderators,
+            ...(validScheduleSnapshot(helperScheduleModerators) ? {Tier: helperScheduleModerators.Tier} : {})});
     }
 
     normalizeModerators(raw) {
-        const result = {
-            verification: {},
-            Tier: {},
-            Movement: {},
-            Hns: {},
-            Jail: {}
-        };
-
-        if (!raw || typeof raw !== 'object') {
-            return result;
+        const result = Object.fromEntries(ModeratorService.CATEGORY_KEYS.map(key => [key, flattenModeratorGroup(raw?.[key])]));
+        // Legacy top-level SteamID -> name values remain accepted.
+        for (const [key, value] of Object.entries(raw || {})) {
+            if (this.isSteamId64(key) && typeof value === 'string' && value) result.Tier[key] = value;
         }
-
-        for (const key of ModeratorService.CATEGORY_KEYS) {
-            if (raw[key] && typeof raw[key] === 'object' && !Array.isArray(raw[key])) {
-                result[key] = { ...raw[key] };
-            }
-        }
-
-        // Legacy flat format: steamId → nick at top level.
-        for (const [key, value] of Object.entries(raw)) {
-            if (ModeratorService.CATEGORY_KEYS.includes(key)) {
-                continue;
-            }
-
-            if (typeof value === 'string' && this.isSteamId64(key) && value) {
-                result.Tier[key] = value;
-            }
-        }
-
         return result;
     }
 
     resolveModeratorType(steamId, moderators) {
         const normalized = this.normalizeModerators(moderators);
-
-        if (normalized.verification?.[steamId]) {
-            return 'verification';
-        }
-
-        for (const category of ModeratorService.MODERATOR_CATEGORIES) {
-            if (normalized[category]?.[steamId]) {
-                return 'admin';
-            }
-        }
-
-        return null;
+        if (normalized.verification[steamId]) return 'verification';
+        return ModeratorService.MODERATOR_CATEGORIES.some(category => normalized[category][steamId]) ? 'admin' : null;
     }
 
     insertModeratorBadge(link, badgeType) {
@@ -550,7 +100,7 @@ export class ModeratorService {
 
     _findCurrentServerSection() {
         const header = Array.from(this.document.querySelectorAll('h3'))
-            .find(h => h.textContent?.includes('Текущий сервер'));
+            .find(h => h.textContent?.includes('Текущий сервер') && !h.closest('[aria-hidden="true"]'));
 
         if (!header) {
             return null;
@@ -572,8 +122,9 @@ export class ModeratorService {
     }
 
     highlightSavedModerators() {
-        this.chrome.storage.local.get(['helperConfig'], ({ helperConfig }) => {
-            const moderators = helperConfig?.moderators || {};
+        this.chrome.storage.local.get(['helperConfig', 'helperScheduleModerators'], ({helperConfig, helperScheduleModerators}) => {
+            const moderators = {...(helperConfig?.moderators || {}),
+                ...(validScheduleSnapshot(helperScheduleModerators) ? {Tier: helperScheduleModerators.Tier} : {})};
             if (Object.keys(moderators).length === 0) return;
 
             const section = this._findCurrentServerSection();
@@ -587,7 +138,17 @@ export class ModeratorService {
 
                 const steamId = match[1];
                 const badgeType = this.resolveModeratorType(steamId, moderators);
-                if (!badgeType) return;
+                if (!badgeType) {
+                    if (link.dataset.hasModerBadge) {
+                        const badge = link.parentElement?.querySelector('.ioh-admin-icon[data-ioh]') || link.querySelector('.ioh-admin-icon[data-ioh]')
+                            || link.closest('tr')?.querySelector('.ioh-admin-icon[data-ioh]');
+                        badge?.remove();
+                        link.closest('tr')?.classList.remove('ioh-highlighted-moderator');
+                        delete link.dataset.hasModerBadge;
+                        delete link.dataset.moderBadgeType;
+                    }
+                    return;
+                }
 
                 const row = link.closest('tr');
                 if (row && !row.classList.contains('ioh-highlighted-moderator')) {

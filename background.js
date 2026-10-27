@@ -1,4 +1,15 @@
 // background.js
+import {ConfigService} from './modules/ConfigService.js';
+import {BackgroundScheduler} from './modules/BackgroundScheduler.js';
+import {AnalyticsJobs} from './modules/analytics/AnalyticsJobs.js';
+
+const scheduler = chrome.alarms ? new BackgroundScheduler(chrome) : null;
+scheduler?.start();
+const analytics = chrome.alarms ? new AnalyticsJobs(chrome) : null;
+if (analytics) {
+    chrome.alarms.onAlarm.addListener(alarm => {if (alarm.name === 'ioh-analytics-timeout') void analytics.expire();});
+    void analytics.expire();
+}
 
 async function fetchOffenderProfileJson(steamId) {
     const response = await fetch('https://mobile.fastmm.win/api/page/v1/faceit-service/player/find', {
@@ -232,6 +243,20 @@ async function translateText(text, targetLang = 'ru') {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    const respond = promise => {
+        Promise.resolve(promise).then(sendResponse, error => sendResponse({success: false, error: error.message}));
+        return true;
+    };
+    if (request.action?.startsWith('analytics')) return respond(analytics?.handle(request, sender));
+    if (request.action === 'openAnalytics' && /^7656119\d{10}$/.test(request.steamId || '')) return respond(chrome.tabs.create({url:chrome.runtime.getURL('analytics.html?steamId='+request.steamId)}).then(()=>({success:true})));
+    if (request.action === 'getHelperConfig') return respond(ConfigService.load(chrome).then(async config => ({success: true, config,
+        revision: (await chrome.storage.local.get('helperConfigMeta')).helperConfigMeta?.revision})));
+    if (request.action === 'requestScheduleScan' || request.action === 'requestDailySchedule') return respond(scheduler?.requestDaily(sender, request) || {success: false, allowed: false});
+    if (request.action === 'getModeratorConfig') return respond(scheduler?.getModeratorConfig(sender) || {success: false});
+    if (request.action === 'cancelScheduleScan') return respond(scheduler?.cancelRequest(request, sender) || {success: false});
+    if (request.action === 'scheduleScanFinished') return respond({success: false});
+    if (request.action === 'configApplied') return respond(scheduler?.applied(request, sender).then(() => ({success: true})));
+    if (request.action === 'iohClientReady') return respond(scheduler?.runDaily().then(() => ({success: true})));
     if (request.action === 'fetchOffenderProfile') {
         const steamId = request.steamId;
 

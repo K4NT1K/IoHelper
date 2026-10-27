@@ -6,9 +6,13 @@ import { TicketService } from './TicketService.js';
 import { PunishmentService } from './PunishmentService.js';
 import { DOMCoordinator } from './DOMCoordinator.js';
 import { isIohNode, scheduleIdle } from './shared/dom.js';
+import { mergeSettings } from './shared/settings.js';
+import {ConfigService} from './ConfigService.js';
+import {ProfileLauncher} from './analytics/ProfileLauncher.js';
+import {AppearanceService} from './AppearanceService.js';
 
 export class App {
-    constructor({window, document, chrome, config}) {
+    constructor({window, document, chrome, config, settingsOverrides = {}}) {
         this.window = window;
         this.document = document;
         this.chrome = chrome;
@@ -16,8 +20,10 @@ export class App {
         this.spamRules = config.spamRules || {};
         this.muteExceptions = config.muteExceptions || {};
         this.templates = config.templates || {};
-        this.settings = config.settings;
-        this.settings.features.highlightHighHs ??= true;
+        this.baseSettings = structuredClone(config.settings);
+        this.settingsOverrides = settingsOverrides;
+        this.configRevision = config.iohRevision || '';
+        this.settings = mergeSettings(this.baseSettings, settingsOverrides);
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
         this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
@@ -38,6 +44,8 @@ export class App {
         this._offenderTrackingTextarea = null;
 
         this.utils = new Utils({document});
+        this.profileLauncher = new ProfileLauncher({document, chrome});
+        this.appearanceService = new AppearanceService({document, chrome});
         this.badgeService = new BadgeService({document});
         this.panelService = new PanelService({document});
         this.messageService = new MessageService({
@@ -74,6 +82,10 @@ export class App {
     }
 
     bindCoordinatorEvents() {
+        this.domCoordinator.on('pageTools',()=>{
+            this.profileLauncher?.sync();
+            this.appearanceService?.sync();
+        });
         this.domCoordinator.on('notification', () => this.initNotificationPanels());
         this.domCoordinator.on('ticketMounted', () => {
             this.initTicketSectionFeatures();
@@ -92,6 +104,11 @@ export class App {
         });
         this.domCoordinator.on('punishmentDialog', () => {
             this.punishmentService.scheduleScan();
+            if (this.pendingConfiguration && !this.ticketService.isSitePunishmentDialogOpen()) {
+                const pending = this.pendingConfiguration;
+                this.pendingConfiguration = null;
+                this.applyConfiguration(pending.config, pending.revision);
+            }
         });
         this.domCoordinator.on('chatChanged', () => {
             if (this.features.translateText) {
@@ -109,7 +126,8 @@ export class App {
                 .then(({ModeratorService}) => {
                     this._moderatorService = new ModeratorService({
                         document: this.document,
-                        chrome: this.chrome
+                        chrome: this.chrome,
+                        isEnabled: () => Boolean(this.features.scanSchedulePage)
                     });
                     this.moderatorService = this._moderatorService;
                     return this._moderatorService;
@@ -132,44 +150,61 @@ export class App {
             });
 
         this.chrome.storage.onChanged.addListener((changes, areaName) => {
-            if (areaName !== "local" || !changes.helperSettings) {
-                return;
-            }
-
-            const settings = changes.helperSettings.newValue || {};
-
-            this.updateSettings(settings);
+            if (areaName !== 'local') return;
+            if (changes.helperSettings) this.settingsOverrides = changes.helperSettings.newValue || {};
+            if (changes.helperConfig && ConfigService.isValid(changes.helperConfig.newValue)) {
+                this.applyConfiguration(changes.helperConfig.newValue, changes.helperConfigMeta?.newValue?.revision || '');
+            } else if (changes.helperSettings) this.updateSettings(this.settingsOverrides);
+            if (changes.helperScheduleModerators) this.moderatorService.highlightSavedModerators();
         });
 
         this.initNavigationWatcher();
+        this.profileLauncher.refresh();
+        void this.appearanceService.start();
+        this.window.addEventListener('pagehide',()=>{this.profileLauncher.stop();this.appearanceService.stop();},{once:true});
         this.domCoordinator.init();
         this.initPunishmentFormObserver();
         this.ticketService.initMuteIssueFeature();
         this.initVisibilityCatchUpListener();
 
         this.handleTrackOffenderLoop();
+        void this.chrome.runtime.sendMessage({action: 'iohClientReady'}).catch(() => {});
+        void this.chrome.runtime.sendMessage({action: 'configApplied', revision: this.configRevision}).catch(() => {});
+    }
+
+    applyConfiguration(config, revision) {
+        if (this.ticketService.isSitePunishmentDialogOpen()) {
+            this.pendingConfiguration = {config, revision};
+            if (this.settingsOverrides) this.updateSettings(this.settingsOverrides);
+            return;
+        }
+        if (JSON.stringify(this.rules) !== JSON.stringify(config.muteRules)
+            || JSON.stringify(this.muteExceptions) !== JSON.stringify(config.muteExceptions || {})) {
+            this.rules = config.muteRules;
+            this.muteExceptions = config.muteExceptions || {};
+            this.ticketService.resetChatAnalysisCache();
+        }
+        if (JSON.stringify(this.spamRules) !== JSON.stringify(config.spamRules || {})) this.ticketService.resetChatAnalysisCache();
+        this.spamRules = config.spamRules || {};
+        this.ticketService.spamRules = this.spamRules;
+        if (JSON.stringify(this.templates) !== JSON.stringify(config.templates || {})) {
+            this.templates = config.templates || {};
+            this.document.querySelectorAll('#mod-ticket-panel[data-ioh], #mod-notif-panel[data-ioh]').forEach(e => e.remove());
+        }
+        this.baseSettings = structuredClone(config.settings);
+        this.configRevision = revision;
+        this.updateSettings(this.settingsOverrides || {});
+        void this.chrome.runtime.sendMessage({action: 'configApplied', revision}).catch(() => {});
     }
 
     updateSettings(settings) {
         const previousSettings = structuredClone(this.settings);
+        const nextSettings = mergeSettings(this.baseSettings || this.settings, settings);
         const previousFeatures = previousSettings?.features || {};
-        const newAccountHoursChanged = previousSettings?.newAccountHours !== settings.newAccountHours;
-        const newAccountsReenabled = !previousFeatures.highlightNewAccounts && settings.features?.highlightNewAccounts;
+        const newAccountHoursChanged = previousSettings?.newAccountHours !== nextSettings.newAccountHours;
+        const newAccountsReenabled = !previousFeatures.highlightNewAccounts && nextSettings.features.highlightNewAccounts;
 
-        this.settings = {
-            ...this.settings,
-            ...settings,
-            headshotPercentage: settings.headshotPercentage ?? 95,
-            features: {
-                ...this.settings.features,
-                ...(settings.features || {}),
-                highlightHighHs: settings.features?.highlightHighHs ?? true
-            }
-        };
-
-        if (settings.reasonTriggersAutoconnect) {
-            this.settings.reasonTriggersAutoconnect = settings.reasonTriggersAutoconnect;
-        }
+        this.settings = nextSettings;
 
         this.features = this.settings.features;
         this.reasonTriggers = this.settings.reasonTriggers;
@@ -346,6 +381,7 @@ export class App {
         const nextFeatures = nextSettings.features;
         const triggersChanged = JSON.stringify(previousSettings?.reasonTriggers || []) !== JSON.stringify(nextSettings.reasonTriggers);
         const newAccountHoursChanged = previousSettings?.newAccountHours !== nextSettings.newAccountHours;
+        if (!nextFeatures.scanSchedulePage) this._moderatorService?.cancelScan();
 
         if (!nextFeatures.highlightComplaintTriggers || triggersChanged) {
             this.messageService.clearComplaintTriggerHighlights();
@@ -693,6 +729,8 @@ export class App {
         const href = this.window.location.href;
         if (href === this._lastHref) return;
         this._lastHref = href;
+        this.profileLauncher?.refresh();
+        this.appearanceService?.refresh();
 
         if (!this.ticketService.isComplaintPage()) {
             this.ticketService.clearAutoConnectedServers();

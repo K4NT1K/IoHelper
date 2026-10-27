@@ -58,7 +58,7 @@ function background() {
         chrome: {runtime: {onMessage: {addListener() {}}}},
         setTimeout(fn, ms) { timers.push({fn, at: now + ms}); return timers.length; }
     });
-    vm.runInContext(readFileSync(new URL('../background.js', import.meta.url), 'utf8'), context);
+    vm.runInContext(readFileSync(new URL('../background.js', import.meta.url), 'utf8').replace(/^import .*;\r?\n/gm, ''), context);
     return {context, timers, fire(timer) { now = timer.at; timer.fn(); }};
 }
 
@@ -104,7 +104,7 @@ test('M1: settings-only updates preserve the matcher; new rule inputs compile to
     ticket.teardownTicketPunishmentButtons = () => {};
     const app = {
         settings: {features: {}}, rules, muteExceptions: exceptions,
-        messageService: {}, ticketService: ticket,
+        messageService: {reapplyNewAccountHighlights() {}}, ticketService: ticket,
         cleanupChangedSettings() {}, teardownTicketChatHistoryObservers() {},
         punishmentService: {setEnabled() {}}, initPunishmentFormObserver() {},
         runDOMUpdates() {}, domCoordinator: {init() {}}, handleTrackOffenderLoop() {}
