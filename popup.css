@@ -934,3 +934,30 @@ body::-webkit-scrollbar-thumb {
         font-size: 22px;
     }
 }
+
+/* Appearance uses the same surfaces and iOS switch as the feature settings. */
+.appearance-card {
+    padding: 15px;
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, rgba(96,128,255,.07), transparent 60%), var(--glass-soft);
+    transition: border-color var(--spring), box-shadow var(--spring), background var(--spring);
+}
+.appearance-card.is-enabled {border-color: rgba(144,168,255,.3); box-shadow: inset 0 1px 0 rgba(255,255,255,.035);}
+.appearance-card__top {display: flex; align-items: center; gap: 11px;}
+.appearance-card__icon {display: grid; place-items: center; width: 41px; height: 41px; flex: 0 0 auto; border-radius: 13px; color: #b5c5ff; background: linear-gradient(145deg, rgba(144,168,255,.16), rgba(96,128,255,.05)); border: 1px solid rgba(144,168,255,.18); box-shadow: inset 0 1px 0 rgba(255,255,255,.1);}
+.appearance-card__copy {flex: 1; min-width: 0;}
+.appearance-card__copy strong {display: block; font-size: 13px; font-weight: 700; letter-spacing: -.2px;}
+.appearance-card__copy span {display: block; color: var(--muted); font-size: 10px; line-height: 1.4; margin-top: 3px;}
+.glass-options {border: 0; margin: 17px 0 0; padding: 0; min-width: 0;}
+.glass-options legend {font-size: 10px; font-weight: 650; color: var(--subtext); margin-bottom: 8px;}
+.glass-options__segments {display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 4px; border-radius: 12px; background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.04);}
+.glass-option {position: relative; min-width: 0; cursor: pointer;}
+.glass-option input {position: absolute; width: 1px; height: 1px; opacity: 0;}
+.glass-option span {display: block; text-align: center; padding: 9px 3px; border-radius: 9px; font-size: 10px; font-weight: 650; color: var(--subtext); transition: color var(--spring), background var(--spring), box-shadow var(--spring), transform var(--spring);}
+.glass-option:hover span {background: rgba(255,255,255,.045); color: var(--text);}
+.glass-option input:checked+span {color: #eef2ff; background: linear-gradient(145deg, rgba(96,128,255,.28), rgba(96,128,255,.15)); box-shadow: 0 3px 9px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.14);}
+.glass-option input:focus-visible+span {outline: 2px solid var(--blue-2); outline-offset: 1px;}
+.glass-option:active span {transform: scale(.97);}
+.appearance-card__hint {font-size: 10px; color: var(--muted); line-height: 1.5; margin: 10px 1px 0;}
+@media (prefers-reduced-motion: reduce) {.appearance-card, .glass-option span {transition: none;} .glass-option:active span {transform: none;}}

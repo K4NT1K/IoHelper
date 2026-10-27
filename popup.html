@@ -142,6 +142,31 @@
     </section>
 
     <section class="settings-section">
+        <div class="section-title">Оформление</div>
+        <div class="appearance-card" id="appearanceCard">
+            <div class="appearance-card__top">
+                <div class="appearance-card__icon" aria-hidden="true"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="14" height="14" rx="5" fill="currentColor" opacity=".25"/><rect x="7" y="2" width="14" height="14" rx="5" fill="currentColor" opacity=".3" stroke="currentColor"/><path d="M10 5h4" stroke="white" stroke-opacity=".75" stroke-linecap="round"/></svg></div>
+                <div class="appearance-card__copy"><strong>Liquid Glass</strong><span>Новое оформление привычного интерфейса</span></div>
+                <label class="switch-ios"><input type="checkbox" id="glassEnabled" aria-label="Включить Liquid Glass"><span class="slider" aria-hidden="true"></span></label>
+            </div>
+            <fieldset class="glass-options">
+                <legend>Прозрачность</legend>
+                <div class="glass-options__segments">
+                    <label class="glass-option"><input type="radio" name="glassIntensity" value="soft"><span>Мягкая</span></label>
+                    <label class="glass-option"><input type="radio" name="glassIntensity" value="balanced" checked><span>Баланс</span></label>
+                    <label class="glass-option"><input type="radio" name="glassIntensity" value="clear"><span>Выразительная</span></label>
+                </div>
+            </fieldset>
+            <p class="appearance-card__hint" id="glassDescription">Прозрачные панели и плавные переходы на страницах админки.</p>
+        </div>
+    </section>
+    <section class="settings-section">
+        <div class="section-title">Статистика</div>
+        <p class="section-hint">Импакт, лучшие дни и сравнение всей команды.</p>
+        <button id="analyticsBtn" class="btn-reset" type="button">Статистика модераторов ↗</button>
+    </section>
+
+    <section class="settings-section">
         <div class="section-title">Обратная связь</div>
 
         <div class="feedback-card">

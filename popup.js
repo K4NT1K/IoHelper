@@ -1,4 +1,6 @@
 import { ConfigService } from './modules/ConfigService.js';
+import {mergeSettings, editedOverrides} from './modules/shared/settings.js';
+import {normalizeAppearance} from './modules/AppearanceService.js';
 
 const featureTogglesEl = document.getElementById('featureToggles');
 const hoursInput = document.getElementById('newAccountHours');
@@ -18,6 +20,7 @@ const toast = document.getElementById('toastMsg');
 
 let currentSettings = {};
 let defaultSettings = {};
+let savedOverrides = {}, lastSavedSettings = {};
 
 const FEATURE_GROUPS = [
     {
@@ -124,9 +127,9 @@ const FEATURE_GROUPS = [
             },
             {
                 key: 'scanSchedulePage',
-                label: 'Сканировать расписание',
+                label: 'Обновлять состав ежедневно',
                 desc: '',
-                help: 'На странице расписания проходит все дни Пн–Вс, для обновления списка модераторов.'
+                help: 'Раз в 24 часа актуализирует состав модерации.'
             }
         ]
     }
@@ -181,7 +184,9 @@ function saveSettings(settings, {silent = false} = {}) {
 
 function saveCurrentSettings(options = {}) {
     currentSettings = collectSettingsFromUI();
-    saveSettings(currentSettings, options);
+    savedOverrides = editedOverrides(defaultSettings, lastSavedSettings, currentSettings, savedOverrides);
+    lastSavedSettings = structuredClone(currentSettings);
+    saveSettings(savedOverrides, options);
 }
 
 let numberSaveTimer = null;
@@ -508,39 +513,16 @@ function collectSettingsFromUI() {
 }
 
 async function loadSettings() {
-    const config = await ConfigService.load(chrome);
+    const config = await ConfigService.getForClient(chrome);
 
-    defaultSettings = structuredClone(config.settings);
-    defaultSettings.headshotPercentage ??= 95;
-    defaultSettings.features.highlightHighHs ??= true;
+    defaultSettings = mergeSettings(config.settings);
     renderToggles(defaultSettings.features);
     initAccordions();
 
     storage.get(["helperSettings"], ({helperSettings}) => {
-        currentSettings = structuredClone(defaultSettings);
-
-        if (helperSettings) {
-            currentSettings = {
-                ...currentSettings,
-                ...helperSettings
-            };
-            currentSettings.features = {
-                ...defaultSettings.features,
-                ...(helperSettings.features || {})
-            };
-            currentSettings.reasonTriggers =
-                helperSettings.reasonTriggers ??
-                currentSettings.reasonTriggers;
-            currentSettings.autoConnectReasons =
-                helperSettings.autoConnectReasons ??
-                currentSettings.autoConnectReasons;
-            currentSettings.offenderVipStatuses =
-                helperSettings.offenderVipStatuses ??
-                currentSettings.offenderVipStatuses;
-            currentSettings.reasonTriggersAutoconnect =
-                helperSettings.reasonTriggersAutoconnect ??
-                currentSettings.reasonTriggersAutoconnect;
-        }
+        currentSettings = mergeSettings(defaultSettings, helperSettings || {});
+        savedOverrides = structuredClone(helperSettings || {});
+        lastSavedSettings = structuredClone(currentSettings);
 
         loadSettingsToUI(currentSettings);
     });
@@ -601,6 +583,7 @@ resetBtn.addEventListener("click", () => {
         return;
 
     currentSettings = structuredClone(defaultSettings);
+    savedOverrides = {}; lastSavedSettings = structuredClone(currentSettings);
     loadSettingsToUI(currentSettings);
 
     storage.set({
@@ -611,11 +594,35 @@ resetBtn.addEventListener("click", () => {
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
+    const glassEnabled = document.getElementById('glassEnabled');
+    const glassOptions = [...document.querySelectorAll('input[name="glassIntensity"]')];
+    const glassDescriptions = {
+        soft: 'Плотные поверхности с мягкой глубиной и деликатными бликами.',
+        balanced: 'Умеренная прозрачность, объёмные панели и плавные переходы.',
+        clear: 'Больше прозрачности и света, выразительная глубина интерфейса.'
+    };
+    const showAppearance = value => {
+        const preference = normalizeAppearance(value);
+        glassEnabled.checked = preference.enabled;
+        glassOptions.forEach(option => {option.checked = option.value === preference.intensity;});
+        document.getElementById('appearanceCard').classList.toggle('is-enabled', preference.enabled);
+        document.getElementById('glassDescription').textContent = glassDescriptions[preference.intensity];
+    };
+    showAppearance((await chrome.storage.local.get('iohAppearance')).iohAppearance);
+    const saveAppearance = () => chrome.storage.local.set({iohAppearance: {
+        enabled: glassEnabled.checked,
+        intensity: glassOptions.find(option => option.checked)?.value || 'balanced'
+    }});
+    glassEnabled.addEventListener('change', saveAppearance);
+    glassOptions.forEach(option => option.addEventListener('change', saveAppearance));
+    document.getElementById('analyticsBtn').addEventListener('click', () => chrome.tabs.create({url: chrome.runtime.getURL('analytics.html')}));
     initFloatingInfoTooltips();
     await loadSettings();
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if(area==='local' && changes.iohAppearance)showAppearance(changes.iohAppearance.newValue);
+    });
 
-    document.querySelector(".header-version").textContent =
-        `v${chrome.runtime.getManifest().version}`;
+    document.querySelector(".header-version").textContent = `v${chrome.runtime.getManifest().version}`;
 
     const icons = await (await fetch(chrome.runtime.getURL("icons/icons.json"))).json();
     document.querySelector(".telegram-icon").innerHTML = icons.telegram;

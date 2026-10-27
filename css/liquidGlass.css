@@ -1,0 +1,189 @@
+/* Liquid Glass is an opt-in presentation layer. Native semantic colors remain owned by the site. */
+html[data-ioh-glass] {
+    --ioh-glass-base: var(--color-bg-card, #252b38);
+    --ioh-glass-accent: var(--color-primary, #6080ff);
+    --ioh-glass-ink: var(--color-text, #d5d9f3);
+    --ioh-glass-opacity: 78%;
+    --ioh-sidebar-opacity: 78%;
+    --ioh-chrome-opacity: 82%;
+    --ioh-glass-ambient: 18%;
+    --ioh-glass-blur: 20px;
+    --ioh-glass-radius: 20px;
+    --ioh-glass-edge: color-mix(in srgb, var(--ioh-glass-ink) 16%, transparent);
+    --ioh-glass-highlight: color-mix(in srgb, white 10%, transparent);
+    --ioh-glass-ease: cubic-bezier(.22, 1, .36, 1);
+    --ioh-glass-spring: cubic-bezier(.2, .85, .25, 1.12);
+    --ioh-glass-shadow: 0 16px 45px #00000014, 0 2px 9px #0000000c, inset 0 1px 0 #ffffff14;
+}
+html[data-ioh-glass=soft] {--ioh-glass-opacity: 97%; --ioh-sidebar-opacity: 96%; --ioh-chrome-opacity: 97%; --ioh-glass-blur: 6px; --ioh-glass-radius: 12px; --ioh-glass-ambient: 4%; --ioh-glass-highlight: #ffffff04; --ioh-glass-edge: color-mix(in srgb,var(--ioh-glass-ink) 9%,transparent); --ioh-glass-shadow: 0 3px 12px #0000000d,inset 0 1px 0 #ffffff08;}
+html[data-ioh-glass=clear] {--ioh-glass-opacity: 48%; --ioh-sidebar-opacity: 52%; --ioh-chrome-opacity: 56%; --ioh-glass-blur: 34px; --ioh-glass-radius: 24px; --ioh-glass-ambient: 32%; --ioh-glass-highlight: #ffffff25; --ioh-glass-edge: color-mix(in srgb,var(--ioh-glass-ink) 28%,transparent); --ioh-glass-shadow: 0 22px 65px #0000002b,0 3px 12px #00000012,inset 0 1px 0 #ffffff38;}
+html[data-ioh-glass] body {
+    background-image:
+        radial-gradient(ellipse at 0% 0%, color-mix(in srgb, var(--ioh-glass-accent) var(--ioh-glass-ambient), transparent), transparent 55%),
+        radial-gradient(ellipse at 100% 85%, color-mix(in srgb, var(--ioh-glass-accent) var(--ioh-glass-ambient), transparent), transparent 55%);
+    background-attachment: fixed;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+html[data-ioh-glass] ::selection {background: color-mix(in srgb, var(--ioh-glass-accent) 35%, transparent);}
+html[data-ioh-glass] :is(aside, main>nav, [data-ioh-glass-surface], [role=dialog], [role=menu], [role=listbox]) {
+    background:
+        linear-gradient(140deg, var(--ioh-glass-highlight), transparent 52%),
+        color-mix(in srgb, var(--ioh-glass-base) var(--ioh-glass-opacity), transparent) !important;
+    border: 1px solid var(--ioh-glass-edge);
+    box-shadow: var(--ioh-glass-shadow);
+    backdrop-filter: blur(var(--ioh-glass-blur)) saturate(1.18);
+    -webkit-backdrop-filter: blur(var(--ioh-glass-blur)) saturate(1.18);
+    transition: background-color .35s var(--ioh-glass-ease), border-color .3s, box-shadow .35s var(--ioh-glass-ease);
+}
+html[data-ioh-glass] [data-ioh-glass-surface] {
+    border-radius: var(--ioh-glass-radius) !important;
+    /* Clip the original header and table backgrounds together at the native card boundary. */
+    background-clip: padding-box !important;
+    animation: ioh-glass-arrive .46s var(--ioh-glass-ease) both;
+}
+html[data-ioh-glass] [data-ioh-glass-surface]>:is(div,section,article),
+html[data-ioh-glass] [data-ioh-glass-header] {
+    background-color: transparent !important;
+    background-image: none !important;
+}
+html[data-ioh-glass] [data-ioh-glass-header] {border-radius: inherit;}
+html[data-ioh-glass] [data-ioh-glass-dense] {
+    /* Long moderation tables use an opaque surface instead of a huge live blur layer. */
+    --ioh-glass-opacity: 96%;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+html[data-ioh-glass] main>nav {
+    --ioh-glass-opacity: var(--ioh-chrome-opacity);
+    border-top: 0;
+    border-radius: 0 0 18px 18px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+html[data-ioh-glass] aside {--ioh-glass-opacity: var(--ioh-sidebar-opacity); background-clip:padding-box!important;}
+/* Native rails and profile sidebars contain painted wrapper divs hiding the outer material. */
+html[data-ioh-glass] aside>:is(div,nav),
+html[data-ioh-glass] aside>div>:is(div,nav,header,section) {background-color:transparent!important;background-image:none!important;}
+html[data-ioh-glass] main aside {border-radius:var(--ioh-glass-radius);}
+html[data-ioh-glass] [role=dialog] {
+    --ioh-glass-opacity: 96%;
+    --ioh-glass-blur: 14px;
+    border-radius: 24px !important;
+    animation: ioh-glass-present .32s var(--ioh-glass-ease) both;
+    box-shadow: 0 36px 90px #00000045, inset 0 1px 0 #ffffff26;
+}
+html[data-ioh-glass] :is([role=menu], [role=listbox]) {
+    --ioh-glass-opacity: 97%;
+    --ioh-glass-blur: 14px;
+    border-radius: 16px !important;
+    animation: ioh-glass-present .2s var(--ioh-glass-ease) both;
+}
+html[data-ioh-glass] main :is(h1,h2,h3) {letter-spacing: -.025em; font-weight: 650;}
+html[data-ioh-glass] :is(main,aside,[role=dialog]) button {
+    border-radius: 11px;
+    transition: translate .24s var(--ioh-glass-spring), scale .24s var(--ioh-glass-spring), background-color .2s, border-color .2s, box-shadow .24s, opacity .2s;
+    -webkit-tap-highlight-color: transparent;
+}
+html[data-ioh-glass] :is(main,aside,[role=dialog]) button:not(:disabled):not([role=switch]):hover {translate: 0 -1px;}
+html[data-ioh-glass] :is(main,aside,[role=dialog]) button:not(:disabled):not([role=switch]):active {translate: 0 0; scale: .97;}
+html[data-ioh-glass] main>nav button {
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 #ffffff07;
+}
+html[data-ioh-glass] main>nav button:hover {box-shadow: inset 0 1px 0 #ffffff18, 0 5px 15px #00000016;}
+html[data-ioh-glass] :is(main,[role=dialog]) :is(input:not([type=checkbox]):not([type=radio]),textarea,select) {
+    border-radius: 12px;
+    background-color: color-mix(in srgb, var(--color-bg-input, #1e1e26) 93%, transparent);
+    transition: border-color .22s, box-shadow .22s, background-color .22s;
+}
+html[data-ioh-glass] :is(main,[role=dialog]) :is(input:not([type=checkbox]):not([type=radio]),textarea,select):focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ioh-glass-accent) 65%, transparent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--ioh-glass-accent) 10%, transparent);
+}
+html[data-ioh-glass] main :is(a,summary,[role=tab]) {transition: color .2s, background-color .2s, border-color .2s;}
+html[data-ioh-glass] :is(main,[role=dialog]) [role=switch] {border-radius: 999px; transition: background-color .25s, box-shadow .25s;}
+html[data-ioh-glass] :is(main,[role=dialog]) [role=switch]>span {transition: transform .3s var(--ioh-glass-spring);}
+html[data-ioh-glass] [data-ioh-glass-surface] table {border-collapse: separate; border-spacing: 0;}
+html[data-ioh-glass] [data-ioh-glass-surface] :is(th,td) {border-bottom-color: color-mix(in srgb, var(--ioh-glass-ink) 9%, transparent);}
+html[data-ioh-glass] [data-ioh-glass-surface] thead {background-color: color-mix(in srgb, var(--color-bg, #1e1e25) 80%, transparent);}
+html[data-ioh-glass] [data-ioh-glass-surface] tbody td {background-image:none!important;box-shadow:none;}
+html[data-ioh-glass] [data-ioh-glass-surface] tbody tr {
+    /* One continuous light field for the whole row, rather than one gradient per cell. */
+    background-image:linear-gradient(115deg,#ffffff04,transparent 45%);
+    box-shadow:inset 0 1px 0 #ffffff03;
+    transition:box-shadow .22s var(--ioh-glass-ease),background-image .22s;
+}
+html[data-ioh-glass] [data-ioh-glass-surface] tbody tr:hover {
+    background-image: linear-gradient(115deg, color-mix(in srgb, var(--ioh-glass-accent) 7%, transparent), #ffffff02 60%, transparent);
+    box-shadow: inset 0 1px 0 #ffffff0a, inset 0 -1px 0 #ffffff07;
+}
+html[data-ioh-glass] main tbody td:last-child :is(button,a[role=button]) {
+    border-radius: 11px;
+    transition: translate .24s var(--ioh-glass-spring), scale .24s var(--ioh-glass-spring), box-shadow .24s, background-color .2s;
+}
+html[data-ioh-glass] main tbody td:last-child :is(button,a[role=button]):not(:disabled):not([aria-disabled=true]):hover {
+    translate: 0 -1px;
+    box-shadow: inset 0 1px 0 #ffffff1a, 0 5px 16px color-mix(in srgb, var(--ioh-glass-accent) 16%, transparent);
+}
+html[data-ioh-glass] main tbody td:last-child :is(button,a[role=button]):not(:disabled):not([aria-disabled=true]):active {translate: 0 0; scale: .93;}
+/* Row status fills, text colors, badges and punishment buttons keep their native semantics. */
+@keyframes ioh-glass-arrive {from {opacity: .2; translate: 0 9px;} to {opacity: 1; translate: none;}}
+@keyframes ioh-glass-present {from {opacity: 0; translate: 0 8px; scale: .985;} to {opacity: 1; translate: none; scale: none;}}
+
+.ioh-appearance {
+    display: flex;
+    gap: 32px;
+    padding: 28px;
+    margin: 18px 0;
+    border: 1px solid var(--color-border-light, #353543);
+    border-radius: 24px;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--color-primary, #6080ff) 8%, transparent), transparent 65%), var(--color-bg-card, #252b38);
+    color: var(--color-text, #d5d9f3);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.ioh-appearance-sample {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 184px;
+    min-height: 190px;
+    padding: 28px;
+    border-radius: 25px;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 0 0, #d9e6ff70, transparent 65%), radial-gradient(ellipse at 100% 90%, #6080ff90, transparent 70%), #253858;
+    color: #fff;
+    border: 1px solid #ffffff66;
+    box-shadow: inset 0 1px 1px #ffffff80, 0 12px 32px #15163240;
+}
+.ioh-appearance-sample::before {content: ""; position: absolute; inset: 12px; border: 1px solid #ffffff35; border-radius: 17px; background: linear-gradient(135deg, #ffffff22, transparent 65%); pointer-events: none;}
+.ioh-appearance-sample span {font-size: 27px; font-weight: 300; letter-spacing: -1px;}
+.ioh-appearance-sample b {font-size: 38px; letter-spacing: -2px; line-height: 1;}
+.ioh-appearance-sample i {font: 8px system-ui; letter-spacing: 3px; margin-top: 26px; opacity: .75;}
+.ioh-appearance-content {flex: 1; min-width: 0;}
+.ioh-appearance-content h3 {margin: 2px 0 8px !important; letter-spacing: -.035em; font-size: 24px !important;}
+.ioh-appearance-content p {color: var(--color-text-muted, #a0a3b7); font-size: 13px; line-height: 1.6; margin: 0 0 18px; max-width: 470px;}
+.ioh-appearance-content small {display: block; color: var(--color-text-muted, #a0a3b7); font-size: 11px; line-height: 1.5; margin-top: 14px;}
+.ioh-glass-setting, .ioh-glass-select {display: flex; align-items: center; justify-content: space-between; gap: 24px; max-width: 370px; font-size: 13px;}
+.ioh-glass-select {margin-top: 15px;}
+.ioh-glass-select select {appearance: none; background: var(--color-bg-input, #17171e); color: var(--color-text, #d5d9f3); border: 1px solid var(--color-border-light, #353543); border-radius: 12px; padding: 10px 30px 10px 12px; font: inherit; max-width: 215px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2397a5c1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center;}
+.ioh-glass-switch {position: relative; display: inline-flex; width: 44px; height: 27px; flex: 0 0 auto; cursor: pointer;}
+.ioh-glass-switch input {position: absolute; opacity: 0; width: 0; height: 0;}
+.ioh-glass-switch>span {position: absolute; inset: 0; border-radius: 999px; background: color-mix(in srgb, var(--color-text-muted, #a0a3b7) 28%, transparent); box-shadow: inset 0 1px 3px #00000020; transition: background-color .25s;}
+.ioh-glass-switch>span::before {content: ""; position: absolute; width: 21px; height: 21px; left: 3px; top: 3px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px #00000025; transition: transform .3s cubic-bezier(.2,.85,.25,1.12);}
+.ioh-glass-switch input:checked+span {background: var(--color-primary, #6080ff);}
+.ioh-glass-switch input:checked+span::before {transform: translateX(17px);}
+.ioh-appearance :focus-visible {outline: 2px solid var(--color-primary, #6080ff); outline-offset: 3px;}
+.ioh-glass-switch input:focus-visible+span {outline: 2px solid var(--color-primary, #6080ff); outline-offset: 3px;}
+@supports not (backdrop-filter: blur(1px)) {html[data-ioh-glass] {--ioh-glass-opacity: 100%;}}
+@media (prefers-reduced-motion: reduce) {
+    html[data-ioh-glass] {--ioh-glass-blur: 0px; --ioh-glass-opacity: 96%;}
+    html[data-ioh-glass] body {background-attachment: scroll;}
+    html[data-ioh-glass] *, .ioh-appearance * {animation: none !important; transition-duration: .01ms !important;}
+    html[data-ioh-glass] :is(main,aside,[role=dialog]) button:hover,
+    html[data-ioh-glass] :is(main,aside,[role=dialog]) button:active {translate: none !important; scale: none !important;}
+    html[data-ioh-glass] main tbody td:last-child a[role=button] {translate: none !important; scale: none !important;}
+}
+@media (max-width: 750px) {.ioh-appearance {flex-direction: column; gap: 22px; padding: 22px;} .ioh-appearance-sample {min-height: 135px;} .ioh-glass-select {gap: 12px; flex-wrap: wrap;}}
