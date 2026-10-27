@@ -43,6 +43,11 @@ export class Utils {
     }
 
     extractMessageText(messageCell) {
+        const node = this.extractMainTextNode(messageCell);
+        if (messageCell.classList.contains('ioh-translated') && node?.nodeValue === messageCell.dataset.translatedText) {
+            return Array.from(messageCell.childNodes).map(child => child === node
+                ? messageCell.dataset.mhlprOriginalText : child.textContent).join('').trim();
+        }
         return messageCell.textContent.trim();
     }
 

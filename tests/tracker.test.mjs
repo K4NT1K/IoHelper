@@ -4,6 +4,28 @@ import {OffenderTrackingMethods} from '../modules/ticket/OffenderTracking.js';
 import {App} from '../modules/App.js';
 import {AutoConnectMethods} from '../modules/ticket/AutoConnect.js';
 import {clock, deferred} from './clock.mjs';
+import {Utils} from '../modules/Utils.js';
+
+test('offline relative label ages without rerendering badges or adding requests', async t => {
+    const time = clock(t);
+    const utils = new Utils({document: {}});
+    const lastconnect = Date.now() / 1000;
+    const s = tracker(t, 1, async () => ({lastconnect, serverIp: null}));
+    s.ctx.utils = utils;
+    s.ctx.getServerLinkLabelElement = link => link;
+    s.ctx.applyOffenderServerStatus = (link, _id, _ip, data) => {
+        s.rendered.push(link); link.textContent = utils.formatLastConnectStatus(data.lastconnect);
+    };
+    await time.finish(s.run());
+    s.jobs.splice(0).forEach(job => job());
+    assert.equal(s.rows[0].serverLink.textContent, 'В игре только что');
+    await time.advance(120000);
+    await time.finish(s.run());
+    s.jobs.splice(0).forEach(job => job());
+    assert.equal(s.rows[0].serverLink.textContent, 'В игре 2 мин назад');
+    assert.equal(s.calls.length, 2);
+    assert.equal(s.rendered.length, 1);
+});
 
 function location(t, pathname = '/support/tickets') {
     globalThis.window = {location: {pathname, href: 'https://example.invalid' + pathname}};

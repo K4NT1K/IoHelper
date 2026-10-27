@@ -55,7 +55,7 @@ export class SitePunishmentBridge {
             this._clearReturnContext();
             this.ticketService.handlePunishmentOpenFailure(type);
             const panel = SitePunishmentBridge.PANELS[type];
-            console.warn(`[IO Helper] Нет доступа к форме выдачи ${type === 'ban' ? 'бана' : 'мута'}. Откройте «${panel.sectionTitle}».`);
+            console.warn(`[IO Helper] Не удалось открыть форму ${type === 'ban' ? 'бана' : 'мута'} (${this._lastFailReason || 'форма не загрузилась'}). Откройте «${panel.sectionTitle}».`);
             this._debugLog(this._lastFailReason || 'open_form_failed', {type});
             return false;
         }

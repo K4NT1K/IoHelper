@@ -10,10 +10,6 @@ export class PanelService {
             return defaultText;
         }
 
-        if (clickCount >= 3 && name === "Оск") {
-            return "Мут Токсичность";
-        }
-
         if (clickCount >= 2) {
             const action = ["Препятствие", "Ник"].includes(name)
                 ? "Бан"
@@ -120,16 +116,25 @@ export class PanelService {
         panel.className = 'ioh-panel';
         markIoh(panel);
         const inline = panelId === 'mod-notif-panel';
+        const ticket = panelId === 'mod-ticket-panel';
         const entries = this.normalizeTemplateEntries(templates);
+        if (ticket) {
+            for(let i=entries.length-1;i>=0;i--)if(entries[i][0]==='Токсичность')entries.splice(i,1);
+            entries.unshift(['Токсичность','Мут Токсичность']);
+        }
 
         entries.forEach(([name, text]) => {
             const btn = this.document.createElement('button');
+            btn.type = 'button';
+            markIoh(btn);
             btn.className = 'ioh-panel-btn';
             const icon = this.document.createElement('span');
+            markIoh(icon);
             icon.className = 'ioh-panel-btn-icon';
             icon.setAttribute('aria-hidden', 'true');
 
             const label = this.document.createElement('span');
+            markIoh(label);
             label.innerText = name;
             btn.append(icon, label);
 
@@ -137,9 +142,14 @@ export class PanelService {
             let clickTimer = null;
             btn.onclick = (e) => {
                 e.preventDefault();
+                if(ticket && name==='Токсичность') {
+                    this.applyTrackedMessage(target,`${panelId}:${name}`,'Мут Токсичность',{inline});
+                    return;
+                }
                 clickCount++;
                 clearTimeout(clickTimer);
                 clickTimer = setTimeout(() => {
+                    if(panel.isConnected===false || target.isConnected===false)return;
                     const comment = this.buildCommentText(name, clickCount, text);
                     this.applyTrackedMessage(target, `${panelId}:${name}`, comment, { inline });
                     clickCount = 0;

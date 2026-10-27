@@ -241,6 +241,7 @@ export class DOMCoordinator {
                 }
 
                 if (mutation.type === 'attributes') {
+                    this.emit('pageTools');
                     if (mutation.attributeName !== 'aria-hidden') {
                         continue;
                     }
@@ -298,6 +299,7 @@ export class DOMCoordinator {
     }
 
     inspectAddedNode(node, rowsToUpdate) {
+        if(node.matches?.('main, aside, h3, section') || node.querySelector?.('main, h3')) this.emit('pageTools');
         if (this.isRelevantNotificationNode(node)) {
             this.emit('notification');
         }

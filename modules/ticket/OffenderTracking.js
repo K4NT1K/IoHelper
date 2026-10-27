@@ -1724,6 +1724,15 @@ export const OffenderTrackingMethods = {
                     this._offenderRowSnapshots = new WeakMap();
                 }
                 if (this._offenderRowSnapshots.get(targetRow) === snapshotKey) {
+                    // Relative time changes even when the player's state does not.
+                    if (!userData.serverIp) {
+                        this.scheduleOffenderUi(() => {
+                            if (!passIsCurrent() || !rowIsCurrent()) return;
+                            const label = this.getServerLinkLabelElement(serverLink) || serverLink;
+                            const text = this.utils.formatLastConnectStatus(userData.lastconnect);
+                            if (label.textContent !== text) label.textContent = text;
+                        });
+                    }
                     targetRow.dataset.lastIpCheck = Date.now().toString();
                     if (singleRowPerPass) {
                         break;

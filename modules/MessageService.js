@@ -12,56 +12,68 @@ export class MessageService {
         this.ticketService = null;
         this.hoursWatchObservers = new WeakMap();
         this.HOURS_WATCH_TTL_MS = 30000;
+        this.translationBindings = new Map();
     }
 
     decorateMessageCell(messageCell) {
-        if (messageCell.dataset.mhlprHoverReady === 'true') return;
-
         const textNode = this.utils.extractMainTextNode(messageCell);
         if (!textNode) return;
-
-        const originalText = textNode.nodeValue;
-        const isRussian = this.utils.detectLanguage(originalText);
-        messageCell.dataset.mhlprOriginalText = originalText;
-
-        if (isRussian) {
-            messageCell.dataset.mhlprHoverReady = 'true';
-            return;
-        }
-
+        const previous = this.translationBindings.get(messageCell);
+        if (previous?.node === textNode && (
+            textNode.nodeValue === previous.original || (previous.applied && textNode.nodeValue === previous.translated)
+        )) return;
+        if (previous) this.releaseTranslation(messageCell, previous);
+        if (this.utils.detectLanguage(textNode.nodeValue) || !/\p{L}/u.test(textNode.nodeValue)) return;
+        const binding = {node: textNode, original: textNode.nodeValue, translated: null, applied: false, pending: false};
+        this.translationBindings.set(messageCell, binding);
         messageCell.dataset.mhlprHoverReady = 'true';
+        messageCell.dataset.mhlprOriginalText = binding.original;
         messageCell.classList.add('ioh-chat-message');
-
-        const translateOnHover = async () => {
-            if (messageCell.dataset.isTranslating === 'true') return;
-
-            if (!messageCell.dataset.translatedText) {
-                messageCell.dataset.isTranslating = 'true';
-                messageCell.classList.add('ioh-loading');
-
-                const result = await this.badgeService.translateText(originalText, 'RU');
-
-                messageCell.classList.remove('ioh-loading');
-                messageCell.dataset.isTranslating = 'false';
-
-                if (result && result.translated) {
-                    messageCell.dataset.translatedText = result.translated;
-                }
+        const current = () => this.translationBindings.get(messageCell) === binding
+            && messageCell.isConnected && messageCell.contains(textNode)
+            && this.settings.features?.translateText !== false;
+        binding.enter = async () => {
+            if (textNode.nodeValue !== binding.original && !(binding.applied && textNode.nodeValue === binding.translated)) {
+                this.decorateMessageCell(messageCell);
+                return this.translationBindings.get(messageCell)?.enter();
             }
-
-            if (messageCell.matches(':hover') && messageCell.dataset.translatedText) {
-                textNode.nodeValue = messageCell.dataset.translatedText;
+            if (binding.pending || !current()) return;
+            try {
+                if (!binding.translated) {
+                    binding.pending = true;
+                    messageCell.classList.add('ioh-loading');
+                    const result = await this.badgeService.translateText(binding.original, 'RU');
+                    if (!current() || textNode.nodeValue !== binding.original) return;
+                    binding.translated = result?.translated || null;
+                }
+                if (!current() || !messageCell.matches(':hover') || !binding.translated) return;
+                textNode.nodeValue = binding.translated;
+                messageCell.dataset.translatedText = binding.translated;
+                binding.applied = true;
                 messageCell.classList.add('ioh-translated');
+            } catch {
+                // A failed translator must not change the message or leave a loading state.
+            } finally {
+                binding.pending = false;
+                if (this.translationBindings.get(messageCell) === binding) messageCell.classList.remove('ioh-loading');
             }
         };
-
-        const restore = () => {
-            textNode.nodeValue = originalText;
+        binding.leave = () => {
+            if (binding.applied && textNode.nodeValue === binding.translated) textNode.nodeValue = binding.original;
+            binding.applied = false;
             messageCell.classList.remove('ioh-translated');
         };
+        messageCell.addEventListener('mouseenter', binding.enter);
+        messageCell.addEventListener('mouseleave', binding.leave);
+    }
 
-        messageCell.addEventListener('mouseenter', translateOnHover);
-        messageCell.addEventListener('mouseleave', restore);
+    releaseTranslation(cell, binding) {
+        binding.leave();
+        cell.removeEventListener('mouseenter', binding.enter);
+        cell.removeEventListener('mouseleave', binding.leave);
+        cell.classList.remove('ioh-chat-message', 'ioh-loading', 'ioh-translated');
+        for (const key of ['mhlprHoverReady', 'mhlprOriginalText', 'translatedText', 'isTranslating']) delete cell.dataset[key];
+        this.translationBindings.delete(cell);
     }
 
     _findChatHistoryBlock() {
@@ -92,6 +104,9 @@ export class MessageService {
     }
 
     processChatMessages() {
+        for (const [cell, binding] of this.translationBindings) {
+            if (!cell.isConnected) this.releaseTranslation(cell, binding);
+        }
         const scope = this.document.body;
         const chatHistoryBlock = this.ticketService?.getBlockByHeaderScoped('История Чата', scope)
             || this.ticketService?.getHistorySectionCard('История Чата', scope)
@@ -390,21 +405,7 @@ export class MessageService {
     }
 
     clearTranslationDecorations() {
-        this.document.querySelectorAll('.ioh-chat-message').forEach(messageCell => {
-            const textNode = this.utils.extractMainTextNode(messageCell);
-            if (textNode && messageCell.dataset.mhlprOriginalText) {
-                textNode.nodeValue = messageCell.dataset.mhlprOriginalText;
-            }
-
-            messageCell.classList.remove('ioh-chat-message', 'ioh-loading', 'ioh-translated');
-            delete messageCell.dataset.mhlprHoverReady;
-            delete messageCell.dataset.isTranslating;
-            delete messageCell.dataset.translatedText;
-            delete messageCell.dataset.mhlprOriginalText;
-
-            const clone = messageCell.cloneNode(true);
-            messageCell.replaceWith(clone);
-        });
+        for (const [cell, binding] of this.translationBindings) this.releaseTranslation(cell, binding);
     }
 }
 

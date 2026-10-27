@@ -454,14 +454,7 @@ export const PunishmentPanelMethods = {
             return false;
         }
 
-        const tabExists = await this.waitForSpaTabExists(sectionTitle, 5000);
-        if (!tabExists) {
-            this.debugPunishmentLog('management_tab_not_created', {type, via: 'aside'});
-            return false;
-        }
-
-        await this.waitForSpaTabActive(sectionTitle, 5000);
-        return true;
+        return this.waitForPanelActive(sectionTitle, 5000);
     },
 
     findSpaTabCloseButton(tab) {
@@ -1022,6 +1015,10 @@ export const PunishmentPanelMethods = {
 
         if (!tab) {
             const openedViaAside = await this.openManagementTabViaAside(type);
+            if (this.isManagementPanelActiveForType(type)) {
+                this._lastManagementOpenedViaAside = openedViaAside;
+                return true;
+            }
             if (!openedViaAside) {
                 const route = this.getManagementRouteForType(type);
                 this.navigateViaPushState(route);
@@ -1080,9 +1077,17 @@ export const PunishmentPanelMethods = {
                 }
                 element = element.parentElement;
             }
+            if (this.isStandaloneManagementHeader(header, sectionTitle)) return true;
         }
 
         return false;
+    },
+
+    isStandaloneManagementHeader(header, sectionTitle) {
+        const route = sectionTitle === 'Управление банами' ? this.BAN_MANAGEMENT_ROUTE : this.MUTE_MANAGEMENT_ROUTE;
+        return window.location.pathname === route
+            && !header.closest('[aria-hidden="true"]')
+            && header.getClientRects().length > 0;
     },
 
     _getManagementPanelRoot(header) {
@@ -1094,7 +1099,7 @@ export const PunishmentPanelMethods = {
             element = element.parentElement;
         }
 
-        return null;
+        return header.closest('main, [role="main"]');
     },
 
     _isButtonInSection(button, sectionTitle) {
@@ -1131,7 +1136,7 @@ export const PunishmentPanelMethods = {
             element = element.parentElement;
         }
 
-        return false;
+        return this.isStandaloneManagementHeader(header, header.textContent.trim());
     },
 
     findSiteIssueButtonInSection(sectionTitle, { requireVisible = true } = {}) {
