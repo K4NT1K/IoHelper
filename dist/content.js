@@ -1,46 +1,162 @@
 (() => {
+  // modules/shared/settings.js
+  var DEFAULT_FEATURES = Object.freeze({
+    highlightComplaintTriggers: true,
+    highlightNewAccounts: true,
+    highlightHighHs: true,
+    highlightDuplicateServers: false,
+    processTicketRules: true,
+    translateText: true,
+    showSteamAccountCreationDate: true,
+    showCybershokePlaytime: true,
+    showOffenderCountry: true,
+    showFaceitElo: true,
+    trackOffenderServer: true,
+    showOffenderVipBadge: true,
+    autoConnectServer: false,
+    scanSchedulePage: false,
+    squareTickets: false
+  });
+  function mergeSettings(base = {}, overrides = {}) {
+    const result = {
+      newAccountHours: 7,
+      headshotPercentage: 95,
+      trackOffenderInterval: 5,
+      trackOffenderIntervalWhileReviewing: 30,
+      trackOpenTicketOfflineInterval: 5,
+      reasonTriggers: [],
+      reasonTriggersAutoconnect: [],
+      autoConnectReasons: [],
+      offenderVipStatuses: [],
+      ...base,
+      ...overrides,
+      features: { ...DEFAULT_FEATURES, ...base.features, ...overrides.features }
+    };
+    delete result.features.autoPunishmentDuration;
+    return result;
+  }
+
+  // modules/shared/moderators.js
+  var record = (value) => value && typeof value === "object" && !Array.isArray(value);
+  var steamId = (value) => /^\d{17}$/.test(value);
+  function validModeratorGroup(group) {
+    if (!record(group)) return false;
+    return Object.entries(group).every(([key, value]) => steamId(key) ? typeof value === "string" : key.length > 0 && key.length <= 100 && record(value) && Object.entries(value).every(([id, name]) => steamId(id) && typeof name === "string"));
+  }
+
   // modules/ConfigService.js
   var ConfigService = class {
     static LOCAL_KEY = "helperConfig";
     static FETCHED_AT_KEY = "helperConfigFetchedAt";
-    static FETCH_TTL_MS = 3364e3;
+    static META_KEY = "helperConfigMeta";
+    static FETCH_TTL_MS = 60 * 60 * 1e3;
+    static TIMEOUT_MS = 8e3;
     static DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/K4NT1K/IoHelper/refs/heads/main/config.json";
-    static async load(chrome2) {
-      const local = await chrome2.storage.local.get([
-        this.LOCAL_KEY,
-        this.FETCHED_AT_KEY
-      ]);
-      let config = local[this.LOCAL_KEY];
-      const fetchedAt = local[this.FETCHED_AT_KEY] || 0;
-      const isStale = Date.now() - fetchedAt > this.FETCH_TTL_MS;
-      if (config && !isStale) {
-        return config;
+    static inflight = null;
+    static supports(config, version) {
+      if (!config.minimumExtensionVersion) return true;
+      const required = String(config.minimumExtensionVersion).split(".").map(Number);
+      const current = String(version).split(".").map(Number);
+      for (let i = 0; i < Math.max(current.length, required.length); i++) {
+        const diff = (current[i] || 0) - (required[i] || 0);
+        if (diff) return diff > 0;
       }
+      return true;
+    }
+    static isValid(config) {
+      const record2 = (value) => value && typeof value === "object" && !Array.isArray(value);
+      if (!record2(config) || !record2(config.settings) || !Array.isArray(config.muteRules)) return false;
+      if (config.schemaVersion != null && config.schemaVersion !== 1) return false;
+      if (config.minimumExtensionVersion != null && !/^\d+(?:\.\d+){0,3}$/.test(config.minimumExtensionVersion)) return false;
+      if (config.settings.features != null && (!record2(config.settings.features) || Object.values(config.settings.features).some((v) => typeof v !== "boolean"))) return false;
+      for (const key of ["reasonTriggers", "reasonTriggersAutoconnect", "autoConnectReasons", "offenderVipStatuses"]) {
+        if (config.settings[key] != null && (!Array.isArray(config.settings[key]) || config.settings[key].some((v) => typeof v !== "string"))) return false;
+      }
+      for (const key of ["newAccountHours", "headshotPercentage", "trackOffenderInterval", "trackOffenderIntervalWhileReviewing"]) {
+        if (config.settings[key] != null && (typeof config.settings[key] !== "number" || !Number.isFinite(config.settings[key]) || config.settings[key] < 0)) return false;
+      }
+      if (config.muteRules.some((rule) => !record2(rule) || typeof rule.name !== "string" || !Array.isArray(rule.keywords) || rule.keywords.some((k) => typeof k !== "string") || ["severity", "duration", "priority"].some((k) => rule[k] != null && !Number.isFinite(rule[k])))) return false;
+      if (config.muteExceptions != null && (!record2(config.muteExceptions) || Object.values(config.muteExceptions).some((v) => !Array.isArray(v) || v.some((x) => typeof x !== "string")))) return false;
+      if (config.spamRules != null && (!record2(config.spamRules) || Object.values(config.spamRules).some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0))) return false;
+      if (config.templates != null && (!record2(config.templates) || Object.values(config.templates).some((list) => !Array.isArray(list) || list.some((item) => !record2(item) || typeof item.name !== "string" || typeof item.text !== "string")))) return false;
+      return config.moderators == null || record2(config.moderators) && Object.values(config.moderators).every(validModeratorGroup);
+    }
+    static normalize(config) {
+      return { ...config, settings: mergeSettings(config.settings) };
+    }
+    static async readJson(url) {
+      const controller = new AbortController();
+      let timer;
       try {
-        const response = await fetch(this.DEFAULT_CONFIG_URL);
-        if (response.ok) {
-          const remote = await response.json();
-          await chrome2.storage.local.set({
-            [this.LOCAL_KEY]: remote,
-            [this.FETCHED_AT_KEY]: Date.now()
-          });
-          console.log("[IO HELPER] Config updated from server");
-          return remote;
-        }
-      } catch (e) {
-        console.log("[IO HELPER] Github unavailable");
+        return await Promise.race([
+          (async () => {
+            const response = await fetch(url, { cache: "no-cache", signal: controller.signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const config = await response.json();
+            if (!this.isValid(config)) throw new Error("\u041D\u0435\u0432\u0435\u0440\u043D\u0430\u044F \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 \u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u0438");
+            return config;
+          })(),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              controller.abort();
+              reject(new Error("\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u0438"));
+            }, this.TIMEOUT_MS);
+          })
+        ]);
+      } finally {
+        clearTimeout(timer);
       }
-      if (config) {
-        console.log("[IO HELPER] Using cached config");
-        return config;
+    }
+    static async load(chrome2, { force = false } = {}) {
+      const stored = await chrome2.storage.local.get([this.LOCAL_KEY, this.FETCHED_AT_KEY, this.META_KEY]);
+      const cached = stored[this.LOCAL_KEY];
+      if (!force && this.isValid(cached) && Date.now() - (stored[this.META_KEY]?.checkedAt || stored[this.FETCHED_AT_KEY] || 0) < this.FETCH_TTL_MS) {
+        if (!stored[this.META_KEY]) await chrome2.storage.local.set({ [this.META_KEY]: { source: "cache", revision: await this.revision(cached), checkedAt: stored[this.FETCHED_AT_KEY] } });
+        return this.normalize(cached);
       }
-      const fallback = await fetch(chrome2.runtime.getURL("config.json")).then((r) => r.json());
-      await chrome2.storage.local.set({
-        [this.LOCAL_KEY]: fallback,
-        [this.FETCHED_AT_KEY]: Date.now()
+      if (!this.inflight) this.inflight = this.refresh(chrome2, cached).finally(() => {
+        this.inflight = null;
       });
-      console.log("[IO HELPER] Using bundled config");
-      return fallback;
+      return this.inflight;
+    }
+    static async refresh(chrome2, cached) {
+      try {
+        const config = await this.readJson(this.DEFAULT_CONFIG_URL);
+        if (!this.supports(config, chrome2.runtime.getManifest?.().version || "0")) throw new Error("\u0414\u043B\u044F \u043D\u043E\u0432\u043E\u0433\u043E \u043A\u043E\u043D\u0444\u0438\u0433\u0430 \u0442\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044F \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u0434\u043E " + config.minimumExtensionVersion);
+        const revision = await this.revision(config);
+        const changed = !this.isValid(cached) || await this.revision(cached) !== revision;
+        await chrome2.storage.local.set({
+          ...changed ? { [this.LOCAL_KEY]: config } : {},
+          [this.FETCHED_AT_KEY]: Date.now(),
+          [this.META_KEY]: { source: "github", revision, checkedAt: Date.now(), error: null }
+        });
+        return this.normalize(config);
+      } catch (error) {
+        const previous = await chrome2.storage.local.get(this.META_KEY);
+        await chrome2.storage.local.set({ [this.META_KEY]: { ...previous[this.META_KEY], checkedAt: Date.now(), error: error.message } });
+        if (this.isValid(cached)) return this.normalize(cached);
+      }
+      const bundled = await this.readJson(chrome2.runtime.getURL("config.json"));
+      await chrome2.storage.local.set({
+        [this.LOCAL_KEY]: bundled,
+        [this.META_KEY]: { source: "bundled", revision: await this.revision(bundled), checkedAt: Date.now(), error: "GitHub \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D; \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u0432\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u0430\u044F \u043A\u043E\u043F\u0438\u044F" }
+      });
+      return this.normalize(bundled);
+    }
+    static async revision(config) {
+      const bytes = new TextEncoder().encode(JSON.stringify(config));
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      return Array.from(new Uint8Array(hash)).slice(0, 8).map((x) => x.toString(16).padStart(2, "0")).join("");
+    }
+    static async getForClient(chrome2) {
+      try {
+        const response = await chrome2.runtime.sendMessage({ action: "getHelperConfig" });
+        if (response?.success && this.isValid(response.config)) return { ...this.normalize(response.config), iohRevision: response.revision };
+      } catch {
+      }
+      const { helperConfig } = await chrome2.storage.local.get("helperConfig");
+      if (this.isValid(helperConfig)) return this.normalize(helperConfig);
+      return this.normalize(await this.readJson(chrome2.runtime.getURL("config.json")));
     }
   };
 
@@ -91,6 +207,10 @@
       return null;
     }
     extractMessageText(messageCell) {
+      const node = this.extractMainTextNode(messageCell);
+      if (messageCell.classList.contains("ioh-translated") && node?.nodeValue === messageCell.dataset.translatedText) {
+        return Array.from(messageCell.childNodes).map((child) => child === node ? messageCell.dataset.mhlprOriginalText : child.textContent).join("").trim();
+      }
       return messageCell.textContent.trim();
     }
     formatDuration(minutes) {
@@ -449,9 +569,6 @@
       if (clickCount === 1) {
         return defaultText;
       }
-      if (clickCount >= 3 && name === "\u041E\u0441\u043A") {
-        return "\u041C\u0443\u0442 \u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C";
-      }
       if (clickCount >= 2) {
         const action = ["\u041F\u0440\u0435\u043F\u044F\u0442\u0441\u0442\u0432\u0438\u0435", "\u041D\u0438\u043A"].includes(name) ? "\u0411\u0430\u043D" : "\u041C\u0443\u0442";
         return defaultText.replace("\u041F\u0440\u0435\u0434", action);
@@ -531,23 +648,37 @@ ${nextMessage}` : nextMessage;
       panel.className = "ioh-panel";
       markIoh(panel);
       const inline = panelId === "mod-notif-panel";
+      const ticket = panelId === "mod-ticket-panel";
       const entries = this.normalizeTemplateEntries(templates);
+      if (ticket) {
+        for (let i = entries.length - 1; i >= 0; i--) if (entries[i][0] === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C") entries.splice(i, 1);
+        entries.unshift(["\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C", "\u041C\u0443\u0442 \u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C"]);
+      }
       entries.forEach(([name, text]) => {
         const btn = this.document.createElement("button");
+        btn.type = "button";
+        markIoh(btn);
         btn.className = "ioh-panel-btn";
         const icon = this.document.createElement("span");
+        markIoh(icon);
         icon.className = "ioh-panel-btn-icon";
         icon.setAttribute("aria-hidden", "true");
         const label = this.document.createElement("span");
+        markIoh(label);
         label.innerText = name;
         btn.append(icon, label);
         let clickCount = 0;
         let clickTimer = null;
         btn.onclick = (e) => {
           e.preventDefault();
+          if (ticket && name === "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C") {
+            this.applyTrackedMessage(target, `${panelId}:${name}`, "\u041C\u0443\u0442 \u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C", { inline });
+            return;
+          }
           clickCount++;
           clearTimeout(clickTimer);
           clickTimer = setTimeout(() => {
+            if (panel.isConnected === false || target.isConnected === false) return;
             const comment = this.buildCommentText(name, clickCount, text);
             this.applyTrackedMessage(target, `${panelId}:${name}`, comment, { inline });
             clickCount = 0;
@@ -614,43 +745,61 @@ ${nextMessage}` : nextMessage;
       this.ticketService = null;
       this.hoursWatchObservers = /* @__PURE__ */ new WeakMap();
       this.HOURS_WATCH_TTL_MS = 3e4;
+      this.translationBindings = /* @__PURE__ */ new Map();
     }
     decorateMessageCell(messageCell) {
-      if (messageCell.dataset.mhlprHoverReady === "true") return;
       const textNode = this.utils.extractMainTextNode(messageCell);
       if (!textNode) return;
-      const originalText = textNode.nodeValue;
-      const isRussian = this.utils.detectLanguage(originalText);
-      messageCell.dataset.mhlprOriginalText = originalText;
-      if (isRussian) {
-        messageCell.dataset.mhlprHoverReady = "true";
-        return;
-      }
+      const previous = this.translationBindings.get(messageCell);
+      if (previous?.node === textNode && (textNode.nodeValue === previous.original || previous.applied && textNode.nodeValue === previous.translated)) return;
+      if (previous) this.releaseTranslation(messageCell, previous);
+      if (this.utils.detectLanguage(textNode.nodeValue) || !new RegExp("\\p{L}", "u").test(textNode.nodeValue)) return;
+      const binding = { node: textNode, original: textNode.nodeValue, translated: null, applied: false, pending: false };
+      this.translationBindings.set(messageCell, binding);
       messageCell.dataset.mhlprHoverReady = "true";
+      messageCell.dataset.mhlprOriginalText = binding.original;
       messageCell.classList.add("ioh-chat-message");
-      const translateOnHover = async () => {
-        if (messageCell.dataset.isTranslating === "true") return;
-        if (!messageCell.dataset.translatedText) {
-          messageCell.dataset.isTranslating = "true";
-          messageCell.classList.add("ioh-loading");
-          const result = await this.badgeService.translateText(originalText, "RU");
-          messageCell.classList.remove("ioh-loading");
-          messageCell.dataset.isTranslating = "false";
-          if (result && result.translated) {
-            messageCell.dataset.translatedText = result.translated;
-          }
+      const current = () => this.translationBindings.get(messageCell) === binding && messageCell.isConnected && messageCell.contains(textNode) && this.settings.features?.translateText !== false;
+      binding.enter = async () => {
+        if (textNode.nodeValue !== binding.original && !(binding.applied && textNode.nodeValue === binding.translated)) {
+          this.decorateMessageCell(messageCell);
+          return this.translationBindings.get(messageCell)?.enter();
         }
-        if (messageCell.matches(":hover") && messageCell.dataset.translatedText) {
-          textNode.nodeValue = messageCell.dataset.translatedText;
+        if (binding.pending || !current()) return;
+        try {
+          if (!binding.translated) {
+            binding.pending = true;
+            messageCell.classList.add("ioh-loading");
+            const result = await this.badgeService.translateText(binding.original, "RU");
+            if (!current() || textNode.nodeValue !== binding.original) return;
+            binding.translated = result?.translated || null;
+          }
+          if (!current() || !messageCell.matches(":hover") || !binding.translated) return;
+          textNode.nodeValue = binding.translated;
+          messageCell.dataset.translatedText = binding.translated;
+          binding.applied = true;
           messageCell.classList.add("ioh-translated");
+        } catch {
+        } finally {
+          binding.pending = false;
+          if (this.translationBindings.get(messageCell) === binding) messageCell.classList.remove("ioh-loading");
         }
       };
-      const restore = () => {
-        textNode.nodeValue = originalText;
+      binding.leave = () => {
+        if (binding.applied && textNode.nodeValue === binding.translated) textNode.nodeValue = binding.original;
+        binding.applied = false;
         messageCell.classList.remove("ioh-translated");
       };
-      messageCell.addEventListener("mouseenter", translateOnHover);
-      messageCell.addEventListener("mouseleave", restore);
+      messageCell.addEventListener("mouseenter", binding.enter);
+      messageCell.addEventListener("mouseleave", binding.leave);
+    }
+    releaseTranslation(cell, binding) {
+      binding.leave();
+      cell.removeEventListener("mouseenter", binding.enter);
+      cell.removeEventListener("mouseleave", binding.leave);
+      cell.classList.remove("ioh-chat-message", "ioh-loading", "ioh-translated");
+      for (const key of ["mhlprHoverReady", "mhlprOriginalText", "translatedText", "isTranslating"]) delete cell.dataset[key];
+      this.translationBindings.delete(cell);
     }
     _findChatHistoryBlock() {
       for (const header of this.document.querySelectorAll("h3, h2")) {
@@ -675,6 +824,9 @@ ${nextMessage}` : nextMessage;
       return this.document.querySelectorAll("table tbody tr");
     }
     processChatMessages() {
+      for (const [cell, binding] of this.translationBindings) {
+        if (!cell.isConnected) this.releaseTranslation(cell, binding);
+      }
       const scope = this.document.body;
       const chatHistoryBlock = this.ticketService?.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope) || this.ticketService?.getHistorySectionCard("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope) || this._findChatHistoryBlock();
       if (!chatHistoryBlock) return;
@@ -903,19 +1055,7 @@ ${nextMessage}` : nextMessage;
       });
     }
     clearTranslationDecorations() {
-      this.document.querySelectorAll(".ioh-chat-message").forEach((messageCell) => {
-        const textNode = this.utils.extractMainTextNode(messageCell);
-        if (textNode && messageCell.dataset.mhlprOriginalText) {
-          textNode.nodeValue = messageCell.dataset.mhlprOriginalText;
-        }
-        messageCell.classList.remove("ioh-chat-message", "ioh-loading", "ioh-translated");
-        delete messageCell.dataset.mhlprHoverReady;
-        delete messageCell.dataset.isTranslating;
-        delete messageCell.dataset.translatedText;
-        delete messageCell.dataset.mhlprOriginalText;
-        const clone = messageCell.cloneNode(true);
-        messageCell.replaceWith(clone);
-      });
+      for (const [cell, binding] of this.translationBindings) this.releaseTranslation(cell, binding);
     }
   };
 
@@ -939,16 +1079,16 @@ ${nextMessage}` : nextMessage;
       this._returnContext = null;
       this._lastFailReason = null;
     }
-    openMuteForm(steamId) {
-      return this.openForm("mute", steamId);
+    openMuteForm(steamId2) {
+      return this.openForm("mute", steamId2);
     }
-    openBanForm(steamId) {
-      return this.openForm("ban", steamId);
+    openBanForm(steamId2) {
+      return this.openForm("ban", steamId2);
     }
     _debugLog(reason, details = {}) {
       this.ticketService.debugPunishmentLog(reason, details);
     }
-    async openForm(type, steamId) {
+    async openForm(type, steamId2) {
       const hasPermission = type === "ban" ? this.ticketService.canIssueBan : this.ticketService.canIssueMute;
       if (!hasPermission) {
         return false;
@@ -965,18 +1105,18 @@ ${nextMessage}` : nextMessage;
         this._clearReturnContext();
         this.ticketService.handlePunishmentOpenFailure(type);
         const panel = _SitePunishmentBridge.PANELS[type];
-        console.warn(`[IO Helper] \u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u043A \u0444\u043E\u0440\u043C\u0435 \u0432\u044B\u0434\u0430\u0447\u0438 ${type === "ban" ? "\u0431\u0430\u043D\u0430" : "\u043C\u0443\u0442\u0430"}. \u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \xAB${panel.sectionTitle}\xBB.`);
+        console.warn(`[IO Helper] \u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0444\u043E\u0440\u043C\u0443 ${type === "ban" ? "\u0431\u0430\u043D\u0430" : "\u043C\u0443\u0442\u0430"} (${this._lastFailReason || "\u0444\u043E\u0440\u043C\u0430 \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u043B\u0430\u0441\u044C"}). \u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \xAB${panel.sectionTitle}\xBB.`);
         this._debugLog(this._lastFailReason || "open_form_failed", { type });
         return false;
       }
       this.ticketService.markPanelReady(type);
       this.ticketService.recordPunishmentOpenSuccess();
       await this.ticketService.persistPanelReadyState();
-      if (steamId) {
+      if (steamId2) {
         if (type === "ban") {
-          this.ticketService.prefillBanFormSteamId(steamId);
+          this.ticketService.prefillBanFormSteamId(steamId2);
         } else {
-          this.ticketService.prefillMuteFormSteamId(steamId);
+          this.ticketService.prefillMuteFormSteamId(steamId2);
         }
       }
       return true;
@@ -1975,15 +2115,15 @@ ${nextMessage}` : nextMessage;
 
   // modules/ticket/AnalysisBadge.js
   var AnalysisBadgeMethods = {
-    setSuggestedMuteReason(steamId, label) {
-      this.suggestedMuteReason = label ? { steamId: steamId || "", label } : null;
+    setSuggestedMuteReason(steamId2, label) {
+      this.suggestedMuteReason = label ? { steamId: steamId2 || "", label } : null;
     },
-    getSuggestedMuteReason(steamId) {
+    getSuggestedMuteReason(steamId2) {
       const entry = this.suggestedMuteReason;
       if (!entry?.label) {
         return null;
       }
-      if (!entry.steamId || !steamId || entry.steamId === steamId) {
+      if (!entry.steamId || !steamId2 || entry.steamId === steamId2) {
         return entry.label;
       }
       return null;
@@ -2253,12 +2393,12 @@ ${nextMessage}` : nextMessage;
         console.log(message);
       }
     },
-    markOffenderOffline(steamId) {
-      if (!steamId) return;
-      this.offenderOffline.set(steamId, Date.now() + this.LEFT_OFFENDER_TTL_MS);
+    markOffenderOffline(steamId2) {
+      if (!steamId2) return;
+      this.offenderOffline.set(steamId2, Date.now() + this.LEFT_OFFENDER_TTL_MS);
       let tracked = false;
       for (const session of this._openTicketTrackingSessions?.values() || []) {
-        if (session.steamId !== steamId) continue;
+        if (session.steamId !== steamId2) continue;
         session.waitingForReturn = true;
         session.lastConnectedIp = null;
         tracked = true;
@@ -2267,37 +2407,37 @@ ${nextMessage}` : nextMessage;
         this.syncOpenTicketOffenderTracking();
       }
     },
-    clearOffenderOffline(steamId) {
-      if (!steamId) return;
-      this.offenderOffline.delete(steamId);
+    clearOffenderOffline(steamId2) {
+      if (!steamId2) return;
+      this.offenderOffline.delete(steamId2);
     },
-    isOffenderOffline(steamId) {
-      if (!steamId) return false;
-      const expiresAt = this.offenderOffline.get(steamId);
+    isOffenderOffline(steamId2) {
+      if (!steamId2) return false;
+      const expiresAt = this.offenderOffline.get(steamId2);
       if (!expiresAt) return false;
       if (Date.now() >= expiresAt) {
-        this.offenderOffline.delete(steamId);
+        this.offenderOffline.delete(steamId2);
         return false;
       }
       return true;
     },
-    markOffenderRelocated(steamId, serverIp) {
-      if (!steamId || !serverIp) return;
-      this.offenderRelocated.set(steamId, {
+    markOffenderRelocated(steamId2, serverIp) {
+      if (!steamId2 || !serverIp) return;
+      this.offenderRelocated.set(steamId2, {
         serverIp: String(serverIp).trim().toLowerCase(),
         expiresAt: Date.now() + this.LEFT_OFFENDER_TTL_MS
       });
     },
-    clearOffenderRelocated(steamId) {
-      if (!steamId) return;
-      this.offenderRelocated.delete(steamId);
+    clearOffenderRelocated(steamId2) {
+      if (!steamId2) return;
+      this.offenderRelocated.delete(steamId2);
     },
-    getOffenderRelocatedServer(steamId) {
-      if (!steamId) return null;
-      const entry = this.offenderRelocated.get(steamId);
+    getOffenderRelocatedServer(steamId2) {
+      if (!steamId2) return null;
+      const entry = this.offenderRelocated.get(steamId2);
       if (!entry) return null;
       if (Date.now() >= entry.expiresAt) {
-        this.offenderRelocated.delete(steamId);
+        this.offenderRelocated.delete(steamId2);
         return null;
       }
       return entry.serverIp;
@@ -3026,13 +3166,7 @@ ${nextMessage}` : nextMessage;
       if (!link || !this.dispatchElementClick(link)) {
         return false;
       }
-      const tabExists = await this.waitForSpaTabExists(sectionTitle, 5e3);
-      if (!tabExists) {
-        this.debugPunishmentLog("management_tab_not_created", { type, via: "aside" });
-        return false;
-      }
-      await this.waitForSpaTabActive(sectionTitle, 5e3);
-      return true;
+      return this.waitForPanelActive(sectionTitle, 5e3);
     },
     findSpaTabCloseButton(tab) {
       if (!tab) {
@@ -3474,6 +3608,10 @@ ${nextMessage}` : nextMessage;
       let tab = this.findSpaTabButton(sectionTitle);
       if (!tab) {
         const openedViaAside = await this.openManagementTabViaAside(type);
+        if (this.isManagementPanelActiveForType(type)) {
+          this._lastManagementOpenedViaAside = openedViaAside;
+          return true;
+        }
         if (!openedViaAside) {
           const route2 = this.getManagementRouteForType(type);
           this.navigateViaPushState(route2);
@@ -3520,8 +3658,13 @@ ${nextMessage}` : nextMessage;
           }
           element = element.parentElement;
         }
+        if (this.isStandaloneManagementHeader(header, sectionTitle)) return true;
       }
       return false;
+    },
+    isStandaloneManagementHeader(header, sectionTitle) {
+      const route = sectionTitle === "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u0431\u0430\u043D\u0430\u043C\u0438" ? this.BAN_MANAGEMENT_ROUTE : this.MUTE_MANAGEMENT_ROUTE;
+      return window.location.pathname === route && !header.closest('[aria-hidden="true"]') && header.getClientRects().length > 0;
     },
     _getManagementPanelRoot(header) {
       let element = header.parentElement;
@@ -3531,7 +3674,7 @@ ${nextMessage}` : nextMessage;
         }
         element = element.parentElement;
       }
-      return null;
+      return header.closest('main, [role="main"]');
     },
     _isButtonInSection(button, sectionTitle) {
       if (!button) {
@@ -3558,7 +3701,7 @@ ${nextMessage}` : nextMessage;
         }
         element = element.parentElement;
       }
-      return false;
+      return this.isStandaloneManagementHeader(header, header.textContent.trim());
     },
     findSiteIssueButtonInSection(sectionTitle, { requireVisible = true } = {}) {
       const headers = Array.from(this.document.querySelectorAll("span, h1, h2, h3")).filter((element) => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle);
@@ -3879,13 +4022,13 @@ ${nextMessage}` : nextMessage;
     },
     handleTicketMuteButtonClick() {
       const scope = this.getActivePunishmentScope();
-      const steamId = this.getOffenderSteamIdForScope(scope);
-      void this.openSiteMuteForm(steamId);
+      const steamId2 = this.getOffenderSteamIdForScope(scope);
+      void this.openSiteMuteForm(steamId2);
     },
     handleTicketBanButtonClick() {
       const scope = this.getActivePunishmentScope();
-      const steamId = this.getOffenderSteamIdForScope(scope);
-      void this.openSiteBanForm(steamId);
+      const steamId2 = this.getOffenderSteamIdForScope(scope);
+      void this.openSiteBanForm(steamId2);
     },
     invokeCachedSiteHandler(handler, type, button = null) {
       if (typeof handler !== "function") {
@@ -3913,28 +4056,28 @@ ${nextMessage}` : nextMessage;
         return false;
       }
     },
-    openSiteMuteForm(steamId) {
-      return this.punishmentBridge.openMuteForm(steamId);
+    openSiteMuteForm(steamId2) {
+      return this.punishmentBridge.openMuteForm(steamId2);
     },
-    openSiteBanForm(steamId) {
-      return this.punishmentBridge.openBanForm(steamId);
+    openSiteBanForm(steamId2) {
+      return this.punishmentBridge.openBanForm(steamId2);
     },
-    prefillMuteFormSteamId(steamId) {
-      this._prefillPunishmentFormSteamId(steamId, "#mute-steamid64");
+    prefillMuteFormSteamId(steamId2) {
+      this._prefillPunishmentFormSteamId(steamId2, "#mute-steamid64");
     },
-    prefillBanFormSteamId(steamId) {
-      this._prefillPunishmentFormSteamId(steamId, "#ban-steamid64");
+    prefillBanFormSteamId(steamId2) {
+      this._prefillPunishmentFormSteamId(steamId2, "#ban-steamid64");
     },
-    _prefillPunishmentFormSteamId(steamId, inputSelector) {
-      if (!steamId) {
+    _prefillPunishmentFormSteamId(steamId2, inputSelector) {
+      if (!steamId2) {
         return;
       }
       const applyValue = (input) => {
         if (!input) {
           return false;
         }
-        if (input.value !== steamId) {
-          input.value = steamId;
+        if (input.value !== steamId2) {
+          input.value = steamId2;
           input.dispatchEvent(new Event("input", { bubbles: true }));
           input.dispatchEvent(new Event("change", { bubbles: true }));
         }
@@ -4219,16 +4362,16 @@ ${nextMessage}` : nextMessage;
       if (elo < 2001) return 9;
       return 10;
     },
-    fetchOffenderProfile(steamId, { force = false } = {}) {
-      if (!force && this.offenderProfileCache.has(steamId)) {
-        return Promise.resolve(this.offenderProfileCache.get(steamId));
+    fetchOffenderProfile(steamId2, { force = false } = {}) {
+      if (!force && this.offenderProfileCache.has(steamId2)) {
+        return Promise.resolve(this.offenderProfileCache.get(steamId2));
       }
-      if (!force && this.offenderProfileInflight.has(steamId)) {
-        return this.offenderProfileInflight.get(steamId);
+      if (!force && this.offenderProfileInflight.has(steamId2)) {
+        return this.offenderProfileInflight.get(steamId2);
       }
       const requestPromise = new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
-          { action: "fetchOffenderProfile", steamId },
+          { action: "fetchOffenderProfile", steamId: steamId2 },
           (response) => {
             if (chrome.runtime.lastError) {
               return reject(chrome.runtime.lastError);
@@ -4240,14 +4383,14 @@ ${nextMessage}` : nextMessage;
               response.data,
               response.source || "fastmm"
             );
-            this.offenderProfileCache.set(steamId, profileData);
+            this.offenderProfileCache.set(steamId2, profileData);
             resolve(profileData);
           }
         );
       }).finally(() => {
-        this.offenderProfileInflight.delete(steamId);
+        this.offenderProfileInflight.delete(steamId2);
       });
-      this.offenderProfileInflight.set(steamId, requestPromise);
+      this.offenderProfileInflight.set(steamId2, requestPromise);
       return requestPromise;
     },
     renderCybershokePlaytimeValue(valueNode, data) {
@@ -4301,7 +4444,7 @@ ${nextMessage}` : nextMessage;
       valueNode.appendChild(eloText);
       return true;
     },
-    renderProfileFieldError(valueNode, containerNode, steamId, reloadFn, cacheMap = this.offenderProfileCache) {
+    renderProfileFieldError(valueNode, containerNode, steamId2, reloadFn, cacheMap = this.offenderProfileCache) {
       valueNode.textContent = "";
       valueNode.classList.add("ioh-account-value--error");
       const errorSpan = this.document.createElement("span");
@@ -4315,23 +4458,23 @@ ${nextMessage}` : nextMessage;
       retryBtn.addEventListener("click", () => {
         valueNode.classList.remove("ioh-account-value--error");
         containerNode.dataset.loaded = "false";
-        cacheMap.delete(steamId);
+        cacheMap.delete(steamId2);
         reloadFn({ force: true });
       });
       valueNode.appendChild(errorSpan);
       valueNode.appendChild(retryBtn);
     },
-    async loadSteamAccountCreationDate(containerNode, steamId, { force = false } = {}) {
+    async loadSteamAccountCreationDate(containerNode, steamId2, { force = false } = {}) {
       const valueNode = containerNode.querySelector(".ioh-account-value");
       if (!valueNode) return;
-      if (!force && containerNode.dataset.steamId === steamId && containerNode.dataset.loaded === "true") {
+      if (!force && containerNode.dataset.steamId === steamId2 && containerNode.dataset.loaded === "true") {
         return;
       }
-      containerNode.dataset.steamId = steamId;
+      containerNode.dataset.steamId = steamId2;
       containerNode.dataset.loaded = "false";
       valueNode.textContent = "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...";
       try {
-        const profileData = await this.fetchOffenderProfile(steamId, { force });
+        const profileData = await this.fetchOffenderProfile(steamId2, { force });
         valueNode.classList.remove("ioh-account-value--error");
         valueNode.textContent = profileData.creationDate ? profileData.creationDate : "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043A\u0440\u044B\u0442";
         containerNode.dataset.loaded = "true";
@@ -4339,8 +4482,8 @@ ${nextMessage}` : nextMessage;
         this.renderProfileFieldError(
           valueNode,
           containerNode,
-          steamId,
-          (opts) => this.loadSteamAccountCreationDate(containerNode, steamId, opts)
+          steamId2,
+          (opts) => this.loadSteamAccountCreationDate(containerNode, steamId2, opts)
         );
         containerNode.dataset.loaded = "true";
       }
@@ -4629,25 +4772,25 @@ ${nextMessage}` : nextMessage;
         playtime: this.extractPlaytime(result)
       };
     },
-    getCachedUserData(steamId, ttlMs = 5e3) {
-      const entry = this.userDataCache.get(steamId);
+    getCachedUserData(steamId2, ttlMs = 5e3) {
+      const entry = this.userDataCache.get(steamId2);
       if (!entry) {
         return null;
       }
       if (Date.now() - entry.fetchedAt >= ttlMs) {
-        this.userDataCache.delete(steamId);
+        this.userDataCache.delete(steamId2);
         return null;
       }
       return entry;
     },
-    setOffenderProjectCache(steamId, data) {
-      this.offenderProjectCache.set(steamId, {
+    setOffenderProjectCache(steamId2, data) {
+      this.offenderProjectCache.set(steamId2, {
         country: data.country ?? null,
         playtime: data.playtime ?? null
       });
     },
-    setOffenderTicketProjectCache(steamId, data) {
-      this.offenderTicketProjectCache.set(steamId, {
+    setOffenderTicketProjectCache(steamId2, data) {
+      this.offenderTicketProjectCache.set(steamId2, {
         country: data.country ?? null,
         playtime: data.playtime ?? null
       });
@@ -4667,14 +4810,14 @@ ${nextMessage}` : nextMessage;
     },
     pruneOffenderProjectCache(presentSteamIds = null) {
       const present = presentSteamIds || this.collectComplaintQueueOffenderSteamIds();
-      for (const steamId of [...this.offenderProjectCache.keys()]) {
-        if (!present.has(steamId)) {
-          this.offenderProjectCache.delete(steamId);
+      for (const steamId2 of [...this.offenderProjectCache.keys()]) {
+        if (!present.has(steamId2)) {
+          this.offenderProjectCache.delete(steamId2);
         }
       }
     },
-    setCachedUserData(steamId, data) {
-      this.userDataCache.set(steamId, {
+    setCachedUserData(steamId2, data) {
+      this.userDataCache.set(steamId2, {
         serverIp: data.serverIp ?? null,
         lastconnect: data.lastconnect ?? null,
         serverLabel: data.serverLabel ?? null,
@@ -4685,14 +4828,14 @@ ${nextMessage}` : nextMessage;
         isModerator: Boolean(data.isModerator),
         fetchedAt: Date.now()
       });
-      this.setOffenderProjectCache(steamId, data);
+      this.setOffenderProjectCache(steamId2, data);
     },
-    async fetchParsedUserData(steamId) {
-      if (this.offenderProjectInflight.has(steamId)) {
-        return this.offenderProjectInflight.get(steamId);
+    async fetchParsedUserData(steamId2) {
+      if (this.offenderProjectInflight.has(steamId2)) {
+        return this.offenderProjectInflight.get(steamId2);
       }
       const requestPromise = (async () => {
-        const response = await this.fetchUserData(steamId);
+        const response = await this.fetchUserData(steamId2);
         if (response.status === 429) {
           this.globalServerCooldown = Date.now() + 660;
           throw new Error("429");
@@ -4702,21 +4845,21 @@ ${nextMessage}` : nextMessage;
         }
         const result = await response.json();
         const userData = this.parseUserDataResult(result);
-        this.setCachedUserData(steamId, userData);
+        this.setCachedUserData(steamId2, userData);
         return userData;
       })().finally(() => {
-        this.offenderProjectInflight.delete(steamId);
+        this.offenderProjectInflight.delete(steamId2);
       });
-      this.offenderProjectInflight.set(steamId, requestPromise);
+      this.offenderProjectInflight.set(steamId2, requestPromise);
       return requestPromise;
     },
-    async fetchOffenderTicketProjectData(steamId) {
-      if (this.offenderTicketProjectInflight.has(steamId)) {
-        return this.offenderTicketProjectInflight.get(steamId);
+    async fetchOffenderTicketProjectData(steamId2) {
+      if (this.offenderTicketProjectInflight.has(steamId2)) {
+        return this.offenderTicketProjectInflight.get(steamId2);
       }
-      if (this.offenderProjectInflight.has(steamId)) {
-        const shared = this.offenderProjectInflight.get(steamId).then((userData) => {
-          const fromQueue = this.offenderProjectCache.get(steamId);
+      if (this.offenderProjectInflight.has(steamId2)) {
+        const shared = this.offenderProjectInflight.get(steamId2).then((userData) => {
+          const fromQueue = this.offenderProjectCache.get(steamId2);
           if (fromQueue) {
             return fromQueue;
           }
@@ -4724,18 +4867,18 @@ ${nextMessage}` : nextMessage;
             country: userData?.country ?? null,
             playtime: userData?.playtime ?? null
           };
-          this.setOffenderTicketProjectCache(steamId, project);
+          this.setOffenderTicketProjectCache(steamId2, project);
           return project;
         });
-        this.offenderTicketProjectInflight.set(steamId, shared);
+        this.offenderTicketProjectInflight.set(steamId2, shared);
         try {
           return await shared;
         } finally {
-          this.offenderTicketProjectInflight.delete(steamId);
+          this.offenderTicketProjectInflight.delete(steamId2);
         }
       }
       const requestPromise = (async () => {
-        const response = await this.fetchUserData(steamId);
+        const response = await this.fetchUserData(steamId2);
         if (response.status === 429) {
           this.globalServerCooldown = Date.now() + 660;
           throw new Error("429");
@@ -4749,25 +4892,25 @@ ${nextMessage}` : nextMessage;
           country: userData.country ?? null,
           playtime: userData.playtime ?? null
         };
-        this.setOffenderTicketProjectCache(steamId, project);
+        this.setOffenderTicketProjectCache(steamId2, project);
         return project;
       })().finally(() => {
-        this.offenderTicketProjectInflight.delete(steamId);
+        this.offenderTicketProjectInflight.delete(steamId2);
       });
-      this.offenderTicketProjectInflight.set(steamId, requestPromise);
+      this.offenderTicketProjectInflight.set(steamId2, requestPromise);
       return requestPromise;
     },
-    async getOffenderProjectData(steamId, { force = false } = {}) {
+    async getOffenderProjectData(steamId2, { force = false } = {}) {
       if (force) {
-        this.offenderTicketProjectCache.delete(steamId);
+        this.offenderTicketProjectCache.delete(steamId2);
       }
-      if (!force && this.offenderProjectCache.has(steamId)) {
-        return this.offenderProjectCache.get(steamId);
+      if (!force && this.offenderProjectCache.has(steamId2)) {
+        return this.offenderProjectCache.get(steamId2);
       }
-      if (!force && this.offenderTicketProjectCache.has(steamId)) {
-        return this.offenderTicketProjectCache.get(steamId);
+      if (!force && this.offenderTicketProjectCache.has(steamId2)) {
+        return this.offenderTicketProjectCache.get(steamId2);
       }
-      return this.fetchOffenderTicketProjectData(steamId);
+      return this.fetchOffenderTicketProjectData(steamId2);
     },
     getServerLinkLabelElement(link) {
       return link.querySelector(":scope > span") || link.querySelector("span");
@@ -5563,7 +5706,7 @@ ${nextMessage}` : nextMessage;
       offenderLink.closest("td")?.classList.add("ioh-offender-vip-cell");
       offenderLink.dataset.iohVipName = meta.label;
     },
-    async fetchUserData(steamId) {
+    async fetchUserData(steamId2) {
       const response = await fetch("https://cybershoke.net/api/user/data", {
         method: "POST",
         headers: {
@@ -5572,7 +5715,7 @@ ${nextMessage}` : nextMessage;
           "X-Requested-With": "XMLHttpRequest"
         },
         credentials: "include",
-        body: new URLSearchParams({ steamid64: steamId }).toString()
+        body: new URLSearchParams({ steamid64: steamId2 }).toString()
       });
       return response;
     },
@@ -5619,8 +5762,8 @@ ${nextMessage}` : nextMessage;
       if (offenderField?.closest?.('[aria-hidden="true"]')) {
         return null;
       }
-      const steamId = this.extractSteamIdFromField(offenderField);
-      return steamId ? { scope, steamId, href } : null;
+      const steamId2 = this.extractSteamIdFromField(offenderField);
+      return steamId2 ? { scope, steamId: steamId2, href } : null;
     },
     ticketServerShowsOffenderLeft(scope) {
       const field = this.findInfoFieldScoped("\u0421\u0435\u0440\u0432\u0435\u0440", scope);
@@ -5816,8 +5959,8 @@ ${nextMessage}` : nextMessage;
           }
           const offenderLink = row.querySelector(offenderSelector);
           const serverLink = row.querySelector(serverSelector);
-          const steamId = offenderLink?.href.match(/\d{17,18}/)?.[0];
-          if (!steamId || !serverLink) {
+          const steamId2 = offenderLink?.href.match(/\d{17,18}/)?.[0];
+          if (!steamId2 || !serverLink) {
             return null;
           }
           const lastCheck = Math.max(
@@ -5831,7 +5974,7 @@ ${nextMessage}` : nextMessage;
             row,
             offenderLink,
             serverLink,
-            steamId,
+            steamId: steamId2,
             lastCheck,
             ip: this.ensureServerLinkOriginalIp(serverLink)
           };
@@ -5890,6 +6033,14 @@ ${nextMessage}` : nextMessage;
             this._offenderRowSnapshots = /* @__PURE__ */ new WeakMap();
           }
           if (this._offenderRowSnapshots.get(targetRow) === snapshotKey) {
+            if (!userData.serverIp) {
+              this.scheduleOffenderUi(() => {
+                if (!passIsCurrent() || !rowIsCurrent()) return;
+                const label = this.getServerLinkLabelElement(serverLink) || serverLink;
+                const text = this.utils.formatLastConnectStatus(userData.lastconnect);
+                if (label.textContent !== text) label.textContent = text;
+              });
+            }
             targetRow.dataset.lastIpCheck = Date.now().toString();
             if (singleRowPerPass) {
               break;
@@ -6392,9 +6543,9 @@ ${nextMessage}` : nextMessage;
         if (!applyingReason) manualReason = true;
       };
       const onSteamIdChange = () => {
-        const steamId = steamInput.value.trim();
-        if (steamId === lastSteamId) return;
-        lastSteamId = steamId;
+        const steamId2 = steamInput.value.trim();
+        if (steamId2 === lastSteamId) return;
+        lastSteamId = steamId2;
         manualReason = false;
         applyReason();
       };
@@ -6415,8 +6566,8 @@ ${nextMessage}` : nextMessage;
       applyReason();
     }
     applySuggestedMuteReason(reasonSelect, dialog) {
-      const steamId = this.resolveMuteFormSteamId(dialog);
-      const label = this.ticketService?.getSuggestedMuteReason(steamId);
+      const steamId2 = this.resolveMuteFormSteamId(dialog);
+      const label = this.ticketService?.getSuggestedMuteReason(steamId2);
       if (label && this.setReasonByLabel(reasonSelect, label)) return true;
       return this.setReasonByLabel(reasonSelect, "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C");
     }
@@ -6682,6 +6833,7 @@ ${nextMessage}` : nextMessage;
             continue;
           }
           if (mutation.type === "attributes") {
+            this.emit("pageTools");
             if (mutation.attributeName !== "aria-hidden") {
               continue;
             }
@@ -6730,6 +6882,7 @@ ${nextMessage}` : nextMessage;
       });
     }
     inspectAddedNode(node, rowsToUpdate) {
+      if (node.matches?.("main, aside, h3, section") || node.querySelector?.("main, h3")) this.emit("pageTools");
       if (this.isRelevantNotificationNode(node)) {
         this.emit("notification");
       }
@@ -6911,9 +7064,209 @@ ${nextMessage}` : nextMessage;
     }
   };
 
+  // modules/analytics/ProfileLauncher.js
+  var ProfileLauncher = class {
+    constructor({ document: document2, chrome: chrome2 }) {
+      this.document = document2;
+      this.chrome = chrome2;
+    }
+    sync() {
+      const root = this.document.querySelector("main");
+      if (this.href === location.href && this.root === root) return;
+      this.href = location.href;
+      this.root = root;
+      this.refresh();
+    }
+    refresh() {
+      this.stop();
+      if (!/^\/moderator\/profile\/7656119\d{10}$/.test(location.pathname)) return;
+      const root = this.document.querySelector("main");
+      if (!root) return;
+      const render = () => {
+        if (!/^\/moderator\/profile\/(7656119\d{10})$/.test(location.pathname)) return;
+        const steamId2 = location.pathname.split("/").at(-1);
+        const native = [...root.querySelectorAll("button")].find((b) => b.textContent.trim() === "\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430" && !b.closest('[aria-hidden="true"]'));
+        if (!native) return;
+        const existing = native.parentElement.querySelector(".ioh-analytics-launch");
+        if (existing) {
+          existing.dataset.steamId = steamId2;
+          return;
+        }
+        const button = markIoh(this.document.createElement("button"));
+        const peer = [...native.parentElement.querySelectorAll(":scope > button")].find((item) => item !== native && !item.hasAttribute("data-ioh"));
+        button.className = (peer?.className || native.className) + " ioh-analytics-launch";
+        button.type = "button";
+        button.dataset.steamId = steamId2;
+        button.setAttribute("aria-label", "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A\u0443 \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u0430 IoHelper \u0432 \u043D\u043E\u0432\u043E\u0439 \u0432\u043A\u043B\u0430\u0434\u043A\u0435");
+        button.title = "\u041F\u043E\u0434\u0440\u043E\u0431\u043D\u0430\u044F \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430 \u0438 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u043E\u0432";
+        button.innerHTML = '<span class="ioh-analytics-launch__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16M8 15v-4m5 4V7m5 8v-6"/></svg></span><span class="ioh-analytics-launch__label">\u0410\u043D\u0430\u043B\u0438\u0442\u0438\u043A\u0430 IoHelper</span><svg class="ioh-analytics-launch__arrow" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>';
+        button.querySelectorAll("*").forEach(markIoh);
+        button.addEventListener("click", () => this.chrome.runtime.sendMessage({ action: "openAnalytics", steamId: button.dataset.steamId }));
+        native.parentElement.append(button);
+      };
+      this.observer = new MutationObserver((mutations) => {
+        if (mutations.every((m) => isIohNode(m.target) || [...m.addedNodes, ...m.removedNodes].every(isIohNode))) return;
+        if (this.raf) return;
+        this.raf = requestAnimationFrame(() => {
+          this.raf = null;
+          render();
+        });
+      });
+      this.observer.observe(root, { childList: true, subtree: true });
+      render();
+    }
+    stop() {
+      this.observer?.disconnect();
+      if (this.raf) cancelAnimationFrame(this.raf);
+      this.raf = null;
+    }
+  };
+
+  // modules/AppearanceService.js
+  var INTENSITIES = ["soft", "balanced", "clear"];
+  var SURFACE_ATTR = "data-ioh-glass-surface";
+  var HEADER_ATTR = "data-ioh-glass-header";
+  var DENSE_ATTR = "data-ioh-glass-dense";
+  function normalizeAppearance(value = {}) {
+    return { enabled: value?.enabled === true, intensity: INTENSITIES.includes(value?.intensity) ? value.intensity : "balanced" };
+  }
+  var AppearanceService = class {
+    constructor({ document: document2, chrome: chrome2 }) {
+      this.document = document2;
+      this.chrome = chrome2;
+      this.preference = normalizeAppearance();
+      this.generation = 0;
+      this.surfaceByHeading = /* @__PURE__ */ new WeakMap();
+    }
+    sync() {
+      const root = this.document.querySelector("main");
+      if (this.href === location.href && this.root === root) return;
+      this.href = location.href;
+      this.root = root;
+      this.refresh();
+    }
+    async start() {
+      const generation = ++this.generation;
+      const { iohAppearance } = await this.chrome.storage.local.get("iohAppearance");
+      if (generation !== this.generation) return;
+      this.preference = normalizeAppearance(iohAppearance);
+      this.apply();
+      this.refresh();
+      this.listener = (changes, area) => {
+        if (area !== "local" || !changes.iohAppearance) return;
+        this.preference = normalizeAppearance(changes.iohAppearance.newValue);
+        this.apply();
+        this.render();
+      };
+      this.chrome.storage.onChanged.addListener(this.listener);
+    }
+    apply() {
+      const root = this.document.documentElement;
+      root.style.removeProperty("--ioh-glass-base");
+      if (this.preference.enabled) root.dataset.iohGlass = this.preference.intensity;
+      else {
+        delete root.dataset.iohGlass;
+        this.clearSurfaces();
+      }
+    }
+    clearSurfaces() {
+      this.document.querySelectorAll(`[${SURFACE_ATTR}], [${HEADER_ATTR}], [${DENSE_ATTR}]`).forEach((element) => {
+        element.removeAttribute(SURFACE_ATTR);
+        element.removeAttribute(HEADER_ATTR);
+        element.removeAttribute(DENSE_ATTR);
+      });
+    }
+    refresh() {
+      this.observer?.disconnect();
+      if (this.raf) cancelAnimationFrame(this.raf);
+      this.raf = null;
+      const root = this.document.querySelector("main");
+      if (!root) return;
+      this.observer = new MutationObserver((mutations) => {
+        if (mutations.every((m) => isIohNode(m.target) || [...m.addedNodes, ...m.removedNodes].every(isIohNode))) return;
+        if (this.raf) return;
+        this.raf = requestAnimationFrame(() => {
+          this.raf = null;
+          this.render();
+        });
+      });
+      this.observer.observe(root, { childList: true, subtree: true });
+      this.render();
+    }
+    findSurface(header, root) {
+      const cached = this.surfaceByHeading.get(header);
+      if (cached?.isConnected && root.contains(cached) && cached.contains(header)) return cached;
+      const view = this.document.defaultView;
+      let candidate = header.parentElement;
+      let fallback = null;
+      for (let depth = 0; candidate && candidate !== root && depth < 7; depth++, candidate = candidate.parentElement) {
+        if (["MAIN", "TABLE", "TR", "TD", "TH", "TBODY"].includes(candidate.tagName) || candidate.hasAttribute("aria-hidden")) break;
+        if (candidate.closest("[data-ioh]")) break;
+        const style = view.getComputedStyle(candidate);
+        const painted = style.backgroundColor !== "transparent" && !/rgba\([^)]*,\s*0\s*\)$/.test(style.backgroundColor);
+        const rounded = parseFloat(style.borderTopLeftRadius || style.borderRadius) > 0;
+        if (painted && candidate.children.length > 1) fallback ||= candidate;
+        if (rounded && painted || ["SECTION", "ARTICLE"].includes(candidate.tagName)) {
+          this.surfaceByHeading.set(header, candidate);
+          return candidate;
+        }
+      }
+      if (fallback) this.surfaceByHeading.set(header, fallback);
+      return fallback;
+    }
+    markSurface(header, root) {
+      const card = this.findSurface(header, root);
+      if (!card) return;
+      card.setAttribute(SURFACE_ATTR, "1");
+      let branch = header;
+      while (branch.parentElement && branch.parentElement !== card) branch = branch.parentElement;
+      if (branch !== header && !branch.querySelector("table, textarea")) branch.setAttribute(HEADER_ATTR, "1");
+      if (card.querySelector("table") && card.getBoundingClientRect().height > 1400) card.setAttribute(DENSE_ATTR, "1");
+      else card.removeAttribute(DENSE_ATTR);
+    }
+    render() {
+      const root = this.document.querySelector("main");
+      if (!root) return;
+      const visible = (element) => element.getClientRects().length && !element.closest('[aria-hidden="true"]');
+      if (this.preference.enabled) {
+        root.querySelectorAll("h3").forEach((header2) => {
+          if (visible(header2) && !header2.closest("[data-ioh]")) this.markSurface(header2, root);
+        });
+      }
+      if (location.pathname !== "/settings/appearance") return;
+      const header = [...root.querySelectorAll("h3")].find((element) => visible(element) && element.textContent.trim() === "\u0422\u0435\u043C\u0430 \u043E\u0444\u043E\u0440\u043C\u043B\u0435\u043D\u0438\u044F");
+      if (!header) return;
+      const themeCard = this.findSurface(header, root);
+      if (!themeCard?.parentElement) return;
+      let section = themeCard.parentElement.querySelector(":scope > .ioh-appearance");
+      if (!section) {
+        section = markIoh(this.document.createElement("section"));
+        section.className = "ioh-appearance";
+        section.innerHTML = '<div class="ioh-appearance-sample" aria-hidden="true"><span>Liquid</span><b>Glass</b><i>IO HELPER</i></div><div class="ioh-appearance-content"><h3>Liquid Glass</h3><p>\u041D\u043E\u0432\u044B\u0439 \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430: \u043E\u0431\u044A\u0451\u043C\u043D\u044B\u0435 \u043F\u0430\u043D\u0435\u043B\u0438, \u043F\u0440\u043E\u0437\u0440\u0430\u0447\u043D\u043E\u0441\u0442\u044C \u0438 \u043F\u043B\u0430\u0432\u043D\u044B\u0435 \u043F\u0435\u0440\u0435\u0445\u043E\u0434\u044B.</p><div class="ioh-glass-setting"><span>\u042D\u0444\u0444\u0435\u043A\u0442 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430</span><label class="ioh-glass-switch"><input type="checkbox" class="ioh-glass-enabled" aria-label="\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C Liquid Glass"><span aria-hidden="true"></span></label></div><label class="ioh-glass-select">\u041F\u0440\u043E\u0437\u0440\u0430\u0447\u043D\u043E\u0441\u0442\u044C<select><option value="soft">\u041C\u044F\u0433\u043A\u0430\u044F</option><option value="balanced">\u0421\u0431\u0430\u043B\u0430\u043D\u0441\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F</option><option value="clear">\u0412\u044B\u0440\u0430\u0437\u0438\u0442\u0435\u043B\u044C\u043D\u0430\u044F</option></select></label><small>\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442\u0441\u044F \u0432 \u044D\u0442\u043E\u043C \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435. \u0423\u0447\u0438\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0443\u043C\u0435\u043D\u044C\u0448\u0435\u043D\u0438\u0435 \u0434\u0432\u0438\u0436\u0435\u043D\u0438\u044F.</small></div>';
+        section.querySelectorAll("*").forEach(markIoh);
+        themeCard.insertAdjacentElement("beforebegin", section);
+        const save = () => this.chrome.storage.local.set({ iohAppearance: {
+          enabled: section.querySelector("input").checked,
+          intensity: section.querySelector("select").value
+        } });
+        section.querySelector("input").addEventListener("change", save);
+        section.querySelector("select").addEventListener("change", save);
+      }
+      section.querySelector("input").checked = this.preference.enabled;
+      section.querySelector("select").value = this.preference.intensity;
+    }
+    stop() {
+      this.generation++;
+      this.observer?.disconnect();
+      if (this.raf) cancelAnimationFrame(this.raf);
+      this.raf = null;
+      if (this.listener) this.chrome.storage.onChanged.removeListener(this.listener);
+    }
+  };
+
   // modules/App.js
   var App = class {
-    constructor({ window: window2, document: document2, chrome: chrome2, config }) {
+    constructor({ window: window2, document: document2, chrome: chrome2, config, settingsOverrides = {} }) {
       this.window = window2;
       this.document = document2;
       this.chrome = chrome2;
@@ -6921,8 +7274,10 @@ ${nextMessage}` : nextMessage;
       this.spamRules = config.spamRules || {};
       this.muteExceptions = config.muteExceptions || {};
       this.templates = config.templates || {};
-      this.settings = config.settings;
-      this.settings.features.highlightHighHs ??= true;
+      this.baseSettings = structuredClone(config.settings);
+      this.settingsOverrides = settingsOverrides;
+      this.configRevision = config.iohRevision || "";
+      this.settings = mergeSettings(this.baseSettings, settingsOverrides);
       this.features = this.settings.features;
       this.reasonTriggers = this.settings.reasonTriggers;
       this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
@@ -6942,6 +7297,8 @@ ${nextMessage}` : nextMessage;
       this._offenderTrackingHref = this._lastHref;
       this._offenderTrackingTextarea = null;
       this.utils = new Utils({ document: document2 });
+      this.profileLauncher = new ProfileLauncher({ document: document2, chrome: chrome2 });
+      this.appearanceService = new AppearanceService({ document: document2, chrome: chrome2 });
       this.badgeService = new BadgeService({ document: document2 });
       this.panelService = new PanelService({ document: document2 });
       this.messageService = new MessageService({
@@ -6977,6 +7334,10 @@ ${nextMessage}` : nextMessage;
       this.bindCoordinatorEvents();
     }
     bindCoordinatorEvents() {
+      this.domCoordinator.on("pageTools", () => {
+        this.profileLauncher?.sync();
+        this.appearanceService?.sync();
+      });
       this.domCoordinator.on("notification", () => this.initNotificationPanels());
       this.domCoordinator.on("ticketMounted", () => {
         this.initTicketSectionFeatures();
@@ -6995,6 +7356,11 @@ ${nextMessage}` : nextMessage;
       });
       this.domCoordinator.on("punishmentDialog", () => {
         this.punishmentService.scheduleScan();
+        if (this.pendingConfiguration && !this.ticketService.isSitePunishmentDialogOpen()) {
+          const pending = this.pendingConfiguration;
+          this.pendingConfiguration = null;
+          this.applyConfiguration(pending.config, pending.revision);
+        }
       });
       this.domCoordinator.on("chatChanged", () => {
         if (this.features.translateText) {
@@ -7010,7 +7376,8 @@ ${nextMessage}` : nextMessage;
         this._moderatorServicePromise = import(chrome.runtime.getURL("dist/chunks/moderator.js")).then(({ ModeratorService }) => {
           this._moderatorService = new ModeratorService({
             document: this.document,
-            chrome: this.chrome
+            chrome: this.chrome,
+            isEnabled: () => Boolean(this.features.scanSchedulePage)
           });
           this.moderatorService = this._moderatorService;
           return this._moderatorService;
@@ -7028,37 +7395,61 @@ ${nextMessage}` : nextMessage;
         this.runDOMUpdates();
       });
       this.chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== "local" || !changes.helperSettings) {
-          return;
-        }
-        const settings = changes.helperSettings.newValue || {};
-        this.updateSettings(settings);
+        if (areaName !== "local") return;
+        if (changes.helperSettings) this.settingsOverrides = changes.helperSettings.newValue || {};
+        if (changes.helperConfig && ConfigService.isValid(changes.helperConfig.newValue)) {
+          this.applyConfiguration(changes.helperConfig.newValue, changes.helperConfigMeta?.newValue?.revision || "");
+        } else if (changes.helperSettings) this.updateSettings(this.settingsOverrides);
+        if (changes.helperScheduleModerators) this.moderatorService.highlightSavedModerators();
       });
       this.initNavigationWatcher();
+      this.profileLauncher.refresh();
+      void this.appearanceService.start();
+      this.window.addEventListener("pagehide", () => {
+        this.profileLauncher.stop();
+        this.appearanceService.stop();
+      }, { once: true });
       this.domCoordinator.init();
       this.initPunishmentFormObserver();
       this.ticketService.initMuteIssueFeature();
       this.initVisibilityCatchUpListener();
       this.handleTrackOffenderLoop();
+      void this.chrome.runtime.sendMessage({ action: "iohClientReady" }).catch(() => {
+      });
+      void this.chrome.runtime.sendMessage({ action: "configApplied", revision: this.configRevision }).catch(() => {
+      });
+    }
+    applyConfiguration(config, revision) {
+      if (this.ticketService.isSitePunishmentDialogOpen()) {
+        this.pendingConfiguration = { config, revision };
+        if (this.settingsOverrides) this.updateSettings(this.settingsOverrides);
+        return;
+      }
+      if (JSON.stringify(this.rules) !== JSON.stringify(config.muteRules) || JSON.stringify(this.muteExceptions) !== JSON.stringify(config.muteExceptions || {})) {
+        this.rules = config.muteRules;
+        this.muteExceptions = config.muteExceptions || {};
+        this.ticketService.resetChatAnalysisCache();
+      }
+      if (JSON.stringify(this.spamRules) !== JSON.stringify(config.spamRules || {})) this.ticketService.resetChatAnalysisCache();
+      this.spamRules = config.spamRules || {};
+      this.ticketService.spamRules = this.spamRules;
+      if (JSON.stringify(this.templates) !== JSON.stringify(config.templates || {})) {
+        this.templates = config.templates || {};
+        this.document.querySelectorAll("#mod-ticket-panel[data-ioh], #mod-notif-panel[data-ioh]").forEach((e) => e.remove());
+      }
+      this.baseSettings = structuredClone(config.settings);
+      this.configRevision = revision;
+      this.updateSettings(this.settingsOverrides || {});
+      void this.chrome.runtime.sendMessage({ action: "configApplied", revision }).catch(() => {
+      });
     }
     updateSettings(settings) {
       const previousSettings = structuredClone(this.settings);
+      const nextSettings = mergeSettings(this.baseSettings || this.settings, settings);
       const previousFeatures = previousSettings?.features || {};
-      const newAccountHoursChanged = previousSettings?.newAccountHours !== settings.newAccountHours;
-      const newAccountsReenabled = !previousFeatures.highlightNewAccounts && settings.features?.highlightNewAccounts;
-      this.settings = {
-        ...this.settings,
-        ...settings,
-        headshotPercentage: settings.headshotPercentage ?? 95,
-        features: {
-          ...this.settings.features,
-          ...settings.features || {},
-          highlightHighHs: settings.features?.highlightHighHs ?? true
-        }
-      };
-      if (settings.reasonTriggersAutoconnect) {
-        this.settings.reasonTriggersAutoconnect = settings.reasonTriggersAutoconnect;
-      }
+      const newAccountHoursChanged = previousSettings?.newAccountHours !== nextSettings.newAccountHours;
+      const newAccountsReenabled = !previousFeatures.highlightNewAccounts && nextSettings.features.highlightNewAccounts;
+      this.settings = nextSettings;
       this.features = this.settings.features;
       this.reasonTriggers = this.settings.reasonTriggers;
       this.reasonTriggersAutoconnect = this.settings.reasonTriggersAutoconnect;
@@ -7203,6 +7594,7 @@ ${nextMessage}` : nextMessage;
       const nextFeatures = nextSettings.features;
       const triggersChanged = JSON.stringify(previousSettings?.reasonTriggers || []) !== JSON.stringify(nextSettings.reasonTriggers);
       const newAccountHoursChanged = previousSettings?.newAccountHours !== nextSettings.newAccountHours;
+      if (!nextFeatures.scanSchedulePage) this._moderatorService?.cancelScan();
       if (!nextFeatures.highlightComplaintTriggers || triggersChanged) {
         this.messageService.clearComplaintTriggerHighlights();
       }
@@ -7477,6 +7869,8 @@ ${nextMessage}` : nextMessage;
       const href = this.window.location.href;
       if (href === this._lastHref) return;
       this._lastHref = href;
+      this.profileLauncher?.refresh();
+      this.appearanceService?.refresh();
       if (!this.ticketService.isComplaintPage()) {
         this.ticketService.clearAutoConnectedServers();
         this._lastAutoConnectTicketKey = null;
@@ -7774,36 +8168,123 @@ ${nextMessage}` : nextMessage;
     }
   };
 
+  // modules/analytics/model.js
+  var HISTORY_START = "2019-01-01";
+  var parseSteamId = (value) => {
+    const text = String(value || "").trim();
+    const match = text.match(/^(?:https:\/\/io\.cybershoke\.(?:net|ru)\/moderator\/profile\/)?(7656119\d{10})(?:[/?#].*)?$/);
+    return match?.[1] || null;
+  };
+  var dayKey = (seconds) => new Date(Number(seconds) * 1e3 + 108e5).toISOString().slice(0, 10);
+  var dayStart = (date) => Date.parse(date + "T00:00:00+03:00") / 1e3;
+  function validateRange(range) {
+    return range && /^\d{4}-\d{2}-\d{2}$/.test(range.start) && /^\d{4}-\d{2}-\d{2}$/.test(range.end) && Number.isFinite(dayStart(range.start)) && Number.isFinite(dayStart(range.end)) && dayKey(dayStart(range.start)) === range.start && dayKey(dayStart(range.end)) === range.end && range.start >= HISTORY_START && range.start <= range.end && range.end <= dayKey(Date.now() / 1e3);
+  }
+
+  // modules/analytics/Collector.js
+  function startAnalyticsCollector(chrome2, window2, document2) {
+    void document2;
+    let task = null, alive = true;
+    const send = (request) => chrome2.runtime.sendMessage(request).catch(() => {
+    });
+    const cancel = (nonce) => window2.postMessage({ channel: "ioh-analytics-request-v2", type: "cancel", nonce }, window2.location.origin);
+    const finish = (message, { notifyReady = true, notifyResult = true } = {}) => {
+      if (!task) return;
+      const completed = task;
+      clearTimeout(completed.timer);
+      task = null;
+      if (completed.kind === "roster") completed.respond(message);
+      else {
+        if (notifyResult) void send(message.success ? { action: "analyticsResult", nonce: completed.nonce, result: message.result } : { action: "analyticsFailure", nonce: completed.nonce, error: message.error });
+        if (notifyReady) void send({ action: "iohClientReady" });
+      }
+    };
+    const onPageMessage = (event) => {
+      if (event.source !== window2 || event.origin !== window2.location.origin) return;
+      if (event.data?.channel === "ioh-moderator-config-request-v1" && /^[a-f0-9-]{16,64}$/.test(event.data.nonce || "")) {
+        const nonce = event.data.nonce;
+        void chrome2.runtime.sendMessage({ action: "getModeratorConfig" }).then((response) => {
+          if (alive) window2.postMessage({ channel: "ioh-moderator-config-response-v1", nonce, response }, window2.location.origin);
+        }).catch(() => {
+          if (alive) window2.postMessage({ channel: "ioh-moderator-config-response-v1", nonce, response: { success: false, error: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u043E\u0432" } }, window2.location.origin);
+        });
+        return;
+      }
+      if (!task || event.data?.channel !== "ioh-analytics-response-v2" || event.data.nonce !== task.nonce) return;
+      const message = event.data;
+      if (message.type === "progress" && task.kind !== "roster") void send({ action: "analyticsProgress", nonce: task.nonce, stage: String(message.stage || "").slice(0, 120) });
+      if (message.type === "result" || message.type === "error") {
+        finish(message.type === "result" ? { success: true, result: message.result } : { success: false, error: String(message.error || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435").slice(0, 300), ...message.code === "BUSY" ? { code: "BUSY" } : {} });
+      }
+    };
+    const onRuntimeMessage = (request, _sender, respond) => {
+      if (request.action === "analyticsPing") {
+        respond({ success: true, version: 2, scheduleNative: 1, profileMetadata: 1, busy: !!task });
+        return;
+      }
+      if (request.action === "analyticsCancelWorker" || request.action === "scheduleCancelNative") {
+        const kind = request.action === "scheduleCancelNative" ? "roster" : "profile";
+        if (task?.nonce === request.nonce && task.kind === kind) {
+          cancel(task.nonce);
+          finish({ success: false, error: "\u0421\u0431\u043E\u0440 \u043E\u0442\u043C\u0435\u043D\u0451\u043D" }, { notifyResult: false });
+        }
+        respond({ success: true });
+        return;
+      }
+      const roster = request.action === "scheduleCollectNative";
+      if (!roster && request.action !== "analyticsCollect") return;
+      if (!roster && (!parseSteamId(request.steamId) || !validateRange(request.range)) || !/^[a-f0-9-]{16,64}$/.test(request.nonce || "")) {
+        respond({ success: false });
+        return;
+      }
+      if (task) {
+        respond({ success: false, code: "BUSY", error: "\u0412\u043A\u043B\u0430\u0434\u043A\u0430 \u0443\u0436\u0435 \u0441\u043E\u0431\u0438\u0440\u0430\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0435" });
+        return;
+      }
+      task = { nonce: request.nonce, kind: roster ? "roster" : "profile", respond };
+      task.timer = setTimeout(() => {
+        if (task?.nonce !== request.nonce) return;
+        cancel(task.nonce);
+        finish({ success: false, error: "\u041A\u043B\u0438\u0435\u043D\u0442 \u0441\u0430\u0439\u0442\u0430 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B. \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 \u0430\u0434\u043C\u0438\u043D\u043A\u0443 \u0438 \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u0435 \u0441\u0431\u043E\u0440." });
+      }, 12e4);
+      window2.postMessage({
+        channel: "ioh-analytics-request-v2",
+        type: roster ? "roster" : "collect",
+        nonce: request.nonce,
+        ...!roster ? { steamId: request.steamId, range: request.range } : {}
+      }, window2.location.origin);
+      if (roster) return true;
+      respond({ success: true });
+    };
+    window2.addEventListener("message", onPageMessage);
+    chrome2.runtime.onMessage.addListener(onRuntimeMessage);
+    window2.addEventListener("pagehide", () => {
+      alive = false;
+      if (task) {
+        cancel(task.nonce);
+        finish({ success: false, error: "\u0418\u0441\u0445\u043E\u0434\u043D\u0430\u044F \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u0430\u0434\u043C\u0438\u043D\u043A\u0438 \u0431\u044B\u043B\u0430 \u0437\u0430\u043A\u0440\u044B\u0442\u0430 \u0438\u043B\u0438 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430" }, { notifyReady: false });
+      }
+      window2.removeEventListener("message", onPageMessage);
+      chrome2.runtime.onMessage.removeListener(onRuntimeMessage);
+    }, { once: true });
+    return false;
+  }
+
   // content.js
   chrome.storage.local.get(["scriptEnabled", "helperSettings"], (result) => {
+    if (startAnalyticsCollector(chrome, window, document)) return;
     const isEnabled = result.scriptEnabled !== false;
     if (!isEnabled) {
       return;
     }
     (async () => {
-      const config = await ConfigService.load(chrome);
-      config.settings = {
-        ...config.settings,
-        ...result.helperSettings || {}
-      };
-      config.settings.features = {
-        ...config.settings.features,
-        ...result.helperSettings?.features || {}
-      };
-      if (result.helperSettings?.autoConnectReasons) {
-        config.settings.autoConnectReasons = result.helperSettings.autoConnectReasons;
-      }
-      if (result.helperSettings?.offenderVipStatuses) {
-        config.settings.offenderVipStatuses = result.helperSettings.offenderVipStatuses;
-      }
-      if (result.helperSettings?.reasonTriggersAutoconnect) {
-        config.settings.reasonTriggersAutoconnect = result.helperSettings.reasonTriggersAutoconnect;
-      }
+      const config = await ConfigService.getForClient(chrome);
       const app = new App({
         window,
         document,
         chrome,
-        config
+        config,
+        settingsOverrides: result.helperSettings || {}
       });
       app.start();
     })();

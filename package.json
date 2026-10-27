@@ -6,7 +6,7 @@
     "test": "node --test tests/*.test.mjs",
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
-    "lint": "eslint modules content.js popup.js background.js"
+    "lint": "eslint modules content.js popup.js background.js analytics.js build.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

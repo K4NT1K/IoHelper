@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "IO HELPER",
-  "version": "2.9.0",
+  "version": "2.12.0",
   "description": "Улучшает функционал IO сайта",
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "icons": {
     "128": "icons/logo_small_default.png"
@@ -17,6 +19,8 @@
     "default_icon": "icons/logo_small_monochrome.png"
   },
   "host_permissions": [
+    "https://io.cybershoke.net/*",
+    "https://io.cybershoke.ru/*",
     "https://raw.githubusercontent.com/K4NT1K/*",
     "https://mobile.fastmm.win/*",
     "https://translate.googleapis.com/*",
@@ -36,6 +40,12 @@
   ],
   "content_scripts": [
     {
+      "matches": ["https://io.cybershoke.net/*", "https://io.cybershoke.ru/*"],
+      "js": ["dist/siteBridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
       "matches": [
         "*://*.cybershoke.net/*",
         "*://*.cybershoke.ru/*"
@@ -46,7 +56,9 @@
         "css/tooltip.css",
         "css/highlight.css",
         "css/misc.css",
-        "css/ticketCards.css"
+        "css/ticketCards.css",
+        "css/liquidGlass.css",
+        "css/profileLauncher.css"
       ],
       "js": [
         "dist/content.js"

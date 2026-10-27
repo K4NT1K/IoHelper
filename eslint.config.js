@@ -5,6 +5,7 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 export default [
     js.configs.recommended,
     eslintConfigPrettier,
+    {files: ['build.mjs'], languageOptions: {globals: globals.node}},
     {
         files: ['**/*.js', 'build.mjs'],
         languageOptions: {

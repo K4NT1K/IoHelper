@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Effective date:** July 2026  
-**Last updated:** September 2026
+**Last updated:** October 2026
 
 This Privacy Policy describes how **IO HELPER**, a Chrome Manifest V3 browser extension for CYBERSHOKE moderators, handles information.
 
@@ -15,7 +15,7 @@ IO HELPER does not collect, store on remote servers, sell, rent, or share person
 
 The extension does not collect, transmit, or retain:
 
-- names, email addresses, or account credentials;
+- email addresses or account credentials;
 - passwords;
 - cookies belonging to other sites;
 - browsing history outside the CYBERSHOKE moderation pages where the extension runs;
@@ -33,16 +33,21 @@ On CYBERSHOKE moderation pages, the extension reads information that is already 
 - display moderator and offender context (VIP status, Steam account creation date, Faceit ELO);
 - fill moderation templates and punishment form fields;
 - auto-connect to a game server when the corresponding setting is enabled.
+- show local moderator statistics and compare selected profiles or the configured moderator roster when the user requests it.
 
 This processing runs on the user’s device.
 
 ## Local storage
 
-IO HELPER stores only extension settings and cached configuration in the browser’s extension storage (`chrome.storage.local`), for example:
+IO HELPER stores settings and cached configuration in the browser’s extension storage (`chrome.storage.local`), for example:
 
 - feature toggles and user preferences;
 - cached moderation configuration fetched from this project’s GitHub repository;
 - cached moderator list data used by schedule scanning and server highlighting.
+
+The optional statistics dashboard stores up to 30 recent individual aggregate selections and the latest team comparison checkpoint in local IndexedDB. These contain moderator Steam IDs, display names and public avatar URLs, daily counts, punishment reason totals, closed work-session time and source coverage, not offender IP addresses, offender names or chat messages. The team checkpoint also stores the selected roster, period, progress and per-profile errors so collection can resume after closing the dashboard. Nickname suggestions use the local configuration and latest saved schedule roster. The dashboard provides a cache-clear button that deletes both individual and team results. Sanitized individual records are used temporarily during collection in memory and extension session storage; the dashboard acknowledges receipt so completed raw results can be discarded. Session storage also holds bounded translation caches and background job state. No moderator statistics are uploaded to an analytics service.
+
+Statistics collection uses the site's existing HTTP client in an already open, authenticated CYBERSHOKE tab. It calls a fixed allowlist of profile, punishment-history, closed-work-session and seven weekday worktime read endpoints; it does not navigate through profile tabs or submit moderation actions. Displayed positions come from profile class_name; the earliest available punishment timestamp is stored as an aggregate career reference. The daily roster retains only moderator IDs, names, positions, fetched weekdays and update metadata, not schedule details or status fields. The extension does not read or copy authentication headers or save cookies/passwords: the native client handles its own session. Hourly configuration checks and optional daily roster updates use Chrome Alarms. Roster updates require an available admin session, use existing tabs, and do not start working time or submit moderation actions. The console export reads this local roster and does not publish or modify GitHub configuration.
 
 This data remains in the browser profile unless the user clears extension data or uninstalls the extension.
 
@@ -51,6 +56,7 @@ This data remains in the browser profile unless the user clears extension data o
 The extension may make requests to:
 
 - the official CYBERSHOKE moderation website (`*.cybershoke.net`, `*.cybershoke.ru`), including the user-data API used by offender tracking;
+- Steam avatar CDN (`*.steamstatic.com`), to display the public avatar URL returned by the moderator profile;
 - this project’s GitHub repository, to download the latest `config.json`;
 - FastMM (`mobile.fastmm.win`), to look up public Steam profile metadata (account creation date and Faceit ELO) when those features are enabled;
 - Google Translate (`translate.googleapis.com`) and MyMemory (`api.mymemory.translated.net`), when the chat translation feature is enabled.
