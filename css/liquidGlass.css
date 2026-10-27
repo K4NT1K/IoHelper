@@ -34,7 +34,9 @@ html[data-ioh-glass] :is(aside, main>nav, [data-ioh-glass-surface], [role=dialog
     box-shadow: var(--ioh-glass-shadow);
     backdrop-filter: blur(var(--ioh-glass-blur)) saturate(1.18);
     -webkit-backdrop-filter: blur(var(--ioh-glass-blur)) saturate(1.18);
-    transition: background-color .35s var(--ioh-glass-ease), border-color .3s, box-shadow .35s var(--ioh-glass-ease);
+    /* Paint the material edge immediately. A new solid border otherwise fades from
+       the native currentColor (opaque light text), producing a white outline flash. */
+    transition: background-color .35s var(--ioh-glass-ease), box-shadow .35s var(--ioh-glass-ease);
 }
 html[data-ioh-glass] [data-ioh-glass-surface] {
     border-radius: var(--ioh-glass-radius) !important;
