@@ -189,7 +189,9 @@ export class SitePunishmentBridge {
         const handler = this.ticketService.getCachedIssueHandler(type);
         if (handler) {
             const cachedButton = this.ticketService.getLastKnownIssueButton(type);
-            if (this.ticketService.invokeCachedSiteHandler(handler, type, cachedButton)
+            const sectionTitle = SitePunishmentBridge.PANELS[type].sectionTitle;
+            if (cachedButton?.isConnected && this.ticketService._isButtonInSection(cachedButton, sectionTitle)
+                && this.ticketService.invokeCachedSiteHandler(handler, type, cachedButton)
                 && await this._waitForDialogOpen(type, 3000)) {
                 return true;
             }

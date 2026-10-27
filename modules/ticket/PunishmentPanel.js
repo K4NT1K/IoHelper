@@ -136,10 +136,9 @@ export const PunishmentPanelMethods = {
 
     resolveIssueButtonForType(type) {
         const sectionTitle = this.getManagementSectionTitleForType(type);
-        let button = this.getCachedIssueButton(type)
-            ?? this.findSiteIssueButtonForType(type, { requireVisible: false });
+        let button = this.getCachedIssueButton(type);
 
-        if (!button?.isConnected) {
+        if (!button?.isConnected || !this._isButtonInSection(button, sectionTitle)) {
             button = this.findSiteIssueButtonForType(type, { requireVisible: false });
         }
 
@@ -1058,12 +1057,19 @@ export const PunishmentPanelMethods = {
         return true;
     },
 
-    _isManagementPanelVisible(sectionTitle) {
-        const headers = Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
+    getManagementSectionHeaders(sectionTitle) {
+        return Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
             .filter(element => (
                 !this.isExtensionUiElement(element)
                 && element.textContent.trim() === sectionTitle
+                // SPA tab labels and the global page title do not own issue buttons.
+                && !element.closest('nav, aside, button, a, [role="tab"], [role="dialog"]')
+                && !element.closest('main > header, [role="main"] > header')
             ));
+    },
+
+    _isManagementPanelVisible(sectionTitle) {
+        const headers = this.getManagementSectionHeaders(sectionTitle);
 
         for (const header of headers) {
             let element = header;
@@ -1092,14 +1098,21 @@ export const PunishmentPanelMethods = {
 
     _getManagementPanelRoot(header) {
         let element = header.parentElement;
-        while (element && element !== this.document.body) {
+        let standaloneRoot = null;
+        while (element && element !== this.document.body
+            && !element.matches('main, [role="main"]')) {
             if (element.hasAttribute?.('aria-hidden')) {
                 return element;
             }
+            if (!standaloneRoot && Array.from(element.querySelectorAll('button')).some(button => (
+                !this._isExtensionPunishmentButton(button)
+                && button.textContent.trim() === 'Выдать блокировку'
+            ))) standaloneRoot = element;
             element = element.parentElement;
         }
 
-        return header.closest('main, [role="main"]');
+        // Without SPA, use the title's own action/card container, never all of main.
+        return standaloneRoot;
     },
 
     _isButtonInSection(button, sectionTitle) {
@@ -1107,11 +1120,7 @@ export const PunishmentPanelMethods = {
             return false;
         }
 
-        const headers = Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
-            .filter(element => (
-                !this.isExtensionUiElement(element)
-                && element.textContent.trim() === sectionTitle
-            ));
+        const headers = this.getManagementSectionHeaders(sectionTitle);
 
         for (const header of headers) {
             const panelRoot = this._getManagementPanelRoot(header);
@@ -1140,8 +1149,7 @@ export const PunishmentPanelMethods = {
     },
 
     findSiteIssueButtonInSection(sectionTitle, { requireVisible = true } = {}) {
-        const headers = Array.from(this.document.querySelectorAll('span, h1, h2, h3'))
-            .filter(element => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle);
+        const headers = this.getManagementSectionHeaders(sectionTitle);
 
         for (const header of headers) {
             if (requireVisible && !this._isHeaderInVisiblePanel(header)) {
