@@ -1,0 +1,168 @@
+/* Compact ratios: the default view contains only the combined punishment volume. */
+.rate-hint,.rate-note {font-size:14px;color:var(--muted);line-height:1.6}
+.rate-note {margin:20px 0 0;color:var(--faint)}
+.rate-groups {display:grid;grid-template-columns:1.2fr 1fr;gap:20px}
+.impact-intro {font-size:14px;line-height:1.6;color:var(--muted);margin:14px 0 23px}
+.rate-group {padding:20px;border:1px solid var(--border);border-radius:16px;background:var(--field);min-width:0}
+.rate-group.impact-primary {background:linear-gradient(145deg,var(--a-soft),transparent 75%),var(--field);border-color:color-mix(in srgb,var(--a) 20%,var(--border))}
+.impact-primary h4 {color:var(--a);font-size:17px;font-weight:550}
+.rate-group h4 {font-size:15px;font-weight:550;margin:0 0 16px;color:var(--muted)}
+.rate-values {display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
+.rate-insight {position:relative;--profile-color:var(--a)}
+.rate-insight.second {--profile-color:var(--b)}
+.rate-main {position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:9px;text-align:left;padding:14px 16px;min-height:105px;width:100%;border:1px solid var(--border);background:var(--surface);white-space:normal}
+.rate-main>span {display:block;color:var(--muted);font-size:14px;line-height:1.4;max-width:calc(100% - 14px);overflow-wrap:anywhere}
+.rate-main strong {font-size:30px;line-height:1;font-weight:550;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:var(--profile-color)}
+.impact-primary .rate-main strong {font-size:44px;letter-spacing:-1.6px}
+.rate-main>small {font-size:14px;color:var(--muted);line-height:1.4}
+.rate-main .rate-base {font-size:14px;color:var(--faint);max-width:100%;line-height:1.6;margin-top:4px}
+.rate-main .rate-bar {display:block;height:5px;background:var(--border);border-radius:5px;width:100%;max-width:none;margin:6px 0 1px;overflow:hidden}
+.rate-bar>b {display:block;height:100%;width:var(--width);background:var(--profile-color);border-radius:inherit;animation:rate-bar-grow .65s var(--ease);transform-origin:left}
+@keyframes rate-bar-grow {from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.rate-main>i {position:absolute;right:12px;top:14px;font:14px/18px Georgia,serif;font-style:normal;border:1px solid var(--border-strong);width:18px;height:18px;border-radius:50%;text-align:center;color:var(--muted)}
+.rate-insight[data-open]>.rate-main {border-color:color-mix(in srgb,var(--profile-color) 50%,var(--border));background:var(--surface-raised)}
+.rate-insight[data-open] {z-index:8}
+.rate-tooltip {display:none;position:fixed;left:16px;top:16px;max-height:calc(100vh - 32px);overflow:auto;width:min(355px,calc(100vw - 32px));padding:22px;border:1px solid var(--border-strong);border-radius:18px;background:var(--surface-raised);color:var(--text);box-shadow:0 15px 45px #00000035;z-index:10;font-size:14px;line-height:1.5;pointer-events:auto}
+.rate-tooltip[data-open] {display:block;animation:rate-tooltip-in .16s var(--ease)}
+@keyframes rate-tooltip-in{from{opacity:0}to{opacity:1}}
+.rate-tooltip>strong {font-weight:600;overflow-wrap:anywhere}
+.rate-tooltip>p {font-size:14px;line-height:1.6;margin:5px 0 15px}
+.rate-tooltip dl {margin:0}
+.rate-tooltip dl>div {display:flex;justify-content:space-between;gap:16px;margin:9px 0}
+.rate-tooltip dt {color:var(--muted)}
+.rate-tooltip dd {font-variant-numeric:tabular-nums;margin:0;font-weight:550;color:var(--profile-color)}
+.rate-tooltip .rate-total {border-top:1px solid var(--border);padding-top:10px;margin-top:12px}
+.rate-share {display:flex;flex-wrap:wrap;gap:8px 16px;border-top:1px solid var(--border);margin-top:15px;padding-top:12px;color:var(--muted)}
+.rate-share>span:first-child {flex-basis:100%;font-weight:500}
+.rate-share b {font-weight:500;color:var(--text);margin-left:5px}
+.rate-tooltip .rate-difference {border-top:1px solid var(--border);margin-top:15px;padding-top:12px;color:var(--muted)}
+.rate-difference b {color:var(--text);font-weight:500;white-space:nowrap}
+.rate-tooltip .rate-formula {font-size:14px;color:var(--faint);margin:15px 0 0}
+
+/* The cohort view uses the same brand surfaces as the individual dashboard. */
+.cohort-launch {display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid var(--border);margin-top:24px;padding-top:22px}
+.cohort-launch>div:first-child {display:flex;flex-direction:column;gap:6px;max-width:480px}
+.cohort-launch strong {font-weight:550;font-size:16px;line-height:1.4}
+.cohort-launch span {color:var(--muted);font-size:14px;line-height:1.6}
+.cohort-launch .directory-status {color:var(--faint);font-size:14px}
+.cohort-launch-controls {display:flex;gap:12px;align-items:flex-end;min-width:0}
+.cohort-launch-controls label {font-size:14px;min-width:180px}
+.cohort-launch-controls select {font-size:14px}
+#compareAll {display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;white-space:normal;text-align:left;min-height:46px}
+#compareAll svg {width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.cohort-workspace {padding-bottom:30px;margin-bottom:40px;border-bottom:1px solid var(--border)}
+.cohort-heading {align-items:flex-end}
+.cohort-toolbar {display:flex;align-items:flex-end;gap:12px}
+.cohort-toolbar label {font-size:14px;min-width:210px}
+.cohort-toolbar select {font-size:14px}
+.cohort-toolbar button {font-size:14px;min-height:45px}
+.cohort-status {font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 18px;min-height:23px}
+.cohort-progress {position:relative;padding:20px 23px;margin-bottom:22px;overflow:hidden}
+.cohort-progress-line {display:flex;align-items:center;justify-content:space-between;gap:18px;font-size:14px;line-height:1.6}
+.cohort-progress-line strong {font-weight:550;color:var(--text)}
+.cohort-progress-line span {color:var(--muted)}
+.cohort-progress-track {height:5px;border-radius:5px;background:var(--border);margin-top:14px;overflow:hidden}
+.cohort-progress-track>i {display:block;height:100%;width:var(--progress);background:linear-gradient(90deg,var(--a),#8ca1ff);border-radius:inherit;transition:width .65s var(--ease)}
+.cohort-progress-extra {font-size:14px;line-height:1.6;margin:11px 0 0;color:var(--faint)}
+.cohort-preliminary {display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:14px;line-height:1.4;padding:7px 10px;border:1px solid var(--border);border-radius:12px;background:var(--field)}
+.cohort-preliminary:before {content:"";width:5px;height:5px;border-radius:50%;background:var(--b);flex:none}
+.cohort-podium {display:grid;grid-template-columns:1fr 1.16fr 1fr;gap:18px;align-items:end;margin:28px auto 26px;max-width:1020px;padding:0 22px}
+.cohort-leader-caption {display:flex;align-items:baseline;justify-content:space-between;gap:20px;margin:27px 0 0}
+.cohort-leader-caption .eyebrow {font-size:14px;margin:0;flex:none}
+.cohort-leader-caption p {font-size:14px;text-align:right;line-height:1.6;margin:0;overflow-wrap:anywhere}
+.cohort-podium-card {--medal:#b7c3df;position:relative;display:flex;align-items:center;flex-direction:column;justify-content:flex-end;text-align:center;padding:25px 18px 23px;min-height:230px;border-radius:22px;border:1px solid var(--border);background:radial-gradient(ellipse at 50% -20%,color-mix(in srgb,var(--medal) 12%,transparent),transparent 70%),var(--surface);box-shadow:var(--shadow);isolation:isolate;min-width:0}
+.cohort-podium-card:after {content:"";position:absolute;left:16%;right:16%;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--medal),transparent);opacity:.65}
+.cohort-podium-card[data-rank="1"] {--medal:var(--b);min-height:270px;border-color:color-mix(in srgb,var(--b) 25%,var(--border))}
+.cohort-podium-card[data-rank="3"] {--medal:#bd916b;min-height:213px}
+.cohort-podium-card.is-pending {min-height:213px;justify-content:center;border-style:dashed;opacity:.5;box-shadow:none;background:var(--surface)}
+.cohort-podium-card.is-pending:nth-child(2) {min-height:270px}
+.cohort-place {display:grid;place-items:center;position:absolute;top:15px;left:17px;color:var(--medal);font-size:18px;line-height:1;font-weight:550;font-variant-numeric:tabular-nums}
+.cohort-place small {display:block;font-size:14px;font-weight:400;margin-top:4px}
+.cohort-avatar {position:relative;display:grid;place-items:center;flex:none;width:44px;height:44px;overflow:hidden;border-radius:13px;border:1px solid var(--border-strong);background:var(--surface-raised);color:var(--muted)}
+.cohort-avatar>svg {width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.5}
+.cohort-avatar>img {position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cohort-podium-card .cohort-avatar {width:78px;height:78px;border-radius:23px;border-color:color-mix(in srgb,var(--medal) 55%,transparent);box-shadow:0 8px 25px #00000020;margin:4px 0 16px;background:var(--field)}
+.cohort-podium-card .cohort-avatar>svg {width:36px;height:36px}
+.cohort-podium-name {padding:0;min-height:0;border:none;background:none;color:var(--text);font-size:18px;line-height:1.5;font-weight:550;white-space:normal;max-width:100%;overflow-wrap:anywhere}
+.cohort-podium-name:hover {color:var(--a);background:none;transform:none}
+.cohort-podium-value {font-size:34px;line-height:1;font-weight:550;letter-spacing:-1.5px;font-variant-numeric:tabular-nums;margin:14px 0 9px;color:var(--text)}
+.cohort-podium-caption {color:var(--muted);font-size:14px;line-height:1.5}
+.cohort-podium-role {font-size:14px;line-height:1.5;color:var(--faint);overflow-wrap:anywhere;margin-top:4px;max-width:100%}
+.cohort-podium-base {font-size:14px;line-height:1.7;color:var(--faint);margin-top:13px;border-top:1px solid var(--border);padding-top:10px;width:100%}
+.cohort-podium-base b {font-weight:550;color:var(--muted)}
+.cohort-podium-tie {font-size:14px;color:var(--medal);margin-top:7px;line-height:1.4}
+.cohort-podium-card.is-pending>span {font-size:14px;color:var(--muted);line-height:1.6}
+.cohort-ranking {padding:26px 0 0;overflow:hidden}
+.cohort-ranking-header {display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:0 26px 20px}
+.cohort-ranking-header h3 {font-size:18px;line-height:1.4}
+.cohort-ranking-header p {font-size:14px;line-height:1.6;margin:7px 0 0;color:var(--faint)}
+.cohort-selection {display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.cohort-selection>span {font-size:14px;line-height:1.4;color:var(--muted)}
+.cohort-selection button {font-size:14px;min-height:38px;padding:8px 12px}
+.cohort-ranking-wrap {overflow:auto;max-height:640px;scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+.cohort-table {font-size:14px;min-width:790px;width:100%;table-layout:fixed}
+.cohort-table th,.cohort-table td {padding:15px 18px;font-size:14px;line-height:1.5;vertical-align:middle}
+.cohort-table th {font-weight:500;color:var(--muted);background:var(--surface-raised)}
+.cohort-table th:first-child,.cohort-table td:first-child {padding-left:26px;width:72px;color:var(--faint);font-variant-numeric:tabular-nums}
+.cohort-table th:nth-child(2) {width:auto}
+.cohort-table th:nth-child(3),.cohort-table td:nth-child(3) {width:135px;text-align:right;font-variant-numeric:tabular-nums}
+.cohort-table th:nth-child(4) {width:185px}
+.cohort-table th:last-child,.cohort-table td:last-child {padding-right:26px;width:86px;text-align:center}
+.cohort-table tr[data-rank="1"]>td:first-child {color:var(--b);font-weight:550}
+.cohort-table tr.is-selected {background:var(--a-soft)}
+.cohort-member {display:flex;align-items:center;gap:12px;min-width:0}
+.cohort-member-info {min-width:0}
+.cohort-member-name {border:0;background:none;color:var(--text);padding:0;min-height:0;text-align:left;font-size:15px;line-height:1.5;font-weight:500;white-space:normal;overflow-wrap:anywhere}
+.cohort-member-name:hover {background:none;color:var(--a);transform:none}
+.cohort-member-info>span {display:block;color:var(--faint);font-size:14px;line-height:1.4;margin-top:2px;overflow-wrap:anywhere}
+.cohort-member-info>.cohort-member-since {font-size:14px;line-height:1.5;color:var(--faint);margin-top:5px}
+.cohort-result {font-size:17px;font-weight:550;color:var(--text);font-variant-numeric:tabular-nums}
+.cohort-result-unit {display:block;font-size:14px;line-height:1.5;color:var(--faint);margin-top:3px}
+.cohort-base {display:block;font-size:14px;line-height:1.65;color:var(--faint);margin-bottom:10px}
+.cohort-base b {font-weight:550;color:var(--muted)}
+.cohort-ranking-header .cohort-impact-formula {color:var(--muted);max-width:600px}
+.cohort-row-bar {height:5px;background:var(--border);border-radius:4px;overflow:hidden}
+.cohort-row-bar>i {display:block;width:var(--width);height:100%;background:var(--a);border-radius:inherit;transition:width .55s var(--ease)}
+.cohort-check {appearance:none;width:19px;height:19px;border-radius:6px;border:1px solid var(--border-strong);background:var(--field);vertical-align:middle;position:relative;cursor:pointer;margin:0}
+.cohort-check:checked {background:var(--a);border-color:var(--a)}
+.cohort-check:checked:after {content:"";position:absolute;left:5px;top:4px;width:7px;height:4px;border-left:1.7px solid #fff;border-bottom:1.7px solid #fff;transform:rotate(-45deg)}
+.cohort-check:disabled {opacity:.3;cursor:default}
+.cohort-empty {padding:30px;color:var(--muted);font-size:14px;line-height:1.7;text-align:center}
+.cohort-records-heading {display:flex;justify-content:space-between;align-items:baseline;gap:18px;margin:28px 0 17px}
+.cohort-records-heading p {font-size:14px;color:var(--faint);margin:0}
+.cohort-records {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;align-items:start}
+.cohort-record {padding:0;border:1px solid var(--border);border-radius:18px;background:var(--surface);min-width:0;position:relative;overflow:hidden}
+.cohort-record>summary {display:block;list-style:none;padding:22px;cursor:pointer}
+.cohort-record>summary::-webkit-details-marker {display:none}
+.cohort-record[open] {border-color:color-mix(in srgb,var(--a) 32%,var(--border))}
+.cohort-record-icon {display:block;color:var(--a);width:29px;height:29px;margin-bottom:17px}
+.cohort-record-icon svg {width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round}
+.cohort-record h4 {font-size:14px;font-weight:500;color:var(--muted);line-height:1.5;margin:0 0 12px}
+.cohort-record strong {font-size:28px;font-weight:550;line-height:1;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:var(--text)}
+.cohort-record p {font-size:14px;line-height:1.55;color:var(--muted);margin:12px 0 0;overflow-wrap:anywhere}
+.cohort-record time {display:block;font-size:14px;color:var(--faint);margin-top:5px}
+.cohort-fact-caption {display:block;font-size:14px;line-height:1.6;color:var(--faint);margin-top:5px}
+.cohort-fact-ties {display:block;font-size:14px;line-height:1.6;color:var(--faint);margin-top:3px}
+.cohort-fact-unit {font-size:14px;color:var(--muted);margin-left:8px;white-space:nowrap}
+.cohort-fact-toggle {display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;color:var(--faint)}
+.cohort-fact-toggle i {font-size:20px;font-weight:300;font-style:normal;line-height:1;color:var(--a);transition:transform .25s var(--ease)}
+.cohort-record[open] .cohort-fact-toggle i {transform:rotate(45deg)}
+.cohort-fact-details {position:relative;padding:0 22px 22px;animation:rate-tooltip-in .25s var(--ease)}
+.cohort-fact-details p {margin:0 0 14px;font-size:14px;color:var(--faint)}
+.cohort-fact-details ol {margin:0;padding:0 5px 0 0;list-style:none;max-height:300px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+.cohort-fact-details ol:focus-visible {outline:2px solid var(--a);outline-offset:3px;border-radius:3px}
+.cohort-fact-details li+li {margin-top:13px;padding-top:13px;border-top:1px solid var(--border)}
+.cohort-fact-details li>span {display:block;font-size:14px;line-height:1.6;color:var(--faint);margin-top:3px}
+.cohort-record button {padding:0;min-height:0;background:none;border:none;white-space:normal;text-align:left;color:var(--text);font-size:14px}
+.cohort-record button:hover {color:var(--a);background:none;transform:none}
+.cohort-failures {font-size:14px;color:var(--muted);line-height:1.7;margin:20px 0 0}
+.cohort-failures summary {cursor:pointer;color:var(--muted)}
+.cohort-failures ul {padding-left:18px}
+.cohort-failures li {margin-top:6px}
+.cohort-note {font-size:14px;color:var(--faint);line-height:1.7;margin:20px 0 0}
+.cohort-records-heading>div>p {margin:8px 0 0}
+.rate-main strong {max-width:100%;overflow-wrap:anywhere}
+@media(max-width:1150px){.cohort-launch{align-items:flex-start;flex-direction:column}.cohort-launch-controls{width:100%;justify-content:space-between}.cohort-records{grid-template-columns:repeat(2,minmax(0,1fr))}.cohort-heading{align-items:flex-start;flex-direction:column}.cohort-toolbar{width:100%;justify-content:space-between}.rate-hint{display:none}}
+@media(max-width:760px){.rate-groups{grid-template-columns:1fr}.rate-group{padding:17px}.rate-tooltip{padding:18px}.cohort-launch-controls{flex-direction:column;align-items:stretch}.cohort-launch-controls label{min-width:0}.cohort-toolbar{flex-wrap:wrap;justify-content:flex-start}.cohort-toolbar label{flex:1 1 100%;min-width:0}.cohort-toolbar button{flex:1}.cohort-podium{padding:0;gap:8px;grid-template-columns:1fr 1.12fr 1fr}.cohort-podium-card{padding:25px 10px 18px;min-height:215px;border-radius:17px}.cohort-podium-card[data-rank="1"]{min-height:245px}.cohort-podium-card[data-rank="3"]{min-height:195px}.cohort-podium-card .cohort-avatar{width:58px;height:58px;border-radius:18px;margin-bottom:13px}.cohort-place{font-size:17px;left:12px;top:12px}.cohort-podium-name{font-size:15px}.cohort-podium-value{font-size:26px;letter-spacing:-1px}.cohort-podium-caption,.cohort-podium-tie{font-size:14px}.cohort-place small{display:none}.cohort-ranking-header{padding:0 18px 18px;flex-direction:column}.cohort-selection{justify-content:flex-start}.cohort-records{gap:12px}.cohort-record>summary{padding:18px}.cohort-fact-details{padding:0 18px 18px}.cohort-records-heading{align-items:flex-start;flex-direction:column;gap:6px}.cohort-leader-caption{align-items:flex-start;flex-direction:column;gap:6px}.cohort-leader-caption p{text-align:left}.cohort-progress{padding:18px}.cohort-progress-line{align-items:flex-start;flex-direction:column;gap:5px}.profile-context{grid-template-columns:1fr;gap:12px}}
+@media(max-width:440px){.rate-values{grid-template-columns:1fr 1fr}.cohort-podium{gap:5px}.cohort-podium-card{padding:26px 7px 15px}.cohort-podium-name{font-size:14px}.cohort-podium-card .cohort-avatar{width:49px;height:49px;border-radius:15px}.cohort-podium-value{font-size:24px}.cohort-podium-caption{overflow-wrap:anywhere}.cohort-records{grid-template-columns:1fr}.cohort-podium-card[data-rank="1"]{min-height:250px}.cohort-podium-card[data-rank="3"]{min-height:210px}}
+@media(prefers-reduced-motion:reduce){.cohort-workspace *,.rate-insight *,.rate-tooltip{animation:none!important;transition:none!important}}

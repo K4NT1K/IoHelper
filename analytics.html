@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>IoHelper · Статистика модераторов</title>
+    <link rel="icon" href="icons/logo_small_default.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/analytics.css">
+    <link rel="stylesheet" href="css/cohort.css">
+    <link rel="stylesheet" href="css/moderator-search.css">
+</head>
+<body>
+<main class="workspace">
+    <header class="masthead">
+        <a class="brand" href="analytics.html" aria-label="CYBERSHOKE · Статистика">
+            <img src="icons/logo_small_default.svg" alt="" width="30" height="34">
+            <span>CYBERSHOKE<small>MODERATOR INSIGHTS</small></span>
+        </a>
+        <div class="local-tag"><span class="local-indicator" aria-hidden="true"></span>IO HELPER<span class="local-caption">Данные остаются в вашем браузере</span></div>
+    </header>
+
+    <section class="intro">
+        <div>
+            <p class="eyebrow">МОДЕРАЦИЯ В ДЕТАЛЯХ</p>
+            <h1>Ваша работа.<br><span>CYBERSHOKE</span></h1>
+            <p class="intro-copy">Динамика, сравнение модераторов и лучшие дни — по данным CYBERSHOKE.</p>
+        </div>
+        <div class="intro-orbit" aria-hidden="true"><div class="orbit-grid"></div><div class="orbit-ring"></div><div class="orbit-core"><img src="icons/logo_small_default.svg" alt="" width="66" height="76"></div><span class="orbit-label orbit-label-a">История</span><span class="orbit-label orbit-label-b">Динамика</span><span class="orbit-label orbit-label-c">Сравнение</span></div>
+    </section>
+
+    <form id="controls" class="surface controls">
+        <div class="control-heading"><span class="eyebrow">НАЧНИТЕ С ПРОФИЛЯ</span><span class="subtle">Никнейм, SteamID64 или ссылка</span></div>
+        <div class="profiles">
+            <label><span class="field-label"><i>01</i>Первый модератор</span><input id="profileA" required placeholder="Никнейм или SteamID64" autocomplete="off" spellcheck="false"></label>
+            <label><span class="field-label"><i>02</i>Второй модератор <small>необязательно</small></span><input id="profileB" placeholder="Добавить профиль для сравнения" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="options">
+            <label>Период<select id="period"><option value="7">Последние 7 дней</option><option value="30">Последние 30 дней</option><option value="90">Последние 90 дней</option><option value="all" selected>Вся доступная история</option><option value="custom">Свой период</option></select></label>
+            <label>С<input id="startDate" type="date" required></label>
+            <label>По<input id="endDate" type="date" required></label>
+            <button class="primary" id="load" type="submit"><span>Получить статистику</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4"/></svg></button>
+            <button id="cancel" class="secondary-button" type="button" hidden>Отмена</button>
+        </div>
+        <div class="suboptions"><label class="check-label"><input type="checkbox" id="removed" checked><span>Учитывать снятые наказания</span></label><button class="text-button" id="clearCache" type="button">Очистить кэш</button></div>
+        <div class="cohort-launch"><div><strong>Вся команда в одном сравнении</strong><span>Выбранный период, отдельный рейтинг по каждому показателю.</span><span id="directoryStatus" class="directory-status" role="status">Загрузка списка модераторов…</span></div><div class="cohort-launch-controls"><label>Состав команды<select id="cohortSource"><option value="schedule" selected>Состав из API расписания</option><option value="config">Конфиг</option><option value="all">Конфиг + расписание</option></select></label><button class="secondary-button" id="compareAll" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10h4v10m2 0V4h4v16m2 0V13h4v7M3 20h18"/></svg>Сравнить всех модераторов</button></div></div>
+    </form>
+    <div class="status" id="status" role="status" aria-live="polite">Откройте авторизованную админку и выберите профиль. Все даты — по московскому времени.</div>
+
+    <section id="cohort" class="cohort-workspace" aria-labelledby="cohortHeading" hidden>
+        <div class="section-heading cohort-heading"><div><p class="eyebrow">КОМАНДА МОДЕРАТОРОВ</p><h2 id="cohortHeading">Результаты выбранного периода</h2></div><div class="cohort-toolbar"><label>Рейтинг по показателю<select id="cohortMetric"><option value="punishmentsPer100Complaints" selected>Импакт · на 100 жалоб</option><option value="complaints">Закрытые жалобы</option><option value="tickets">Тикеты</option><option value="reports">Репорты</option><option value="punishments">Все наказания</option><option value="bans">Баны</option><option value="mutes">Муты</option><option value="perActiveDay">Жалоб за активный день</option></select></label><button id="cohortResume" class="secondary-button" type="button" hidden>Продолжить сбор</button><button id="cohortCancel" class="secondary-button" type="button" hidden>Остановить сбор</button></div></div>
+        <div id="cohortStatus" class="cohort-status" role="status" aria-live="polite"></div>
+        <div id="cohortBody"></div>
+    </section>
+
+    <section id="results" hidden>
+        <div class="section-heading">
+            <div><p class="eyebrow">ОБЗОР ПЕРИОДА</p><h2 id="rangeTitle"></h2></div>
+        </div>
+        <div id="summaries" class="summaries"></div>
+        <section id="rates" class="surface rates-panel" hidden></section>
+        <section id="comparison" class="surface comparison-panel" hidden></section>
+        <section class="surface chart-panel"><div class="panel-title chart-heading"><div><p class="eyebrow">ДИНАМИКА</p><h3>Ритм работы</h3></div><div class="chart-options"><label>Показатель<select id="metric"><option value="complaints">Закрытые жалобы</option><option value="tickets">Тикеты</option><option value="reports">Репорты</option><option value="bans">Баны</option><option value="mutes">Муты</option></select></label><label>Шаг графика<select id="unit"><option value="day">По дням</option><option value="week">По неделям</option><option value="month">По месяцам</option></select></label></div></div><div id="legend" class="legend chart-legend"></div><div id="chart"></div></section>
+        <div id="details" class="detail-grid"></div>
+        <p class="footnote">Показатели отражают объём работы, а не качество решений. Доступность истории зависит от прав и данных сайта. Рабочее время включает закрытые прайм-сессии; AFK отдельно не вычитается.</p>
+    </section>
+
+    <section id="empty" class="empty">
+        <div class="empty-copy"><p class="eyebrow">БОЛЬШЕ, ЧЕМ ИТОГОВАЯ ЦИФРА</p><h2>Замечайте свой прогресс.</h2><p>Один профиль — подробный взгляд на работу.<br>Два профиля — сравнение за одинаковый период.</p></div>
+        <div class="empty-features"><div><span>01</span><h3>Динамика</h3><p>Дни, недели и месяцы<br>на интерактивном графике.</p></div><div><span>02</span><h3>Лучшие дни</h3><p>Рейтинги и календарь<br>вашей активности.</p></div><div><span>03</span><h3>Сравнение</h3><p>Сопоставимые показатели<br>и прозрачные источники.</p></div></div>
+    </section>
+    <footer><span>CYBERSHOKE <b>×</b> IO HELPER</span><span>Локальная аналитика · Europe/Moscow</span></footer>
+</main>
+<script type="module" src="analytics.js"></script>
+</body>
+</html>
