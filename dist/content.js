@@ -1213,7 +1213,8 @@ ${nextMessage}` : nextMessage;
       const handler = this.ticketService.getCachedIssueHandler(type);
       if (handler) {
         const cachedButton = this.ticketService.getLastKnownIssueButton(type);
-        if (this.ticketService.invokeCachedSiteHandler(handler, type, cachedButton) && await this._waitForDialogOpen(type, 3e3)) {
+        const sectionTitle = _SitePunishmentBridge.PANELS[type].sectionTitle;
+        if (cachedButton?.isConnected && this.ticketService._isButtonInSection(cachedButton, sectionTitle) && this.ticketService.invokeCachedSiteHandler(handler, type, cachedButton) && await this._waitForDialogOpen(type, 3e3)) {
           return true;
         }
       }
@@ -2913,8 +2914,8 @@ ${nextMessage}` : nextMessage;
     },
     resolveIssueButtonForType(type) {
       const sectionTitle = this.getManagementSectionTitleForType(type);
-      let button = this.getCachedIssueButton(type) ?? this.findSiteIssueButtonForType(type, { requireVisible: false });
-      if (!button?.isConnected) {
+      let button = this.getCachedIssueButton(type);
+      if (!button?.isConnected || !this._isButtonInSection(button, sectionTitle)) {
         button = this.findSiteIssueButtonForType(type, { requireVisible: false });
       }
       if (!button || !this._isButtonInSection(button, sectionTitle)) {
@@ -3644,8 +3645,11 @@ ${nextMessage}` : nextMessage;
       }
       return true;
     },
+    getManagementSectionHeaders(sectionTitle) {
+      return Array.from(this.document.querySelectorAll("span, h1, h2, h3")).filter((element) => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle && !element.closest('nav, aside, button, a, [role="tab"], [role="dialog"]') && !element.closest('main > header, [role="main"] > header'));
+    },
     _isManagementPanelVisible(sectionTitle) {
-      const headers = Array.from(this.document.querySelectorAll("span, h1, h2, h3")).filter((element) => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle);
+      const headers = this.getManagementSectionHeaders(sectionTitle);
       for (const header of headers) {
         let element = header;
         while (element && element !== this.document.body) {
@@ -3668,19 +3672,21 @@ ${nextMessage}` : nextMessage;
     },
     _getManagementPanelRoot(header) {
       let element = header.parentElement;
-      while (element && element !== this.document.body) {
+      let standaloneRoot = null;
+      while (element && element !== this.document.body && !element.matches('main, [role="main"]')) {
         if (element.hasAttribute?.("aria-hidden")) {
           return element;
         }
+        if (!standaloneRoot && Array.from(element.querySelectorAll("button")).some((button) => !this._isExtensionPunishmentButton(button) && button.textContent.trim() === "\u0412\u044B\u0434\u0430\u0442\u044C \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0443")) standaloneRoot = element;
         element = element.parentElement;
       }
-      return header.closest('main, [role="main"]');
+      return standaloneRoot;
     },
     _isButtonInSection(button, sectionTitle) {
       if (!button) {
         return false;
       }
-      const headers = Array.from(this.document.querySelectorAll("span, h1, h2, h3")).filter((element) => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle);
+      const headers = this.getManagementSectionHeaders(sectionTitle);
       for (const header of headers) {
         const panelRoot = this._getManagementPanelRoot(header);
         if (panelRoot?.contains(button)) {
@@ -3704,7 +3710,7 @@ ${nextMessage}` : nextMessage;
       return this.isStandaloneManagementHeader(header, header.textContent.trim());
     },
     findSiteIssueButtonInSection(sectionTitle, { requireVisible = true } = {}) {
-      const headers = Array.from(this.document.querySelectorAll("span, h1, h2, h3")).filter((element) => !this.isExtensionUiElement(element) && element.textContent.trim() === sectionTitle);
+      const headers = this.getManagementSectionHeaders(sectionTitle);
       for (const header of headers) {
         if (requireVisible && !this._isHeaderInVisiblePanel(header)) {
           continue;
