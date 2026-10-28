@@ -10,13 +10,14 @@ html[data-ioh-glass] {
     --ioh-glass-blur: 20px;
     --ioh-glass-radius: 20px;
     --ioh-glass-edge: color-mix(in srgb, var(--ioh-glass-ink) 16%, transparent);
-    --ioh-glass-highlight: color-mix(in srgb, white 10%, transparent);
+    --ioh-glass-highlight: color-mix(in srgb, white 4%, transparent);
+    --ioh-glass-sheen-end: color-mix(in srgb, white .8%, transparent);
     --ioh-glass-ease: cubic-bezier(.22, 1, .36, 1);
     --ioh-glass-spring: cubic-bezier(.2, .85, .25, 1.12);
     --ioh-glass-shadow: 0 16px 45px #00000014, 0 2px 9px #0000000c, inset 0 1px 0 #ffffff14;
 }
-html[data-ioh-glass=soft] {--ioh-glass-opacity: 97%; --ioh-sidebar-opacity: 96%; --ioh-chrome-opacity: 97%; --ioh-glass-blur: 6px; --ioh-glass-radius: 12px; --ioh-glass-ambient: 4%; --ioh-glass-highlight: #ffffff04; --ioh-glass-edge: color-mix(in srgb,var(--ioh-glass-ink) 9%,transparent); --ioh-glass-shadow: 0 3px 12px #0000000d,inset 0 1px 0 #ffffff08;}
-html[data-ioh-glass=clear] {--ioh-glass-opacity: 48%; --ioh-sidebar-opacity: 52%; --ioh-chrome-opacity: 56%; --ioh-glass-blur: 34px; --ioh-glass-radius: 24px; --ioh-glass-ambient: 32%; --ioh-glass-highlight: #ffffff25; --ioh-glass-edge: color-mix(in srgb,var(--ioh-glass-ink) 28%,transparent); --ioh-glass-shadow: 0 22px 65px #0000002b,0 3px 12px #00000012,inset 0 1px 0 #ffffff38;}
+html[data-ioh-glass=soft] {--ioh-glass-opacity: 97%; --ioh-sidebar-opacity: 96%; --ioh-chrome-opacity: 97%; --ioh-glass-blur: 6px; --ioh-glass-radius: 12px; --ioh-glass-ambient: 4%; --ioh-glass-highlight: #ffffff04; --ioh-glass-sheen-end: #ffffff01; --ioh-glass-edge: color-mix(in srgb,var(--ioh-glass-ink) 9%,transparent); --ioh-glass-shadow: 0 3px 12px #0000000d,inset 0 1px 0 #ffffff08;}
+html[data-ioh-glass=clear] {--ioh-glass-opacity: 48%; --ioh-sidebar-opacity: 52%; --ioh-chrome-opacity: 56%; --ioh-glass-blur: 34px; --ioh-glass-radius: 24px; --ioh-glass-ambient: 32%; --ioh-glass-highlight: color-mix(in srgb,white 6.5%,transparent); --ioh-glass-sheen-end: color-mix(in srgb,white 1.2%,transparent); --ioh-glass-edge: color-mix(in srgb,var(--ioh-glass-ink) 28%,transparent); --ioh-glass-shadow: 0 22px 65px #0000002b,0 3px 12px #00000012,inset 0 1px 0 #ffffff38;}
 html[data-ioh-glass] body {
     background-image:
         radial-gradient(ellipse at 0% 0%, color-mix(in srgb, var(--ioh-glass-accent) var(--ioh-glass-ambient), transparent), transparent 55%),
@@ -28,7 +29,8 @@ html[data-ioh-glass] body {
 html[data-ioh-glass] ::selection {background: color-mix(in srgb, var(--ioh-glass-accent) 35%, transparent);}
 html[data-ioh-glass] :is(aside, main>nav, [data-ioh-glass-surface], [role=dialog], [role=menu], [role=listbox]) {
     background:
-        linear-gradient(140deg, var(--ioh-glass-highlight), transparent 52%),
+        /* A low-contrast sheen spans the full surface, including large cards. */
+        linear-gradient(140deg, var(--ioh-glass-highlight), var(--ioh-glass-sheen-end)),
         color-mix(in srgb, var(--ioh-glass-base) var(--ioh-glass-opacity), transparent) !important;
     border: 1px solid var(--ioh-glass-edge);
     box-shadow: var(--ioh-glass-shadow);
@@ -104,7 +106,8 @@ html[data-ioh-glass] :is(main,[role=dialog]) :is(input:not([type=checkbox]):not(
     outline-offset: 2px;
     box-shadow: 0 0 0 5px color-mix(in srgb, var(--ioh-glass-accent) 10%, transparent);
 }
-html[data-ioh-glass] main :is(a,summary,[role=tab]) {transition: color .2s, background-color .2s, border-color .2s;}
+/* Server status links keep highlight.css's .45s color/fill/glow transition. */
+html[data-ioh-glass] main :is(a,summary,[role=tab]):not(.ioh-server-online,.ioh-server-other,.ioh-server-offline) {transition: color .2s, background-color .2s, border-color .2s;}
 html[data-ioh-glass] :is(main,[role=dialog]) [role=switch] {border-radius: 999px; transition: background-color .25s, box-shadow .25s;}
 html[data-ioh-glass] :is(main,[role=dialog]) [role=switch]>span {transition: transform .3s var(--ioh-glass-spring);}
 html[data-ioh-glass] [data-ioh-glass-surface] table {border-collapse: separate; border-spacing: 0;}
