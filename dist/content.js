@@ -2706,7 +2706,7 @@ ${nextMessage}` : nextMessage;
       const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
       const connectTarget = relocatedIp || ticketServerIp || null;
       const connectSource = relocatedIp ? "relocated-server" : ticketServerIp ? "ticket-server" : null;
-      if (offenderSteamId && (this.isOffenderOffline(offenderSteamId) || this.ticketServerShowsOffenderLeft(scope))) {
+      if (offenderSteamId && (this.isOffenderOffline(offenderSteamId) || !relocatedIp && this.ticketServerShowsOffenderLeft(scope))) {
         return {
           allowed: false,
           reason: "\u043D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C \u043D\u0435\u0434\u0430\u0432\u043D\u043E \u0432\u044B\u0448\u0435\u043B \u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u0430",
@@ -5964,10 +5964,12 @@ ${nextMessage}` : nextMessage;
       }
       const context = this.getOpenTicketOffenderTrackingContext();
       if (context && !this._openTicketTrackingSessions.has(context.scope)) {
+        const siteOffline = this.ticketServerShowsOffenderLeft(context.scope);
+        const waitingForReturn = this.isOffenderOffline(context.steamId) || siteOffline && !this.getOffenderRelocatedServer(context.steamId);
         this._openTicketTrackingSessions.set(context.scope, {
           ...context,
-          waitingForReturn: this.isOffenderOffline(context.steamId),
-          siteOffline: false,
+          waitingForReturn,
+          siteOffline,
           timer: null,
           pending: false,
           observer: null,

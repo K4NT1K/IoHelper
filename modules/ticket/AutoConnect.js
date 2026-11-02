@@ -290,7 +290,7 @@ export const AutoConnectMethods = {
         const connectSource = relocatedIp ? 'relocated-server' : (ticketServerIp ? 'ticket-server' : null);
 
         if (offenderSteamId && (this.isOffenderOffline(offenderSteamId)
-            || this.ticketServerShowsOffenderLeft(scope))) {
+            || (!relocatedIp && this.ticketServerShowsOffenderLeft(scope)))) {
             return {
                 allowed: false,
                 reason: 'нарушитель недавно вышел с сервера',

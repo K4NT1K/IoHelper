@@ -1461,8 +1461,12 @@ export const OffenderTrackingMethods = {
         }
         const context = this.getOpenTicketOffenderTrackingContext();
         if (context && !this._openTicketTrackingSessions.has(context.scope)) {
+            const siteOffline = this.ticketServerShowsOffenderLeft(context.scope);
+            // The queue already knows the current server; the site's departure label is older.
+            const waitingForReturn = this.isOffenderOffline(context.steamId)
+                || (siteOffline && !this.getOffenderRelocatedServer(context.steamId));
             this._openTicketTrackingSessions.set(context.scope, {...context,
-                waitingForReturn: this.isOffenderOffline(context.steamId), siteOffline: false,
+                waitingForReturn, siteOffline,
                 timer: null, pending: false, observer: null, serverField: null, lastCheck: 0});
         }
         for (const session of this._openTicketTrackingSessions.values()) {

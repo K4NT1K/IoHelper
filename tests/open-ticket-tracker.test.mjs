@@ -311,6 +311,62 @@ test('Mount auto-connect skips the old server link when the site reports departu
     assert.equal(ctx.connectToCurrentServer(), false);
 });
 
+test('Queue relocation connects immediately on mount despite the old site departure label', async t => {
+    const {ctx, state, time} = fixture(t);
+    const currentIp = '127.0.0.2:27015';
+    ctx.getPlayerComplaintText = () => '';
+    ctx.updateServerLinkDisplay = () => {};
+    ctx.applyOffenderServerStatus({}, state.steamId, '127.0.0.1:27015', {serverIp: currentIp});
+    const session = ctx.syncOpenTicketOffenderTracking();
+    assert.equal(session.waitingForReturn, false);
+    assert.equal(ctx.shouldAutoConnectToServer().debug.connectSource, 'relocated-server');
+    assert.equal(ctx.connectToCurrentServer(), true);
+    assert.deepEqual(state.connections, [currentIp]);
+    await time.advance(5000);
+    assert.deepEqual(state.requests, []);
+    assert.deepEqual(state.connections, [currentIp]);
+    assert.equal(time.timers.size, 0);
+});
+
+for (const known of ['expired', 'other player']) {
+    test('Departure still blocks mount and starts polling with relocation ' + known, async t => {
+        const {ctx, state, time} = fixture(t);
+        ctx.markOffenderRelocated(known === 'other player' ? '76561198999999999' : state.steamId,
+            '127.0.0.2:27015');
+        if (known === 'expired') await time.advance(ctx.LEFT_OFFENDER_TTL_MS);
+        ctx.syncOpenTicketOffenderTracking();
+        assert.equal(ctx.connectToCurrentServer(), false);
+        await time.advance(5000);
+        assert.deepEqual(state.requests, [state.steamId]);
+        assert.deepEqual(state.connections, []);
+    });
+}
+
+test('New API-offline overrides a known relocation and starts the five-second loop', async t => {
+    const {ctx, state, time} = fixture(t);
+    ctx.markOffenderRelocated(state.steamId, '127.0.0.2:27015');
+    ctx.syncOpenTicketOffenderTracking();
+    assert.equal(time.timers.size, 0);
+    ctx.markOffenderOffline(state.steamId);
+    assert.equal(ctx.connectToCurrentServer(), false);
+    await time.advance(5000);
+    assert.deepEqual(state.requests, [state.steamId]);
+    assert.deepEqual(state.connections, []);
+});
+
+test('Known relocation still respects analysis and last selected server guards', t => {
+    const {ctx, state} = fixture(t);
+    const currentIp = '127.0.0.2:27015';
+    ctx.markOffenderRelocated(state.steamId, currentIp);
+    ctx.getPlayerComplaintText = () => '';
+    ctx.canAutoConnectAfterAnalysis = () => false;
+    assert.equal(ctx.connectToCurrentServer(), false);
+    ctx.canAutoConnectAfterAnalysis = () => true;
+    ctx.serverConnectionMemory = {endpoint: currentIp};
+    assert.equal(ctx.connectToCurrentServer(), false);
+    assert.deepEqual(state.connections, []);
+});
+
 test('Regular and active tracking share one actual request and connect only once', async t => {
     const {ctx, state, time} = fixture(t);
     const pending = deferred();
