@@ -27,6 +27,7 @@ function fixture(t, {left = true, path = '/ticket/1983900'} = {}) {
         offenderOffline: new Map(), offenderRelocated: new Map(), autoConnectedServerIps: new Map(),
         _autoConnectSkipLoggedIps: new Set(), LEFT_OFFENDER_TTL_MS: 8 * 60 * 1000,
         getAutoConnectScope: () => state.scope,
+        getTicketComplaintCategory: () => 'Читерство',
         isActiveComplaintScope: scope => state.active && scope === state.scope,
         isOpenComplaintScope: () => true,
         scopeHasInProgressStatus: scope => scope.inProgress ?? state.inProgress,

@@ -1845,9 +1845,9 @@ ${nextMessage}` : nextMessage;
       const label = Array.from(this.document.querySelectorAll("span, div")).find((element) => !this.isExtensionUiElement(element) && element.textContent.trim() === labelText);
       return label?.parentElement || null;
     },
-    findInfoFieldByLabels(labelTexts) {
+    findInfoFieldByLabels(labelTexts, scope = null) {
       for (const labelText of labelTexts) {
-        const field = this.findInfoField(labelText);
+        const field = scope ? this.findInfoFieldScoped(labelText, scope) : this.findInfoField(labelText);
         if (field) {
           return field;
         }
@@ -1871,8 +1871,51 @@ ${nextMessage}` : nextMessage;
 
   // modules/ticket/ChatAnalyzer.js
   var ChatAnalyzerMethods = {
-    resetChatAnalysisCache(textarea) {
+    beginChatAnalysis(textarea) {
+      this._chatAnalysisByScope ||= /* @__PURE__ */ new WeakMap();
+      const scope = this.getTicketScopeRoot(textarea);
+      const key = this.getChatCacheKey(textarea);
+      const previous = this._chatAnalysisByScope.get(scope);
+      const steamId2 = this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope)) || "unknown";
+      const state = {
+        scope,
+        textarea,
+        key,
+        steamId: steamId2,
+        generation: this._chatAnalysisGeneration || 0,
+        completed: false,
+        kind: previous?.key === key ? previous.kind : null,
+        signature: previous?.key === key ? previous.signature : null
+      };
+      this._chatAnalysisByScope.set(scope, state);
+      return state;
+    },
+    isChatAnalysisCurrent(state) {
+      return this._chatAnalysisByScope?.get(state.scope) === state && state.generation === (this._chatAnalysisGeneration || 0) && this.document.contains(state.textarea) && this.isVisibleTicketTextarea(state.textarea) && this.getTicketScopeRoot(state.textarea) === state.scope && (this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", state.scope)) || "unknown") === state.steamId && this.getChatCacheKey(state.textarea) === state.key;
+    },
+    completeChatAnalysis(state, result) {
+      if (!this.isChatAnalysisCurrent(state)) return null;
+      const signature = this.chatSignatureByKey.get(state.key);
+      const kind = result?.kind === "unchanged" ? state.signature === signature ? state.kind : null : result?.kind;
+      state.completed = ["none", "warning", "mute", "skip"].includes(kind);
+      state.kind = state.completed ? kind : null;
+      state.signature = signature;
+      return state.completed ? { kind } : null;
+    },
+    invalidateChatAnalysis(textarea) {
+      const scope = this.getTicketScopeRoot(textarea);
+      const state = this._chatAnalysisByScope?.get(scope);
+      if (state) this._chatAnalysisByScope.set(scope, { ...state, completed: false });
+    },
+    getCompletedChatAnalysis(scope) {
+      const state = this._chatAnalysisByScope?.get(scope);
+      if (!state?.completed || !this.document.contains(state.textarea) || this.getTicketScopeRoot(state.textarea) !== scope) return null;
+      const steamId2 = this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope)) || "unknown";
+      return state.steamId === steamId2 ? state : null;
+    },
+    resetChatAnalysisCache(textarea, { preserveCompleted = false } = {}) {
       if (textarea) {
+        this._chatAnalysisByScope?.delete(this.getTicketScopeRoot(textarea));
         const key = this.getChatCacheKey(textarea);
         this.chatSignatureByKey.delete(key);
         this.activePunishmentBadgeByKey.delete(key);
@@ -1880,6 +1923,8 @@ ${nextMessage}` : nextMessage;
         return;
       }
       this.chatSignatureByKey.clear();
+      this._chatAnalysisGeneration = (this._chatAnalysisGeneration || 0) + 1;
+      if (!preserveCompleted) this._chatAnalysisByScope = /* @__PURE__ */ new WeakMap();
       this.activePunishmentBadgeByKey.clear();
       this.invalidateHistoryCache();
       this.clearSuggestedMuteReason();
@@ -2537,21 +2582,21 @@ ${nextMessage}` : nextMessage;
       }
       return entry.serverIp;
     },
-    getTicketComplaintParts() {
-      const categoryField = this.findInfoFieldByLabels(["\u041F\u0440\u0438\u0447\u0438\u043D\u0430 \u0436\u0430\u043B\u043E\u0431\u044B", "\u041F\u0440\u0438\u0447\u0438\u043D\u0430"]);
+    getTicketComplaintParts(scope = null) {
+      const categoryField = this.findInfoFieldByLabels(["\u041F\u0440\u0438\u0447\u0438\u043D\u0430 \u0436\u0430\u043B\u043E\u0431\u044B", "\u041F\u0440\u0438\u0447\u0438\u043D\u0430"], scope);
       const valueBlock = this.findFieldValueBlock(categoryField);
       let category = valueBlock?.querySelector(":scope > span")?.textContent?.trim() || "";
       if (!category) {
         category = this.utils.parseComplaintCell(valueBlock || categoryField).category;
       }
-      let playerText = this.getTicketPlayerMessageText();
+      let playerText = this.getTicketPlayerMessageText(scope);
       if (!playerText) {
         playerText = this.utils.parseComplaintCell(valueBlock || categoryField).playerText;
       }
       return { category, playerText };
     },
-    getTicketPlayerMessageText() {
-      const messageField = this.findInfoFieldByLabels(["\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F"]);
+    getTicketPlayerMessageText(scope = null) {
+      const messageField = this.findInfoFieldByLabels(["\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F"], scope);
       if (!messageField) {
         return "";
       }
@@ -2565,11 +2610,11 @@ ${nextMessage}` : nextMessage;
       }
       return "";
     },
-    getTicketComplaintCategory() {
-      return this.getTicketComplaintParts().category;
+    getTicketComplaintCategory(scope = null) {
+      return this.getTicketComplaintParts(scope).category;
     },
-    getPlayerComplaintText() {
-      return this.getTicketComplaintParts().playerText;
+    getPlayerComplaintText(scope = null) {
+      return this.getTicketComplaintParts(scope).playerText;
     },
     complaintTextMatchesAutoconnectTrigger(text) {
       const haystack = String(text || "").toLowerCase();
@@ -2586,6 +2631,16 @@ ${nextMessage}` : nextMessage;
         return false;
       }
       return reasons.some((reason) => haystack.includes(String(reason).toLowerCase()));
+    },
+    canAutoConnectAfterAnalysis(scope) {
+      if (!this.isVoiceFallbackCategory(this.getTicketComplaintCategory(scope))) return true;
+      if (this.complaintTextMatchesAutoconnectTrigger(this.getPlayerComplaintText(scope))) {
+        return !this.hasActivePunishmentForVoiceFallback(null, scope);
+      }
+      if (!this.settings?.features?.processTicketRules) return false;
+      const result = this.getCompletedChatAnalysis(scope);
+      if (!result) return false;
+      return (result.kind === "none" || result.kind === "warning") && !this.hasActivePunishmentForVoiceFallback(result.textarea);
     },
     getAutoConnectScope() {
       const visibleTextarea = this.findVisibleTicketResolutionTextarea();
@@ -2660,6 +2715,9 @@ ${nextMessage}` : nextMessage;
       }
       const category = this.getTicketComplaintCategory();
       const playerText = this.getPlayerComplaintText();
+      if (!this.canAutoConnectAfterAnalysis(scope)) {
+        return { allowed: false, reason: "\u043D\u0435\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D\u043D\u043E\u0433\u043E \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u044E\u0449\u0435\u0433\u043E \u0430\u043D\u0430\u043B\u0438\u0437\u0430 \u0447\u0430\u0442\u0430" };
+      }
       if (analysisFallback) {
         return {
           allowed: true,
@@ -2740,6 +2798,7 @@ ${nextMessage}` : nextMessage;
       if (!this.isOpenTicketTrackingSessionCurrent(session)) {
         return false;
       }
+      if (!this.canAutoConnectAfterAnalysis(session.scope)) return false;
       for (const tracked of this._openTicketTrackingSessions.values()) {
         if (tracked.steamId === session.steamId) tracked.lastConnectedIp = serverIp;
       }
@@ -2765,6 +2824,7 @@ ${nextMessage}` : nextMessage;
         console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (\u0444\u043E\u0440\u0441-\u043F\u0435\u0440\u0435\u0435\u0437\u0434) \u043E\u0442\u043C\u0435\u043D\u0435\u043D\u043E: \u0441\u0442\u0430\u0442\u0443\u0441 \xAB\u0412 \u0440\u0430\u0431\u043E\u0442\u0435\xBB \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D");
         return false;
       }
+      if (!this.canAutoConnectAfterAnalysis(scope)) return false;
       const offenderField = this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope);
       const offenderSteamId = this.extractSteamIdFromField(offenderField);
       const relocatedIp = offenderSteamId ? this.getOffenderRelocatedServer(offenderSteamId) : null;
@@ -2818,8 +2878,8 @@ ${nextMessage}` : nextMessage;
       console.log(`${logPrefix}: \u0441\u0441\u044B\u043B\u043A\u0430 steam:// \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0432 \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0435 \u0442\u0438\u043A\u0435\u0442\u0430.`, decision.debug || "");
       return false;
     },
-    hasActivePunishmentForVoiceFallback(textarea = null) {
-      const scope = textarea ? this.getTicketScopeRoot(textarea) : this.getAutoConnectScope() || this.document.body;
+    hasActivePunishmentForVoiceFallback(textarea = null, scope = null) {
+      scope ||= textarea ? this.getTicketScopeRoot(textarea) : this.getAutoConnectScope() || this.document.body;
       const blocks = this.getHistoryBlocks(scope, { force: true });
       if (this.findActivePunishmentRow(blocks.ban)) {
         return "ban";
@@ -2837,20 +2897,10 @@ ${nextMessage}` : nextMessage;
       if (!this.isVoiceFallbackCategory(category)) {
         return false;
       }
-      let kind = analysisResult?.kind;
-      if (kind === "pending") {
-        if (!textarea) {
-          return false;
-        }
-        const settled = await this.waitForSettledChatHistory(textarea);
-        if (!settled) {
-          console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (voice-fallback) \u043E\u0442\u043C\u0435\u043D\u0435\u043D\u043E: \u0447\u0430\u0442 \u0435\u0449\u0451 \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u043B\u0441\u044F");
-          return false;
-        }
-        const fresh = await this.processTicketRules(textarea);
-        kind = fresh?.kind;
-      }
-      if (kind !== "none" && kind !== "warning") {
+      const scope = textarea ? this.getTicketScopeRoot(textarea) : this.getAutoConnectScope();
+      if (!textarea || !this.isVisibleTicketTextarea(textarea) || scope !== this.getAutoConnectScope() || !this.canAutoConnectAfterAnalysis(scope)) return false;
+      const kind = analysisResult?.kind;
+      if (kind !== "none" && kind !== "warning" && !this.complaintTextMatchesAutoconnectTrigger(this.getPlayerComplaintText(scope))) {
         return false;
       }
       const activePunishment = this.hasActivePunishmentForVoiceFallback(textarea);
@@ -7786,7 +7836,7 @@ ${nextMessage}` : nextMessage;
       const ticketPath = window.location.pathname || window.location.href;
       if (this._lastTicketSectionPath !== ticketPath) {
         this._lastTicketSectionPath = ticketPath;
-        this.ticketService.resetChatAnalysisCache();
+        this.ticketService.resetChatAnalysisCache(null, { preserveCompleted: true });
       }
       const textareas = this.document.querySelectorAll("textarea");
       textareas.forEach((textarea) => {
@@ -8024,7 +8074,7 @@ ${nextMessage}` : nextMessage;
       this.ticketService.teardownTicketPunishmentButtons();
       this.domCoordinator.teardownAll();
       this.ticketService.clearTicketRuleBadge();
-      this.ticketService.resetChatAnalysisCache();
+      this.ticketService.resetChatAnalysisCache(null, { preserveCompleted: true });
       this.runDOMUpdates();
       this.domCoordinator.init();
       this.syncOffenderTrackingForPage();
@@ -8085,7 +8135,7 @@ ${nextMessage}` : nextMessage;
         entry.waitObserver?.disconnect();
       }
       this.ticketChatHistoryObservers.clear();
-      this.ticketService.resetChatAnalysisCache();
+      this.ticketService.resetChatAnalysisCache(null, { preserveCompleted: true });
     }
     _findChatHistoryBlockScoped(scopeEl) {
       return this._findHistoryBlockScoped(scopeEl, ["\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430"]);
@@ -8233,6 +8283,7 @@ ${nextMessage}` : nextMessage;
       const entry = this.ticketChatHistoryObservers.get(textarea);
       if (!entry) return;
       if (!this.features.processTicketRules) return;
+      this.ticketService.invalidateChatAnalysis(textarea);
       if (entry.debounceTimerId) {
         clearTimeout(entry.debounceTimerId);
         entry.debounceTimerId = null;
@@ -8251,15 +8302,23 @@ ${nextMessage}` : nextMessage;
       }, delayMs);
     }
     async _runTicketChatAnalysis(textarea) {
+      if (!this.features.processTicketRules) return;
       if (!this.document.contains(textarea)) return;
       if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
+      const state = this.ticketService.beginChatAnalysis(textarea);
       this.domCoordinator.notify("chatChanged");
       const settled = await this.ticketService.waitForSettledChatHistory(textarea);
-      if (!settled) {
-        console.log("[Helper] ticket chat analysis: history not settled, skip voice-fallback path");
+      if (!settled || !this.features.processTicketRules || !this.ticketService.isChatAnalysisCurrent(state)) return;
+      let result;
+      try {
+        result = await this.ticketService.processTicketRules(textarea);
+      } catch {
+        console.warn("[Helper] ticket chat analysis failed; auto-connect remains blocked");
+        return;
       }
-      const result = await this.ticketService.processTicketRules(textarea);
-      await this.ticketService.maybeAutoConnectAfterChatAnalysis(result, textarea);
+      if (!this.features.processTicketRules) return;
+      const completed = this.ticketService.completeChatAnalysis(state, result);
+      if (completed) await this.ticketService.maybeAutoConnectAfterChatAnalysis(completed, textarea);
     }
     _getHighlightTargetRows() {
       if (this.messageService._isComplaintQueuePage()) {

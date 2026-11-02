@@ -474,7 +474,7 @@ export class App {
         const ticketPath = window.location.pathname || window.location.href;
         if (this._lastTicketSectionPath !== ticketPath) {
             this._lastTicketSectionPath = ticketPath;
-            this.ticketService.resetChatAnalysisCache();
+            this.ticketService.resetChatAnalysisCache(null, {preserveCompleted: true});
         }
 
         const textareas = this.document.querySelectorAll('textarea');
@@ -761,7 +761,7 @@ export class App {
         this.ticketService.teardownTicketPunishmentButtons();
         this.domCoordinator.teardownAll();
         this.ticketService.clearTicketRuleBadge();
-        this.ticketService.resetChatAnalysisCache();
+        this.ticketService.resetChatAnalysisCache(null, {preserveCompleted: true});
 
         this.runDOMUpdates();
         this.domCoordinator.init();
@@ -834,7 +834,7 @@ export class App {
             entry.waitObserver?.disconnect();
         }
         this.ticketChatHistoryObservers.clear();
-        this.ticketService.resetChatAnalysisCache();
+        this.ticketService.resetChatAnalysisCache(null, {preserveCompleted: true});
     }
 
     _findChatHistoryBlockScoped(scopeEl) {
@@ -1009,6 +1009,7 @@ export class App {
         const entry = this.ticketChatHistoryObservers.get(textarea);
         if (!entry) return;
         if (!this.features.processTicketRules) return;
+        this.ticketService.invalidateChatAnalysis(textarea);
 
         if (entry.debounceTimerId) {
             clearTimeout(entry.debounceTimerId);
@@ -1030,18 +1031,26 @@ export class App {
     }
 
     async _runTicketChatAnalysis(textarea) {
+        if (!this.features.processTicketRules) return;
         if (!this.document.contains(textarea)) return;
         if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
 
+        const state = this.ticketService.beginChatAnalysis(textarea);
         this.domCoordinator.notify('chatChanged');
 
         const settled = await this.ticketService.waitForSettledChatHistory(textarea);
-        if (!settled) {
-            console.log('[Helper] ticket chat analysis: history not settled, skip voice-fallback path');
-        }
+        if (!settled || !this.features.processTicketRules || !this.ticketService.isChatAnalysisCurrent(state)) return;
 
-        const result = await this.ticketService.processTicketRules(textarea);
-        await this.ticketService.maybeAutoConnectAfterChatAnalysis(result, textarea);
+        let result;
+        try {
+            result = await this.ticketService.processTicketRules(textarea);
+        } catch {
+            console.warn('[Helper] ticket chat analysis failed; auto-connect remains blocked');
+            return;
+        }
+        if (!this.features.processTicketRules) return;
+        const completed = this.ticketService.completeChatAnalysis(state, result);
+        if (completed) await this.ticketService.maybeAutoConnectAfterChatAnalysis(completed, textarea);
     }
 
     _getHighlightTargetRows() {

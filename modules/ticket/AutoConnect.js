@@ -134,8 +134,8 @@ export const AutoConnectMethods = {
         return entry.serverIp;
     },
 
-    getTicketComplaintParts() {
-        const categoryField = this.findInfoFieldByLabels(['Причина жалобы', 'Причина']);
+    getTicketComplaintParts(scope = null) {
+        const categoryField = this.findInfoFieldByLabels(['Причина жалобы', 'Причина'], scope);
         const valueBlock = this.findFieldValueBlock(categoryField);
 
         let category = valueBlock?.querySelector(':scope > span')?.textContent?.trim() || '';
@@ -143,7 +143,7 @@ export const AutoConnectMethods = {
             category = this.utils.parseComplaintCell(valueBlock || categoryField).category;
         }
 
-        let playerText = this.getTicketPlayerMessageText();
+        let playerText = this.getTicketPlayerMessageText(scope);
         if (!playerText) {
             playerText = this.utils.parseComplaintCell(valueBlock || categoryField).playerText;
         }
@@ -151,8 +151,8 @@ export const AutoConnectMethods = {
         return {category, playerText};
     },
 
-    getTicketPlayerMessageText() {
-        const messageField = this.findInfoFieldByLabels(['Сообщение от пользователя']);
+    getTicketPlayerMessageText(scope = null) {
+        const messageField = this.findInfoFieldByLabels(['Сообщение от пользователя'], scope);
         if (!messageField) {
             return '';
         }
@@ -170,12 +170,12 @@ export const AutoConnectMethods = {
         return '';
     },
 
-    getTicketComplaintCategory() {
-        return this.getTicketComplaintParts().category;
+    getTicketComplaintCategory(scope = null) {
+        return this.getTicketComplaintParts(scope).category;
     },
 
-    getPlayerComplaintText() {
-        return this.getTicketComplaintParts().playerText;
+    getPlayerComplaintText(scope = null) {
+        return this.getTicketComplaintParts(scope).playerText;
     },
 
     complaintTextMatchesAutoconnectTrigger(text) {
@@ -197,6 +197,18 @@ export const AutoConnectMethods = {
         }
 
         return reasons.some(reason => haystack.includes(String(reason).toLowerCase()));
+    },
+
+    canAutoConnectAfterAnalysis(scope) {
+        if (!this.isVoiceFallbackCategory(this.getTicketComplaintCategory(scope))) return true;
+        if (this.complaintTextMatchesAutoconnectTrigger(this.getPlayerComplaintText(scope))) {
+            return !this.hasActivePunishmentForVoiceFallback(null, scope);
+        }
+        if (!this.settings?.features?.processTicketRules) return false;
+        const result = this.getCompletedChatAnalysis(scope);
+        if (!result) return false;
+        return (result.kind === 'none' || result.kind === 'warning')
+            && !this.hasActivePunishmentForVoiceFallback(result.textarea);
     },
 
     getAutoConnectScope() {
@@ -288,6 +300,10 @@ export const AutoConnectMethods = {
 
         const category = this.getTicketComplaintCategory();
         const playerText = this.getPlayerComplaintText();
+
+        if (!this.canAutoConnectAfterAnalysis(scope)) {
+            return {allowed: false, reason: 'нет завершённого разрешающего анализа чата'};
+        }
 
         if (analysisFallback) {
             return {
@@ -383,6 +399,7 @@ export const AutoConnectMethods = {
         if (!this.isOpenTicketTrackingSessionCurrent(session)) {
             return false;
         }
+        if (!this.canAutoConnectAfterAnalysis(session.scope)) return false;
         for (const tracked of this._openTicketTrackingSessions.values()) {
             if (tracked.steamId === session.steamId) tracked.lastConnectedIp = serverIp;
         }
@@ -411,6 +428,7 @@ export const AutoConnectMethods = {
             console.log('[Helper] Авто-подключение (форс-переезд) отменено: статус «В работе» не найден');
             return false;
         }
+        if (!this.canAutoConnectAfterAnalysis(scope)) return false;
 
         const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
         const offenderSteamId = this.extractSteamIdFromField(offenderField);
@@ -477,8 +495,8 @@ export const AutoConnectMethods = {
         return false;
     },
 
-    hasActivePunishmentForVoiceFallback(textarea = null) {
-        const scope = textarea
+    hasActivePunishmentForVoiceFallback(textarea = null, scope = null) {
+        scope ||= textarea
             ? this.getTicketScopeRoot(textarea)
             : (this.getAutoConnectScope() || this.document.body);
         const blocks = this.getHistoryBlocks(scope, {force: true});
@@ -504,25 +522,13 @@ export const AutoConnectMethods = {
             return false;
         }
 
-        let kind = analysisResult?.kind;
+        const scope = textarea ? this.getTicketScopeRoot(textarea) : this.getAutoConnectScope();
+        if (!textarea || !this.isVisibleTicketTextarea(textarea)
+            || scope !== this.getAutoConnectScope() || !this.canAutoConnectAfterAnalysis(scope)) return false;
+        const kind = analysisResult?.kind;
 
-        // Premature empty/loading: wait for chat DOM to settle, then re-analyze.
-        if (kind === 'pending') {
-            if (!textarea) {
-                return false;
-            }
-
-            const settled = await this.waitForSettledChatHistory(textarea);
-            if (!settled) {
-                console.log('[Helper] Авто-подключение (voice-fallback) отменено: чат ещё не загрузился');
-                return false;
-            }
-
-            const fresh = await this.processTicketRules(textarea);
-            kind = fresh?.kind;
-        }
-
-        if (kind !== 'none' && kind !== 'warning') {
+        if (kind !== 'none' && kind !== 'warning'
+            && !this.complaintTextMatchesAutoconnectTrigger(this.getPlayerComplaintText(scope))) {
             return false;
         }
 

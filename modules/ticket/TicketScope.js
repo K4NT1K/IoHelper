@@ -487,9 +487,9 @@ export const TicketScopeMethods = {
         return label?.parentElement || null;
     },
 
-    findInfoFieldByLabels(labelTexts) {
+    findInfoFieldByLabels(labelTexts, scope = null) {
         for (const labelText of labelTexts) {
-            const field = this.findInfoField(labelText);
+            const field = scope ? this.findInfoFieldScoped(labelText, scope) : this.findInfoField(labelText);
             if (field) {
                 return field;
             }
