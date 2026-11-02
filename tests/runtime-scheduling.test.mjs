@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {DOMCoordinator} from '../modules/DOMCoordinator.js';
 import {TicketService} from '../modules/TicketService.js';
 import {App} from '../modules/App.js';
+import {ServerConnectionStore} from '../modules/ServerConnectionMemory.js';
 
 function animationFrames(t) {
     let id = 0;
@@ -54,7 +55,7 @@ function background() {
     let now = 1000;
     const timers = [];
     const context = vm.createContext({
-        Date: {now: () => now}, Map, Promise, console,
+        Date: {now: () => now}, Map, Promise, console, ServerConnectionStore,
         chrome: {runtime: {onMessage: {addListener() {}}}},
         setTimeout(fn, ms) { timers.push({fn, at: now + ms}); return timers.length; }
     });

@@ -2338,6 +2338,97 @@ ${nextMessage}` : nextMessage;
     }
   };
 
+  // modules/ServerConnectionMemory.js
+  function normalizeServerEndpoint(value) {
+    const text = String(value || "").trim().replace(/^steam:\/\/connect\//i, "");
+    const endpoint = text.split(/[/?#]/, 1)[0].toLowerCase();
+    const match = endpoint.match(/^([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\]):(\d{1,10})$/i);
+    if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535) return null;
+    return `${match[1]}:${Number(match[2])}`;
+  }
+  function validRecord(record2) {
+    return record2 && normalizeServerEndpoint(record2.endpoint) === record2.endpoint && Number.isSafeInteger(record2.revision) && record2.revision > 0;
+  }
+  var ServerConnectionMemory = class {
+    constructor({ document: document2, chrome: chrome2 }) {
+      this.document = document2;
+      this.chrome = chrome2;
+      this.record = null;
+      this.optimistic = null;
+      this.writeVersion = 0;
+      this.alive = false;
+      this.onClick = (event) => {
+        if (event.button > 1 || this.automaticClick) return;
+        const link = event.target?.closest?.("a[href]");
+        if (!/^steam:\/\/connect\//i.test(link?.href || "")) return;
+        this.remember(link.href, "manual");
+      };
+      this.onMessage = (message) => {
+        if (message.action === "serverConnectionChanged") this.accept(message.record);
+      };
+    }
+    get endpoint() {
+      return this.optimistic?.endpoint || this.record?.endpoint || null;
+    }
+    accept(record2) {
+      if (this.alive && validRecord(record2) && record2.revision > (this.record?.revision || 0)) {
+        this.record = record2;
+        if (this.optimistic && !this.optimistic.pending) this.optimistic = null;
+      }
+    }
+    async start() {
+      if (this.alive) return;
+      this.alive = true;
+      this.document.addEventListener("click", this.onClick, true);
+      this.document.addEventListener("auxclick", this.onClick, true);
+      this.chrome?.runtime?.onMessage?.addListener(this.onMessage);
+      await this.refresh();
+    }
+    async refresh() {
+      const version = this.writeVersion;
+      try {
+        const response = await this.chrome?.runtime?.sendMessage({ action: "getServerConnection" });
+        if (response?.success && version === this.writeVersion) this.accept(response.record);
+      } catch {
+      }
+    }
+    remember(value, source = "auto") {
+      const endpoint = normalizeServerEndpoint(value);
+      if (!this.alive || !endpoint) return;
+      const version = ++this.writeVersion;
+      this.optimistic = { endpoint, pending: true };
+      console.log(`[Helper] \u0417\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043E \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (${source === "manual" ? "\u0432\u0440\u0443\u0447\u043D\u0443\u044E" : "\u0430\u0432\u0442\u043E"}):`, endpoint);
+      void (async () => {
+        try {
+          const response = await this.chrome?.runtime?.sendMessage({ action: "rememberServerConnection", endpoint, source });
+          if (!this.alive) return;
+          if (response?.success) {
+            this.accept(response.record);
+            if (version === this.writeVersion) this.optimistic = null;
+          }
+        } catch {
+        } finally {
+          if (this.alive && version === this.writeVersion && this.optimistic) this.optimistic.pending = false;
+        }
+      })();
+    }
+    clickAutomatically(link, endpoint) {
+      this.remember(endpoint, "auto");
+      this.automaticClick = true;
+      try {
+        link.click();
+      } finally {
+        this.automaticClick = false;
+      }
+    }
+    stop() {
+      this.alive = false;
+      this.document.removeEventListener("click", this.onClick, true);
+      this.document.removeEventListener("auxclick", this.onClick, true);
+      this.chrome?.runtime?.onMessage?.removeListener(this.onMessage);
+    }
+  };
+
   // modules/ticket/AutoConnect.js
   var AutoConnectMethods = {
     clearAutoConnectedServers() {
@@ -2358,9 +2449,12 @@ ${nextMessage}` : nextMessage;
       return `${path}|${offenderId}`;
     },
     hasRecentlyAutoConnected(serverIp) {
-      const normalized = String(serverIp || "").trim().toLowerCase();
+      const normalized = normalizeServerEndpoint(serverIp);
       if (!normalized) {
         return false;
+      }
+      if (this.serverConnectionMemory?.endpoint) {
+        return this.serverConnectionMemory.endpoint === normalized;
       }
       const expiresAt = this.autoConnectedServerIps.get(normalized);
       if (!expiresAt) {
@@ -2618,19 +2712,27 @@ ${nextMessage}` : nextMessage;
       if (!link?.href) {
         return null;
       }
-      return link.href.replace(/^steam:\/\/connect\//i, "").trim().toLowerCase() || null;
+      return normalizeServerEndpoint(link.href);
+    },
+    isAlreadyOnRequestedServer(serverIp) {
+      return !!this.serverConnectionMemory?.endpoint && this.serverConnectionMemory.endpoint === normalizeServerEndpoint(serverIp);
+    },
+    clickServerConnectLink(link, endpoint) {
+      if (this.serverConnectionMemory) this.serverConnectionMemory.clickAutomatically(link, endpoint);
+      else link.click();
     },
     connectToSteamServer(serverIp) {
-      const normalized = String(serverIp || "").trim().toLowerCase();
+      const normalized = normalizeServerEndpoint(serverIp);
       if (!normalized) {
         return false;
       }
+      if (this.isAlreadyOnRequestedServer(normalized)) return false;
       const link = this.document.createElement("a");
       markIoh(link);
       link.href = `steam://connect/${normalized}`;
       link.style.display = "none";
       this.document.body.appendChild(link);
-      link.click();
+      this.clickServerConnectLink(link, normalized);
       link.remove();
       return true;
     },
@@ -2638,10 +2740,14 @@ ${nextMessage}` : nextMessage;
       if (!this.isOpenTicketTrackingSessionCurrent(session)) {
         return false;
       }
-      console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (\u0442\u0440\u0435\u043A\u0435\u0440 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u0436\u0430\u043B\u043E\u0431\u044B) \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443:", serverIp);
       for (const tracked of this._openTicketTrackingSessions.values()) {
         if (tracked.steamId === session.steamId) tracked.lastConnectedIp = serverIp;
       }
+      if (this.isAlreadyOnRequestedServer(serverIp)) {
+        this.logAutoConnectSkipOnce(serverIp, "[Helper] \u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: \u044D\u0442\u043E\u0442 \u0441\u0435\u0440\u0432\u0435\u0440 \u0443\u0436\u0435 \u0432\u044B\u0431\u0440\u0430\u043D", serverIp);
+        return false;
+      }
+      console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (\u0442\u0440\u0435\u043A\u0435\u0440 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0439 \u0436\u0430\u043B\u043E\u0431\u044B) \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443:", serverIp);
       this.markAutoConnected(serverIp);
       return this.connectToSteamServer(serverIp);
     },
@@ -2666,6 +2772,7 @@ ${nextMessage}` : nextMessage;
         console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (\u0444\u043E\u0440\u0441-\u043F\u0435\u0440\u0435\u0435\u0437\u0434) \u043E\u0442\u043C\u0435\u043D\u0435\u043D\u043E: IP \u043F\u0435\u0440\u0435\u0435\u0437\u0434\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D");
         return false;
       }
+      if (this.isAlreadyOnRequestedServer(relocatedIp)) return false;
       console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (\u0444\u043E\u0440\u0441-\u043F\u0435\u0440\u0435\u0435\u0437\u0434) \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443:", relocatedIp);
       this.markAutoConnected(relocatedIp);
       this.connectToSteamServer(relocatedIp);
@@ -2690,7 +2797,7 @@ ${nextMessage}` : nextMessage;
       if (connectTarget && this.hasRecentlyAutoConnected(connectTarget)) {
         this.logAutoConnectSkipOnce(
           connectTarget,
-          `${logPrefix} \u0443\u0436\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u044F\u043B\u043E\u0441\u044C \u0434\u043B\u044F \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (TTL 8 \u043C\u0438\u043D): ${connectTarget}`
+          `${logPrefix}: \u0441\u0435\u0440\u0432\u0435\u0440 \u0443\u0436\u0435 \u0432\u044B\u0431\u0440\u0430\u043D \u0438\u043B\u0438 \u043D\u0435\u0434\u0430\u0432\u043D\u043E \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0451\u043D: ${connectTarget}`
         );
         return false;
       }
@@ -2705,7 +2812,7 @@ ${nextMessage}` : nextMessage;
         if (connectTarget) {
           this.markAutoConnected(connectTarget);
         }
-        connectLink.click();
+        this.clickServerConnectLink(connectLink, connectTarget);
         return true;
       }
       console.log(`${logPrefix}: \u0441\u0441\u044B\u043B\u043A\u0430 steam:// \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0432 \u0441\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0435 \u0442\u0438\u043A\u0435\u0442\u0430.`, decision.debug || "");
@@ -7337,6 +7444,8 @@ ${nextMessage}` : nextMessage;
         muteExceptions: this.muteExceptions,
         chrome: chrome2
       });
+      this.serverConnectionMemory = new ServerConnectionMemory({ document: document2, chrome: chrome2 });
+      this.ticketService.serverConnectionMemory = this.serverConnectionMemory;
       this.moderatorService = {
         highlightSavedModerators: () => {
           void this.withModeratorService((service) => service.highlightSavedModerators());
@@ -7409,7 +7518,18 @@ ${nextMessage}` : nextMessage;
       const service = await this.loadModeratorService();
       return fn(service);
     }
-    start() {
+    async start() {
+      let pageClosed = false;
+      this.window.addEventListener("pagehide", (event) => {
+        if (event.persisted) return;
+        pageClosed = true;
+        this.serverConnectionMemory.stop();
+      });
+      this.window.addEventListener("pageshow", (event) => {
+        if (event.persisted) void this.serverConnectionMemory.refresh();
+      });
+      await this.serverConnectionMemory.start();
+      if (pageClosed) return;
       fetch(chrome.runtime.getURL("icons/icons.json")).then((r) => r.json()).then((data) => {
         window.Icons = data;
         this.runDOMUpdates();

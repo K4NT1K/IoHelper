@@ -10,6 +10,7 @@ import { mergeSettings } from './shared/settings.js';
 import {ConfigService} from './ConfigService.js';
 import {ProfileLauncher} from './analytics/ProfileLauncher.js';
 import {AppearanceService} from './AppearanceService.js';
+import {ServerConnectionMemory} from './ServerConnectionMemory.js';
 
 export class App {
     constructor({window, document, chrome, config, settingsOverrides = {}}) {
@@ -64,6 +65,8 @@ export class App {
             muteExceptions: this.muteExceptions,
             chrome
         });
+        this.serverConnectionMemory = new ServerConnectionMemory({document, chrome});
+        this.ticketService.serverConnectionMemory = this.serverConnectionMemory;
         this.moderatorService = {
             highlightSavedModerators: () => {
                 void this.withModeratorService(service => service.highlightSavedModerators());
@@ -141,7 +144,19 @@ export class App {
         return fn(service);
     }
 
-    start() {
+    async start() {
+        let pageClosed = false;
+        this.window.addEventListener('pagehide', event => {
+            // A BFCache page is frozen, retaining these listeners for its return.
+            if (event.persisted) return;
+            pageClosed = true;
+            this.serverConnectionMemory.stop();
+        });
+        this.window.addEventListener('pageshow', event => {
+            if (event.persisted) void this.serverConnectionMemory.refresh();
+        });
+        await this.serverConnectionMemory.start();
+        if (pageClosed) return;
         fetch(chrome.runtime.getURL("icons/icons.json"))
             .then(r => r.json())
             .then(data => {

@@ -1,4 +1,5 @@
 import { markIoh } from '../shared/dom.js';
+import {normalizeServerEndpoint} from '../ServerConnectionMemory.js';
 
 export const AutoConnectMethods = {
     clearAutoConnectedServers() {
@@ -22,9 +23,15 @@ export const AutoConnectMethods = {
     },
 
     hasRecentlyAutoConnected(serverIp) {
-        const normalized = String(serverIp || '').trim().toLowerCase();
+        const normalized = normalizeServerEndpoint(serverIp);
         if (!normalized) {
             return false;
+        }
+
+        // Once a connect intent is known, only that server is current. Historical
+        // TTL entries must not suppress A after a manual switch from A to B.
+        if (this.serverConnectionMemory?.endpoint) {
+            return this.serverConnectionMemory.endpoint === normalized;
         }
 
         const expiresAt = this.autoConnectedServerIps.get(normalized);
@@ -342,21 +349,32 @@ export const AutoConnectMethods = {
             return null;
         }
 
-        return link.href.replace(/^steam:\/\/connect\//i, '').trim().toLowerCase() || null;
+        return normalizeServerEndpoint(link.href);
+    },
+
+    isAlreadyOnRequestedServer(serverIp) {
+        return !!this.serverConnectionMemory?.endpoint
+            && this.serverConnectionMemory.endpoint === normalizeServerEndpoint(serverIp);
+    },
+
+    clickServerConnectLink(link, endpoint) {
+        if (this.serverConnectionMemory) this.serverConnectionMemory.clickAutomatically(link, endpoint);
+        else link.click();
     },
 
     connectToSteamServer(serverIp) {
-        const normalized = String(serverIp || '').trim().toLowerCase();
+        const normalized = normalizeServerEndpoint(serverIp);
         if (!normalized) {
             return false;
         }
+        if (this.isAlreadyOnRequestedServer(normalized)) return false;
 
         const link = this.document.createElement('a');
         markIoh(link);
         link.href = `steam://connect/${normalized}`;
         link.style.display = 'none';
         this.document.body.appendChild(link);
-        link.click();
+        this.clickServerConnectLink(link, normalized);
         link.remove();
         return true;
     },
@@ -365,10 +383,14 @@ export const AutoConnectMethods = {
         if (!this.isOpenTicketTrackingSessionCurrent(session)) {
             return false;
         }
-        console.log('[Helper] Авто-подключение (трекер открытой жалобы) к серверу:', serverIp);
         for (const tracked of this._openTicketTrackingSessions.values()) {
             if (tracked.steamId === session.steamId) tracked.lastConnectedIp = serverIp;
         }
+        if (this.isAlreadyOnRequestedServer(serverIp)) {
+            this.logAutoConnectSkipOnce(serverIp, '[Helper] Подключение пропущено: этот сервер уже выбран', serverIp);
+            return false;
+        }
+        console.log('[Helper] Авто-подключение (трекер открытой жалобы) к серверу:', serverIp);
         this.markAutoConnected(serverIp);
         return this.connectToSteamServer(serverIp);
     },
@@ -398,6 +420,7 @@ export const AutoConnectMethods = {
             console.log('[Helper] Авто-подключение (форс-переезд) отменено: IP переезда не найден');
             return false;
         }
+        if (this.isAlreadyOnRequestedServer(relocatedIp)) return false;
 
         console.log('[Helper] Авто-подключение (форс-переезд) к серверу:', relocatedIp);
         this.markAutoConnected(relocatedIp);
@@ -429,7 +452,7 @@ export const AutoConnectMethods = {
         if (connectTarget && this.hasRecentlyAutoConnected(connectTarget)) {
             this.logAutoConnectSkipOnce(
                 connectTarget,
-                `${logPrefix} уже выполнялось для сервера (TTL 8 мин): ${connectTarget}`
+                `${logPrefix}: сервер уже выбран или недавно подключён: ${connectTarget}`
             );
             return false;
         }
@@ -446,7 +469,7 @@ export const AutoConnectMethods = {
             if (connectTarget) {
                 this.markAutoConnected(connectTarget);
             }
-            connectLink.click();
+            this.clickServerConnectLink(connectLink, connectTarget);
             return true;
         }
 

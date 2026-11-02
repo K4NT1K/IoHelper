@@ -2,6 +2,9 @@
 import {ConfigService} from './modules/ConfigService.js';
 import {BackgroundScheduler} from './modules/BackgroundScheduler.js';
 import {AnalyticsJobs} from './modules/analytics/AnalyticsJobs.js';
+import {ServerConnectionStore} from './modules/ServerConnectionMemory.js';
+
+const serverConnections = new ServerConnectionStore(chrome);
 
 const scheduler = chrome.alarms ? new BackgroundScheduler(chrome) : null;
 scheduler?.start();
@@ -247,6 +250,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         Promise.resolve(promise).then(sendResponse, error => sendResponse({success: false, error: error.message}));
         return true;
     };
+    if (request.action === 'getServerConnection' || request.action === 'rememberServerConnection') return respond(serverConnections.handle(request, sender));
     if (request.action?.startsWith('analytics')) return respond(analytics?.handle(request, sender));
     if (request.action === 'openAnalytics' && /^7656119\d{10}$/.test(request.steamId || '')) return respond(chrome.tabs.create({url:chrome.runtime.getURL('analytics.html?steamId='+request.steamId)}).then(()=>({success:true})));
     if (request.action === 'getHelperConfig') return respond(ConfigService.load(chrome).then(async config => ({success: true, config,
