@@ -21,6 +21,10 @@
   "host_permissions": [
     "https://io.cybershoke.net/*",
     "https://io.cybershoke.ru/*",
+    "https://cybershoke.net/*",
+    "https://www.cybershoke.net/*",
+    "https://cybershoke.ru/*",
+    "https://www.cybershoke.ru/*",
     "https://raw.githubusercontent.com/K4NT1K/*",
     "https://mobile.fastmm.win/*",
     "https://translate.googleapis.com/*",
@@ -39,6 +43,16 @@
     }
   ],
   "content_scripts": [
+    {
+      "matches": [
+        "https://cybershoke.net/*",
+        "https://www.cybershoke.net/*",
+        "https://cybershoke.ru/*",
+        "https://www.cybershoke.ru/*"
+      ],
+      "js": ["dist/publicConnect.js"],
+      "run_at": "document_start"
+    },
     {
       "matches": ["https://io.cybershoke.net/*", "https://io.cybershoke.ru/*"],
       "js": ["dist/siteBridge.js"],

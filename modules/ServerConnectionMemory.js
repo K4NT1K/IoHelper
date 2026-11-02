@@ -1,5 +1,11 @@
 const STORAGE_KEY = 'iohLastServerConnection';
 const ADMIN_URL = /^https:\/\/io\.cybershoke\.(net|ru)(?:\/|$)/i;
+const PUBLIC_URL = /^https:\/\/(?:www\.)?cybershoke\.(net|ru)(?:\/|$)/i;
+export const SERVER_CONNECTION_MATCHES = [
+    'https://io.cybershoke.net/*', 'https://io.cybershoke.ru/*',
+    'https://cybershoke.net/*', 'https://www.cybershoke.net/*',
+    'https://cybershoke.ru/*', 'https://www.cybershoke.ru/*'
+];
 
 // Store only the endpoint, never optional Steam URL passwords or other parameters.
 export function normalizeServerEndpoint(value) {
@@ -8,6 +14,17 @@ export function normalizeServerEndpoint(value) {
     const match = endpoint.match(/^([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\]):(\d{1,10})$/i);
     if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535) return null;
     return `${match[1]}:${Number(match[2])}`;
+}
+
+export function serverEndpointFromConnectUrl(value) {
+    const url = String(value || '').trim();
+    if (/^steam:\/\/connect\//i.test(url)) return normalizeServerEndpoint(url);
+    const launch = url.match(/^steam:\/\/(?:rungameid|run)\/[1-9]\d*\/\/(.*)$/i);
+    if (!launch) return null;
+    let options;
+    try { options = decodeURIComponent(launch[1]); } catch { return null; }
+    const command = options.match(/^\+connect\s+(?:"([^"]+)"|([^\s;"+]+))(?=\s|;|$)/i);
+    return command ? normalizeServerEndpoint(command[1] || command[2]) : null;
 }
 
 function validRecord(record) {
@@ -24,16 +41,19 @@ export class ServerConnectionStore {
     }
 
     handle(request, sender) {
-        if (!ADMIN_URL.test(sender?.tab?.url || '')) return Promise.resolve({success: false});
+        const url = sender?.url || sender?.tab?.url || '';
+        const admin = ADMIN_URL.test(url);
+        if (!admin && !PUBLIC_URL.test(url)) return Promise.resolve({success: false});
         const operation = this.queue.then(async () => {
             const stored = (await this.chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
             const previous = validRecord(stored) ? stored : null;
             if (request.action === 'getServerConnection') return {success: true, record: previous};
             const endpoint = normalizeServerEndpoint(request.endpoint);
             if (!endpoint || !['manual', 'auto'].includes(request.source)) return {success: false};
+            if (!admin && request.source !== 'manual') return {success: false};
             const record = {endpoint, source: request.source, requestedAt: Date.now(), revision: (previous?.revision || 0) + 1};
             await this.chrome.storage.local.set({[STORAGE_KEY]: record});
-            const tabs = await this.chrome.tabs.query({url: ['https://io.cybershoke.net/*', 'https://io.cybershoke.ru/*']});
+            const tabs = await this.chrome.tabs.query({url: SERVER_CONNECTION_MATCHES});
             await Promise.all(tabs.map(tab => this.chrome.tabs.sendMessage(tab.id, {
                 action: 'serverConnectionChanged', record
             }).catch(() => {})));
@@ -55,8 +75,8 @@ export class ServerConnectionMemory {
         this.onClick = event => {
             if (event.button > 1 || this.automaticClick) return;
             const link = event.target?.closest?.('a[href]');
-            if (!/^steam:\/\/connect\//i.test(link?.href || '')) return;
-            this.remember(link.href, 'manual');
+            const endpoint = serverEndpointFromConnectUrl(link?.href);
+            if (endpoint) this.remember(endpoint, 'manual');
         };
         this.onMessage = message => {
             if (message.action === 'serverConnectionChanged') this.accept(message.record);

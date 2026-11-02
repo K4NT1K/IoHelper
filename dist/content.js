@@ -2391,6 +2391,20 @@ ${nextMessage}` : nextMessage;
     if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535) return null;
     return `${match[1]}:${Number(match[2])}`;
   }
+  function serverEndpointFromConnectUrl(value) {
+    const url = String(value || "").trim();
+    if (/^steam:\/\/connect\//i.test(url)) return normalizeServerEndpoint(url);
+    const launch = url.match(/^steam:\/\/(?:rungameid|run)\/[1-9]\d*\/\/(.*)$/i);
+    if (!launch) return null;
+    let options;
+    try {
+      options = decodeURIComponent(launch[1]);
+    } catch {
+      return null;
+    }
+    const command = options.match(/^\+connect\s+(?:"([^"]+)"|([^\s;"+]+))(?=\s|;|$)/i);
+    return command ? normalizeServerEndpoint(command[1] || command[2]) : null;
+  }
   function validRecord(record2) {
     return record2 && normalizeServerEndpoint(record2.endpoint) === record2.endpoint && Number.isSafeInteger(record2.revision) && record2.revision > 0;
   }
@@ -2405,8 +2419,8 @@ ${nextMessage}` : nextMessage;
       this.onClick = (event) => {
         if (event.button > 1 || this.automaticClick) return;
         const link = event.target?.closest?.("a[href]");
-        if (!/^steam:\/\/connect\//i.test(link?.href || "")) return;
-        this.remember(link.href, "manual");
+        const endpoint = serverEndpointFromConnectUrl(link?.href);
+        if (endpoint) this.remember(endpoint, "manual");
       };
       this.onMessage = (message) => {
         if (message.action === "serverConnectionChanged") this.accept(message.record);

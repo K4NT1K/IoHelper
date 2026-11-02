@@ -36,8 +36,9 @@ const moderatorOptions = {
     format: 'esm'
 };
 const bridgeOptions = {...common, entryPoints: ['modules/analytics/SiteReadBridge.js'], outfile: 'dist/siteBridge.js', format: 'iife'};
+const publicConnectOptions = {...common, entryPoints: ['public-connect.js'], outfile: 'dist/publicConnect.js', format: 'iife'};
 function writeBuildInfo() {
-    const files = ['manifest.json', 'config.json', 'background.js', 'popup.js', 'popup.html', 'popup.css', 'analytics.js', 'analytics.html', 'dist/content.js', 'dist/chunks/moderator.js', 'dist/siteBridge.js'];
+    const files = ['manifest.json', 'config.json', 'background.js', 'popup.js', 'popup.html', 'popup.css', 'analytics.js', 'analytics.html', 'public-connect.js', 'dist/publicConnect.js', 'dist/content.js', 'dist/chunks/moderator.js', 'dist/siteBridge.js'];
     for (const dir of ['modules', 'css', 'icons']) for (const entry of readdirSync(dir, {recursive: true})) {
         if (/\.(js|css|json|png|svg|ico)$/.test(entry)) files.push(dir + '/' + entry.replaceAll('\\', '/'));
     }
@@ -50,12 +51,13 @@ if (watch) {
     const contentCtx = await esbuild.context(contentOptions);
     const moderatorCtx = await esbuild.context(moderatorOptions);
     const bridgeCtx = await esbuild.context(bridgeOptions);
-    await Promise.all([contentCtx.watch(), moderatorCtx.watch(), bridgeCtx.watch()]);
+    const publicConnectCtx = await esbuild.context(publicConnectOptions);
+    await Promise.all([contentCtx.watch(), moderatorCtx.watch(), bridgeCtx.watch(), publicConnectCtx.watch()]);
     console.log('[iohelper] watching…');
 } else {
     await Promise.all([
         esbuild.build(contentOptions),
-        esbuild.build(moderatorOptions), esbuild.build(bridgeOptions)
+        esbuild.build(moderatorOptions), esbuild.build(bridgeOptions), esbuild.build(publicConnectOptions)
     ]);
     writeBuildInfo();
 }

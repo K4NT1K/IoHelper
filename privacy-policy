@@ -5,7 +5,7 @@
 
 This Privacy Policy describes how **IO HELPER**, a Chrome Manifest V3 browser extension for CYBERSHOKE moderators, handles information.
 
-IO HELPER is developed for use only on the official CYBERSHOKE moderation website (`https://io.cybershoke.net` and `https://io.cybershoke.ru`). It is not a general-purpose browsing tool.
+IO HELPER provides moderator features on the official CYBERSHOKE moderation website (`https://io.cybershoke.net` and `https://io.cybershoke.ru`). On the public `https://cybershoke.net` and `https://cybershoke.ru` websites, including their `www` hosts, a separate small script only remembers manual Steam server connection clicks. Moderator tools and styling are limited to the moderation website.
 
 ## Summary
 
@@ -18,7 +18,7 @@ The extension does not collect, transmit, or retain:
 - email addresses or account credentials;
 - passwords;
 - cookies belonging to other sites;
-- browsing history outside the CYBERSHOKE moderation pages where the extension runs;
+- browsing history outside the CYBERSHOKE pages where the extension runs;
 - financial or payment data;
 - precise location data;
 - advertising, analytics, or telemetry identifiers.
@@ -44,7 +44,7 @@ IO HELPER stores settings and cached configuration in the browser’s extension 
 - feature toggles and user preferences;
 - cached moderation configuration fetched from this project’s GitHub repository;
 - cached moderator list data used by schedule scanning and server highlighting;
-- the latest server connection intent from a manual or automatic Steam connect link on the moderation website: server address and port, request time, source and revision. Each new connection replaces this single record, which persists across browser restarts to avoid duplicate automatic connections. Steam URL passwords and other parameters are discarded. The record is not uploaded and does not confirm an actual connection to the game server.
+- the latest server connection intent from a manual Steam connect link on the public or moderation website, or an automatic connection on the moderation website: server address and port, request time, source and revision. This includes Steam game launch links with a connect argument. Each new connection replaces this single record shared across these tabs, which persists across browser restarts to avoid duplicate automatic connections. Steam URL passwords and other parameters are discarded. The record is not uploaded and does not confirm an actual connection to the game server.
 
 The optional statistics dashboard stores up to 30 recent individual aggregate selections and the latest team comparison checkpoint in local IndexedDB. These contain moderator Steam IDs, display names and public avatar URLs, daily counts, punishment reason totals, closed work-session time and source coverage, not offender IP addresses, offender names or chat messages. The team checkpoint also stores the selected roster, period, progress and per-profile errors so collection can resume after closing the dashboard. Nickname suggestions use the local configuration and latest saved schedule roster. The dashboard provides a cache-clear button that deletes both individual and team results. Sanitized individual records are used temporarily during collection in memory and extension session storage; the dashboard acknowledges receipt so completed raw results can be discarded. Session storage also holds bounded translation caches and background job state. No moderator statistics are uploaded to an analytics service.
 
