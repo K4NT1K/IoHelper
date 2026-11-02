@@ -34,12 +34,15 @@ function fixture(t, {suggestion = 'Токсичность', formId = 'player', s
     ], 'trolling');
     const steam = new EventTarget(); steam.value = formId;
     const time = {tagName: timeTag, value: 'site-selected', textContent: '2 ДНЯ', click() { throw new Error('Duration clicked'); }};
-    const dialog = {isConnected: true, querySelector(selector) {
+    const dialog = Object.assign(new EventTarget(), {isConnected: true, contains(node) {
+        for (; node; node = node.parentElement) if (node === this) return true;
+        return false;
+    }, querySelector(selector) {
         if (selector === '#mute-reason') return reason;
         if (selector === '#mute-steamid64') return steam;
         if (selector === '#mute-time' || selector.startsWith('#ban-')) throw new Error('Punishment duration/ban accessed');
         return null;
-    }};
+    }});
     const ticket = {...AnalysisBadgeMethods, suggestedMuteReason: suggestion ? {steamId: suggestionId, label: suggestion} : null,
         getActivePunishmentScope() { return {}; }, getOffenderSteamIdForScope() { return suggestionId; }};
     const document = {querySelectorAll() { return [dialog]; }};
@@ -47,6 +50,29 @@ function fixture(t, {suggestion = 'Токсичность', formId = 'player', s
     // Model the site's own recalculation when reason changes.
     reason.addEventListener('change', () => { time.value = reason.value === 'toxic' ? 'site-x2-toxic' : 'site-other'; });
     return {service, reason, steam, time, dialog, Select, observers};
+}
+
+function siteNode(textContent, parentElement = null) {
+    return {nodeType: 1, textContent, parentElement,
+        closest() { return null; }, querySelector() { return null; }};
+}
+
+function clickTarget(dialog, target) {
+    const event = new Event('click', {bubbles: true});
+    Object.defineProperty(event, 'target', {value: target});
+    dialog.dispatchEvent(event);
+}
+
+function recurrenceNotice(dialog, heading = 'Рецидив по другой причине') {
+    const region = siteNode(heading, dialog);
+    region.querySelector = selector => selector === ':scope > span' ? {textContent: heading} : null;
+    const list = Object.assign(siteNode('«Оскорбление» Выбрать', region), {tagName: 'UL'});
+    const item = siteNode('«Оскорбление» Выбрать', list);
+    const button = siteNode('Выбрать «Оскорбление»', item);
+    button.closest = selector => selector === 'button[type="button"]' ? button : selector === 'li' ? item : null;
+    const nested = siteNode('«Оскорбление»', button);
+    nested.closest = selector => selector === 'button[type="button"]' ? button : null;
+    return {region, button, nested};
 }
 
 for (const timeTag of ['BUTTON', 'SELECT']) {
@@ -115,6 +141,67 @@ test('mute: site history rerender cannot replace default toxicity with previous 
     assert.equal(observers[0].disconnected, true);
     reason.value = 'trolling'; observers[0].callback([{target: {}}]);
     assert.equal(reason.value, 'trolling');
+});
+
+test('mute: native recurrence click hands over before a React-only reason update', t => {
+    const {service, reason, time, dialog, observers} = fixture(t, {suggestion: null});
+    const addListener = t.mock.method(dialog, 'addEventListener');
+    service.scanDialogs();
+    assert.equal(reason.value, 'toxic');
+    const clickBinding = addListener.mock.calls.find(call => call.arguments[0] === 'click');
+    assert.equal(clickBinding.arguments[2], true, 'Handoff must precede the site click handler');
+    const {region, nested} = recurrenceNotice(dialog);
+    clickTarget(dialog, nested); // Nested label, not the button itself.
+    // The site changes properties directly; no native select change is dispatched.
+    reason.value = 'trolling';
+    time.value = 'site-recurrence';
+    observers[0].callback([{target: region}]);
+    service.init();
+    observers[0].callback([{target: {}}]);
+    assert.equal(reason.value, 'trolling');
+    assert.equal(time.value, 'site-recurrence');
+});
+
+test('mute: recurrence handoff is scoped to the current Steam ID and listener is cleaned up', t => {
+    const {service, reason, steam, dialog, observers} = fixture(t);
+    const removeListener = t.mock.method(dialog, 'removeEventListener');
+    service.scanDialogs();
+    clickTarget(dialog, recurrenceNotice(dialog).button);
+    reason.value = 'spam';
+    observers[0].callback([{target: {}}]);
+    assert.equal(reason.value, 'spam');
+    steam.value = 'next-player'; steam.dispatchEvent(new Event('input'));
+    assert.equal(reason.value, 'toxic');
+    reason.value = 'trolling';
+    observers[0].callback([{target: {}}]);
+    assert.equal(reason.value, 'toxic');
+    service.teardown();
+    assert.equal(removeListener.mock.calls.some(call => call.arguments[0] === 'click' && call.arguments[2] === true), true);
+    assert.equal(observers[0].disconnected, true);
+});
+
+test('mute: ordinary form/history/duration clicks do not disable automatic initialization', t => {
+    const {service, reason, dialog, observers} = fixture(t);
+    service.scanDialogs();
+    const form = siteNode('Рецидив по другой причине Причина Длительность', dialog);
+    const duration = siteNode('12 ЧАСОВ', form);
+    duration.closest = selector => selector === 'button[type="button"]' ? duration : null;
+    const candidates = [
+        siteNode('Комментарий', form),
+        siteNode('Оскорбление', siteNode('История наказаний', form)),
+        duration,
+        siteNode('Рецидив по другой причине: это текст комментария', form),
+        siteNode('Рецидив по другой причине: историческая запись', form),
+        recurrenceNotice(dialog, 'История наказаний').button,
+        recurrenceNotice(dialog).region,
+        recurrenceNotice({}).button
+    ];
+    for (const target of candidates) {
+        clickTarget(dialog, target);
+        reason.value = 'trolling';
+        observers[0].callback([{target: {}}]);
+        assert.equal(reason.value, 'toxic', target.textContent);
+    }
 });
 
 test('mute: unknown suggested label falls back to toxicity', t => {

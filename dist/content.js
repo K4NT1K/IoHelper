@@ -6548,6 +6548,9 @@ ${nextMessage}` : nextMessage;
       const onReasonChange = () => {
         if (!applyingReason) manualReason = true;
       };
+      const onDialogClick = (event) => {
+        if (this.isSiteRecidivismAction(event.target, dialog)) manualReason = true;
+      };
       const onSteamIdChange = () => {
         const steamId2 = steamInput.value.trim();
         if (steamId2 === lastSteamId) return;
@@ -6560,16 +6563,27 @@ ${nextMessage}` : nextMessage;
         applyReason();
       });
       observer.observe(dialog, { childList: true, subtree: true });
+      dialog.addEventListener("click", onDialogClick, true);
       reasonSelect.addEventListener("change", onReasonChange);
       steamInput?.addEventListener("input", onSteamIdChange);
       steamInput?.addEventListener("change", onSteamIdChange);
       this.formBindings.set(reasonSelect, () => {
         observer.disconnect();
+        dialog.removeEventListener("click", onDialogClick, true);
         reasonSelect.removeEventListener("change", onReasonChange);
         steamInput?.removeEventListener("input", onSteamIdChange);
         steamInput?.removeEventListener("change", onSteamIdChange);
       });
       applyReason();
+    }
+    isSiteRecidivismAction(target, dialog) {
+      const element = target?.nodeType === 1 ? target : target?.parentElement;
+      const button = element?.closest?.('button[type="button"]');
+      if (!button || !dialog.contains(button) || isIohNode(button)) return false;
+      const list = button.closest("li")?.parentElement;
+      if (list?.tagName !== "UL" || !dialog.contains(list.parentElement)) return false;
+      const heading = list.parentElement.querySelector(":scope > span");
+      return String(heading?.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "\u0440\u0435\u0446\u0438\u0434\u0438\u0432 \u043F\u043E \u0434\u0440\u0443\u0433\u043E\u0439 \u043F\u0440\u0438\u0447\u0438\u043D\u0435";
     }
     applySuggestedMuteReason(reasonSelect, dialog) {
       const steamId2 = this.resolveMuteFormSteamId(dialog);

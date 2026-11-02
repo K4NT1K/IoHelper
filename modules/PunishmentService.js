@@ -70,6 +70,9 @@ export class PunishmentService {
         const onReasonChange = () => {
             if (!applyingReason) manualReason = true;
         };
+        const onDialogClick = event => {
+            if (this.isSiteRecidivismAction(event.target, dialog)) manualReason = true;
+        };
         const onSteamIdChange = () => {
             const steamId = steamInput.value.trim();
             if (steamId === lastSteamId) return;
@@ -84,16 +87,33 @@ export class PunishmentService {
             applyReason();
         });
         observer.observe(dialog, {childList: true, subtree: true});
+        // The site's recurrence shortcut updates React state without a select change.
+        // Hand over before its click handler runs, so the observer preserves that choice.
+        dialog.addEventListener('click', onDialogClick, true);
         reasonSelect.addEventListener('change', onReasonChange);
         steamInput?.addEventListener('input', onSteamIdChange);
         steamInput?.addEventListener('change', onSteamIdChange);
         this.formBindings.set(reasonSelect, () => {
             observer.disconnect();
+            dialog.removeEventListener('click', onDialogClick, true);
             reasonSelect.removeEventListener('change', onReasonChange);
             steamInput?.removeEventListener('input', onSteamIdChange);
             steamInput?.removeEventListener('change', onSteamIdChange);
         });
         applyReason();
+    }
+
+    isSiteRecidivismAction(target, dialog) {
+        const element = target?.nodeType === 1 ? target : target?.parentElement;
+        const button = element?.closest?.('button[type="button"]');
+        if (!button || !dialog.contains(button) || isIohNode(button)) return false;
+        // Native shortcut: notice heading + ul > li > button. Match its semantic
+        // structure instead of hashed classes; clicks on history/duration stay local.
+        const list = button.closest('li')?.parentElement;
+        if (list?.tagName !== 'UL' || !dialog.contains(list.parentElement)) return false;
+        const heading = list.parentElement.querySelector(':scope > span');
+        return String(heading?.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
+            === 'рецидив по другой причине';
     }
 
     applySuggestedMuteReason(reasonSelect, dialog) {
