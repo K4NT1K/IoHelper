@@ -7,6 +7,8 @@ export class PunishmentService {
         this.enabled = true;
         this.debounceId = null;
         this.formBindings = new Map();
+        this.punishmentBindings = new Map();
+        this.punishmentConfirmations = new Set();
     }
 
     init() {
@@ -20,6 +22,9 @@ export class PunishmentService {
         this.debounceId = null;
         for (const cleanup of this.formBindings.values()) cleanup();
         this.formBindings.clear();
+        this.stopPunishmentConfirmations();
+        for (const binding of this.punishmentBindings.values()) binding.cleanup();
+        this.punishmentBindings.clear();
     }
 
     scheduleScan() {
@@ -33,13 +38,21 @@ export class PunishmentService {
 
     isRelevantNode(node) {
         return Boolean(node?.nodeType === 1 && (
-            node.matches?.('[role="dialog"], #mute-reason, #mute-steamid64')
-            || node.querySelector?.('#mute-reason, #mute-steamid64')
+            node.matches?.('[role="dialog"], #mute-reason, #mute-steamid64, #ban-steamid64')
+            || node.querySelector?.('#mute-reason, #mute-steamid64, #ban-steamid64')
         ));
     }
 
     scanDialogs() {
         if (!this.enabled) return;
+        if (!this.isPunishmentConfirmationEnabled()) this.stopPunishmentConfirmations();
+        for (const [dialog, binding] of this.punishmentBindings) {
+            if (!dialog.isConnected || dialog.getAttribute?.('data-state') === 'closed') {
+                binding.cleanup();
+                this.punishmentBindings.delete(dialog);
+                if (binding.submitted) this.startPunishmentConfirmation(binding.submitted);
+            }
+        }
         for (const [reasonSelect, cleanup] of this.formBindings) {
             if (!reasonSelect.isConnected) {
                 cleanup();
@@ -47,9 +60,130 @@ export class PunishmentService {
             }
         }
         this.document.querySelectorAll('[role="dialog"]').forEach(dialog => {
+            this.bindPunishmentConfirmation(dialog);
             const reasonSelect = dialog.querySelector('#mute-reason');
             if (reasonSelect) this.bindMuteForm(reasonSelect, dialog);
         });
+    }
+
+    isPunishmentConfirmationEnabled() {
+        return this.enabled && this.ticketService?.settings?.features?.autoSelectCloseReason === true;
+    }
+
+    getPunishmentConfirmationOrigin(scope, steamId) {
+        const ticket = this.ticketService;
+        if (!scope || !steamId || !this.document.contains(scope)
+            || !ticket.isOpenComplaintScope(scope)
+            || !ticket.scopeHasInProgressStatus(scope, {includeActivePanel: false})
+            || ticket.getOffenderSteamIdForScope(scope) !== steamId) return null;
+        const textarea = scope.querySelector?.('textarea[placeholder*="Опишите детали закрытия"]');
+        if (!textarea || textarea.readOnly || textarea.disabled) return null;
+        if (ticket.getCloseReasonContext && ticket.isCloseReasonContextEditable) {
+            const context = ticket.getCloseReasonContext(textarea);
+            if (!context || !ticket.isCloseReasonContextEditable(context)) return null;
+        }
+        // A scope can be reused by the SPA for another complaint, even for the same player.
+        const ticketId = ticket.extractTicketIdFromComplaintScope(scope);
+        if (!ticketId) return null;
+        return {scope, steamId, ticketId};
+    }
+
+    isPunishmentConfirmationCurrent(context) {
+        if (!this.isPunishmentConfirmationEnabled() || context.cancelled) return false;
+        const origin = this.getPunishmentConfirmationOrigin(context.scope, context.steamId);
+        return Boolean(origin && origin.ticketId === context.ticketId);
+    }
+
+    bindPunishmentConfirmation(dialog) {
+        if (!this.isPunishmentConfirmationEnabled() || this.punishmentBindings.has(dialog)
+            || dialog.getAttribute?.('data-state') === 'closed') return;
+        const form = dialog.querySelector('form');
+        if (!form) return;
+        const banInput = dialog.querySelector('#ban-steamid64');
+        const input = banInput || dialog.querySelector('#mute-steamid64');
+        if (!input) return;
+        const type = banInput ? 'ban' : 'mute';
+        const ticket = this.ticketService;
+        // Opening management can temporarily replace the active complaint and clear
+        // _lastPunishmentScope. The bridge preserves its origin on this exact dialog.
+        const captured = ticket._closeReasonPunishmentOrigins?.get(dialog)
+            || ticket._closeReasonPunishmentOrigin;
+        ticket._closeReasonPunishmentOrigins?.delete(dialog);
+        const initialScope = captured?.scope || ticket.getActivePunishmentScope();
+        let initialOrigin = this.getPunishmentConfirmationOrigin(initialScope,
+            captured?.steamId || (initialScope && ticket.getOffenderSteamIdForScope(initialScope)));
+        if (captured && (captured.type !== type || captured.ticketId !== initialOrigin?.ticketId)) initialOrigin = null;
+        const binding = {submitted: null, cleanup: null};
+        const onSubmit = () => {
+            if (!this.isPunishmentConfirmationEnabled() || !initialOrigin) return;
+            const steamId = input.value.trim();
+            const origin = this.getPunishmentConfirmationOrigin(initialOrigin.scope, steamId);
+            // Keep the complaint from opening this form; a later tab cannot take ownership.
+            binding.submitted = origin && origin.steamId === initialOrigin.steamId
+                && origin.ticketId === initialOrigin.ticketId
+                ? {...origin, type, cancelled: false, timer: null} : null;
+        };
+        form.addEventListener('submit', onSubmit, true);
+        binding.cleanup = () => {
+            form.removeEventListener('submit', onSubmit, true);
+            // The bridge may store the token after an early binding already consumed it.
+            ticket._closeReasonPunishmentOrigins?.delete(dialog);
+        };
+        this.punishmentBindings.set(dialog, binding);
+    }
+
+    stopPunishmentConfirmations() {
+        for (const context of this.punishmentConfirmations) {
+            context.cancelled = true;
+            clearTimeout(context.timer);
+        }
+        this.punishmentConfirmations.clear();
+        for (const binding of this.punishmentBindings.values()) binding.submitted = null;
+    }
+
+    startPunishmentConfirmation(context) {
+        if (!this.isPunishmentConfirmationCurrent(context)) return;
+        this.punishmentConfirmations.add(context);
+        const delays = [350, 1000, 2000];
+        let attempt = 0;
+        const finish = () => {
+            clearTimeout(context.timer);
+            context.timer = null;
+            this.punishmentConfirmations.delete(context);
+        };
+        const schedule = delay => {
+            if (!this.isPunishmentConfirmationCurrent(context)) {
+                finish();
+                return;
+            }
+            const cooldown = Math.max(0, (this.ticketService.globalServerCooldown || 0) - Date.now());
+            context.timer = setTimeout(check, Math.max(delay, cooldown));
+        };
+        const check = async () => {
+            context.timer = null;
+            if (!this.isPunishmentConfirmationCurrent(context)) return finish();
+            // Another tracker request may have extended cooldown while this timer waited.
+            const cooldown = (this.ticketService.globalServerCooldown || 0) - Date.now();
+            if (cooldown > 0) return schedule(cooldown);
+            attempt += 1;
+            try {
+                // Bypass the short user-data cache; the shared fetch still deduplicates inflight reads.
+                const data = await this.ticketService.fetchParsedUserData(context.steamId);
+                if (!this.isPunishmentConfirmationCurrent(context)) return finish();
+                if (context.type === 'ban' ? data?.isBanned : data?.isMuted) {
+                    this.ticketService.onCloseReasonPunishmentData(context.steamId, {
+                        ...data, scope: context.scope, ticketId: context.ticketId
+                    });
+                    this.ticketService.syncCloseReasonSelection();
+                    return finish();
+                }
+            } catch {
+                // A failed read or submission is never evidence of punishment.
+            }
+            if (attempt >= delays.length || !this.isPunishmentConfirmationCurrent(context)) return finish();
+            schedule(delays[attempt]);
+        };
+        schedule(delays[0]);
     }
 
     bindMuteForm(reasonSelect, dialog) {

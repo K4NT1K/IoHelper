@@ -5,6 +5,7 @@ import {normalizeAppearance} from './modules/AppearanceService.js';
 const featureTogglesEl = document.getElementById('featureToggles');
 const hoursInput = document.getElementById('newAccountHours');
 const headshotInput = document.getElementById('headshotPercentage');
+const closeReasonEvidenceInput = document.getElementById('closeReasonEvidenceMinutes');
 const triggersContainer = document.getElementById('triggersContainer');
 const triggerInput = document.getElementById('triggerInput');
 const trackIntervalInput = document.getElementById('trackOffenderInterval');
@@ -72,6 +73,12 @@ const FEATURE_GROUPS = [
     {
         id: 'ticket',
         entries: [
+            {
+                key: 'autoSelectCloseReason',
+                label: 'Автовыбор причины закрытия жалобы',
+                desc: '',
+                help: 'Выбирает причину по категории жалобы, таймеру и подтверждённому бану или муту нарушителя. Не закрывает тикет. Ручной выбор сохраняется до конца жалобы.'
+            },
             {
                 key: 'processTicketRules',
                 label: 'Анализ чата',
@@ -453,6 +460,7 @@ function loadSettingsToUI(settings) {
 
     hoursInput.value = settings.newAccountHours;
     headshotInput.value = settings.headshotPercentage ?? 95;
+    closeReasonEvidenceInput.value = settings.closeReasonEvidenceMinutes ?? 3;
     currentSettings.reasonTriggers = [...settings.reasonTriggers];
     currentSettings.reasonTriggersAutoconnect = [...(settings.reasonTriggersAutoconnect || [])];
     trackIntervalInput.value = settings.trackOffenderInterval;
@@ -489,6 +497,9 @@ function collectSettingsFromUI() {
 
     return {
         features,
+        closeReasonEvidenceMinutes: closeReasonEvidenceInput.value.trim() !== '' && Number.isFinite(Number(closeReasonEvidenceInput.value))
+            ? Math.min(120, Math.max(0, Number(closeReasonEvidenceInput.value)))
+            : 3,
         headshotPercentage: headshotInput.value.trim() !== '' && Number.isFinite(Number(headshotInput.value))
             ? Math.min(100, Math.max(0, Number(headshotInput.value)))
             : 95,
@@ -575,6 +586,7 @@ autoConnectTriggerInput.addEventListener('keydown', (e) => {
 
 hoursInput && bindNumberField(hoursInput);
 headshotInput && bindNumberField(headshotInput);
+closeReasonEvidenceInput && bindNumberField(closeReasonEvidenceInput);
 trackIntervalInput && bindNumberField(trackIntervalInput);
 trackIntervalWhileReviewingInput && bindNumberField(trackIntervalWhileReviewingInput);
 

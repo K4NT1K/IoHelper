@@ -593,13 +593,13 @@ export const PunishmentPanelMethods = {
         const headers = scopeEl.querySelectorAll('h3');
         for (const header of headers) {
             const text = header.textContent || '';
-            const ticketMatch = text.match(/(?:тикет|ticket|жалоб)[^#]*#(\d+)/i);
+            const ticketMatch = text.match(/(?:тикет|ticket|жалоб|репорт|report)[^#]*#(\d+)/i);
             if (ticketMatch) {
                 return ticketMatch[1];
             }
 
             const hashMatch = text.match(/#(\d+)/);
-            if (hashMatch && /тикет|ticket|жалоб/i.test(text)) {
+            if (hashMatch && /тикет|ticket|жалоб|репорт|report/i.test(text)) {
                 return hashMatch[1];
             }
         }
@@ -1543,12 +1543,16 @@ export const PunishmentPanelMethods = {
     handleTicketMuteButtonClick() {
         const scope = this.getActivePunishmentScope();
         const steamId = this.getOffenderSteamIdForScope(scope);
+        this._closeReasonPunishmentOrigin = {type: 'mute', scope, steamId,
+            ticketId: this.extractTicketIdFromComplaintScope(scope)};
         void this.openSiteMuteForm(steamId);
     },
 
     handleTicketBanButtonClick() {
         const scope = this.getActivePunishmentScope();
         const steamId = this.getOffenderSteamIdForScope(scope);
+        this._closeReasonPunishmentOrigin = {type: 'ban', scope, steamId,
+            ticketId: this.extractTicketIdFromComplaintScope(scope)};
         void this.openSiteBanForm(steamId);
     },
 

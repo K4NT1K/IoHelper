@@ -236,6 +236,7 @@ export const OffenderTrackingMethods = {
             fetchedAt: Date.now()
         });
         this.setOffenderProjectCache(steamId, data);
+        this.onCloseReasonPunishmentData?.(steamId, data);
     },
 
     async fetchParsedUserData(steamId) {

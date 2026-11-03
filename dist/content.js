@@ -14,6 +14,7 @@
     trackOffenderServer: true,
     showOffenderVipBadge: true,
     autoConnectServer: false,
+    autoSelectCloseReason: false,
     scanSchedulePage: false,
     squareTickets: false
   });
@@ -21,6 +22,7 @@
     const result = {
       newAccountHours: 7,
       headshotPercentage: 95,
+      closeReasonEvidenceMinutes: 3,
       trackOffenderInterval: 5,
       trackOffenderIntervalWhileReviewing: 30,
       trackOpenTicketOfflineInterval: 5,
@@ -1089,6 +1091,25 @@ ${nextMessage}` : nextMessage;
       this.ticketService.debugPunishmentLog(reason, details);
     }
     async openForm(type, steamId2) {
+      const origin = this.ticketService._closeReasonPunishmentOrigin;
+      try {
+        const opened = await this._openForm(type, steamId2);
+        if (opened && origin?.type === type && origin.steamId === steamId2) {
+          const input = this.document.querySelector(`[role="dialog"] ${_SitePunishmentBridge.PANELS[type].inputSelector}`);
+          const dialog = input?.closest('[role="dialog"]');
+          if (dialog) {
+            this.ticketService._closeReasonPunishmentOrigins ||= /* @__PURE__ */ new WeakMap();
+            this.ticketService._closeReasonPunishmentOrigins.set(dialog, origin);
+          }
+        }
+        return opened;
+      } finally {
+        if (this.ticketService._closeReasonPunishmentOrigin === origin) {
+          this.ticketService._closeReasonPunishmentOrigin = null;
+        }
+      }
+    }
+    async _openForm(type, steamId2) {
       const hasPermission = type === "ban" ? this.ticketService.canIssueBan : this.ticketService.canIssueMute;
       if (!hasPermission) {
         return false;
@@ -3443,12 +3464,12 @@ ${nextMessage}` : nextMessage;
       const headers = scopeEl.querySelectorAll("h3");
       for (const header of headers) {
         const text = header.textContent || "";
-        const ticketMatch = text.match(/(?:тикет|ticket|жалоб)[^#]*#(\d+)/i);
+        const ticketMatch = text.match(/(?:тикет|ticket|жалоб|репорт|report)[^#]*#(\d+)/i);
         if (ticketMatch) {
           return ticketMatch[1];
         }
         const hashMatch = text.match(/#(\d+)/);
-        if (hashMatch && /тикет|ticket|жалоб/i.test(text)) {
+        if (hashMatch && /тикет|ticket|жалоб|репорт|report/i.test(text)) {
           return hashMatch[1];
         }
       }
@@ -4200,11 +4221,23 @@ ${nextMessage}` : nextMessage;
     handleTicketMuteButtonClick() {
       const scope = this.getActivePunishmentScope();
       const steamId2 = this.getOffenderSteamIdForScope(scope);
+      this._closeReasonPunishmentOrigin = {
+        type: "mute",
+        scope,
+        steamId: steamId2,
+        ticketId: this.extractTicketIdFromComplaintScope(scope)
+      };
       void this.openSiteMuteForm(steamId2);
     },
     handleTicketBanButtonClick() {
       const scope = this.getActivePunishmentScope();
       const steamId2 = this.getOffenderSteamIdForScope(scope);
+      this._closeReasonPunishmentOrigin = {
+        type: "ban",
+        scope,
+        steamId: steamId2,
+        ticketId: this.extractTicketIdFromComplaintScope(scope)
+      };
       void this.openSiteBanForm(steamId2);
     },
     invokeCachedSiteHandler(handler, type, button = null) {
@@ -5006,6 +5039,7 @@ ${nextMessage}` : nextMessage;
         fetchedAt: Date.now()
       });
       this.setOffenderProjectCache(steamId2, data);
+      this.onCloseReasonPunishmentData?.(steamId2, data);
     },
     async fetchParsedUserData(steamId2) {
       if (this.offenderProjectInflight.has(steamId2)) {
@@ -6270,6 +6304,212 @@ ${nextMessage}` : nextMessage;
     }
   };
 
+  // modules/ticket/CloseReason.js
+  var LABELS = {
+    punished: "\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C \u0431\u044B\u043B \u043D\u0430\u043A\u0430\u0437\u0430\u043D",
+    noCheats: "\u0427\u0438\u0442\u043E\u0432 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E",
+    insufficient: "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432",
+    noViolations: "\u041D\u0435\u0442 \u043D\u0430\u0440\u0443\u0448\u0435\u043D\u0438\u0439"
+  };
+  var CATEGORIES = /* @__PURE__ */ new Map([
+    ["\u0447\u0438\u0442\u0435\u0440\u0441\u0442\u0432\u043E", "ban"],
+    ["\u0431\u0430\u0433\u043E\u044E\u0437", "ban"],
+    ["\u043C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433", "mute"],
+    ["\u0441\u043F\u0430\u043C", "mute"],
+    ["\u043F\u043E\u043F\u0440\u043E\u0448\u0430\u0439\u043D\u0438\u0447\u0435\u0441\u0442\u0432\u043E", "mute"]
+  ]);
+  var normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  function closeReasonEvidenceMinutes(value) {
+    if (value === "" || value === null || value === void 0) return 3;
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(120, Math.max(0, number)) : 3;
+  }
+  function parseCloseReasonTimer(value) {
+    const match = String(value || "").trim().match(/^(\d+):([0-5]\d):([0-5]\d)$/);
+    return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : null;
+  }
+  function chooseCloseReason(category, elapsedSeconds, minutes = 3, data = {}) {
+    const normalized = normalize(category);
+    const type = CATEGORIES.get(normalized);
+    if (!type) return null;
+    if (type === "ban" && data.isBanned || type === "mute" && data.isMuted) return LABELS.punished;
+    if (normalized !== "\u0447\u0438\u0442\u0435\u0440\u0441\u0442\u0432\u043E") return LABELS.noViolations;
+    return elapsedSeconds !== null && elapsedSeconds >= closeReasonEvidenceMinutes(minutes) * 60 ? LABELS.insufficient : LABELS.noCheats;
+  }
+  var CloseReasonMethods = {
+    getCloseReasonContext(textarea) {
+      if (!textarea || !this.document.contains(textarea)) return null;
+      const scope = this.getTicketScopeRoot(textarea);
+      let card = textarea.parentElement;
+      let title = null;
+      while (card && card !== scope?.parentElement && card !== this.document.body) {
+        title = Array.from(card.querySelectorAll("h3")).find((header) => /^Результат рассмотрения (?:тикета|репорта) #\d+\b/i.test(header.textContent.trim()));
+        if (title) break;
+        if (card === scope) return null;
+        card = card.parentElement;
+      }
+      if (!title || !card || card === this.document.body) return null;
+      const ticketId = title.textContent.match(/#(\d+)/)?.[1];
+      const steamId2 = this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope));
+      const category = this.getTicketComplaintCategory(scope);
+      if (!ticketId || !steamId2 || !CATEGORIES.has(normalize(category))) return null;
+      const buttons = Array.from(card.querySelectorAll("button")).filter((button) => Object.values(LABELS).includes(button.textContent.trim()) && !isIohNode(button));
+      return { textarea, scope, card, title, ticketId, steamId: steamId2, category, buttons };
+    },
+    isCloseReasonContextEditable(context) {
+      return Boolean(context && !context.textarea.readOnly && !context.textarea.disabled && this.scopeHasInProgressStatus(context.scope, { includeActivePanel: false }) && context.buttons.some((button) => !button.disabled));
+    },
+    getCloseReasonComplaintState(context) {
+      this._closeReasonStateByScope ||= /* @__PURE__ */ new WeakMap();
+      let state = this._closeReasonStateByScope.get(context.scope);
+      if (!state || state.ticketId !== context.ticketId || state.steamId !== context.steamId || state.category !== normalize(context.category)) {
+        state = {
+          ticketId: context.ticketId,
+          steamId: context.steamId,
+          category: normalize(context.category),
+          manual: false,
+          punishmentData: null
+        };
+        this._closeReasonStateByScope.set(context.scope, state);
+      }
+      return state;
+    },
+    syncCloseReasonSelection() {
+      if (!this.settings?.features?.autoSelectCloseReason) {
+        this.stopCloseReasonSelection();
+        return;
+      }
+      this._closeReasonSessions ||= /* @__PURE__ */ new Map();
+      this._closeReasonPendingCards ||= /* @__PURE__ */ new Map();
+      for (const pending of this._closeReasonPendingCards.values()) {
+        const current = this.getCloseReasonContext(pending.textarea);
+        if (!current || current.card !== pending.card || current.ticketId !== pending.ticketId || current.steamId !== pending.steamId || !this.scopeHasInProgressStatus(current.scope, { includeActivePanel: false }) || this.isCloseReasonContextEditable(current)) {
+          pending.observer.disconnect();
+          this._closeReasonPendingCards.delete(pending.card);
+        }
+      }
+      for (const session of this._closeReasonSessions.values()) {
+        this.refreshCloseReasonSession(session);
+      }
+      for (const textarea of this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]')) {
+        if (!this.isVisibleTicketTextarea(textarea)) continue;
+        const context = this.getCloseReasonContext(textarea);
+        if (!this.isCloseReasonContextEditable(context)) {
+          if (context && this.scopeHasInProgressStatus(context.scope, { includeActivePanel: false }) && !this._closeReasonSessions.has(context.scope) && !this._closeReasonPendingCards.has(context.card)) {
+            const pending = { ...context };
+            pending.observer = new MutationObserver((mutations) => {
+              if (mutations.every((mutation) => isIohNode(mutation.target))) return;
+              this.syncCloseReasonSelection();
+            });
+            pending.observer.observe(context.card, {
+              childList: true,
+              subtree: true,
+              characterData: true,
+              attributes: true,
+              attributeFilter: ["disabled", "readonly"]
+            });
+            this._closeReasonPendingCards.set(context.card, pending);
+          }
+          continue;
+        }
+        let session = this._closeReasonSessions.get(context.scope);
+        if (!session) {
+          const complaintState = this.getCloseReasonComplaintState(context);
+          session = { ...context, complaintState, applying: false, lastApplied: null, lastAppliedButton: null };
+          this._closeReasonSessions.set(context.scope, session);
+          session.onClick = (event) => {
+            if (session.applying) return;
+            const button = event.target?.closest?.("button");
+            if (button && this.isCloseReasonButton(session, button)) session.complaintState.manual = true;
+          };
+          session.card.addEventListener("click", session.onClick, true);
+          session.observer = new MutationObserver((mutations) => {
+            if (mutations.every((mutation) => isIohNode(mutation.target))) return;
+            this.refreshCloseReasonSession(session);
+          });
+          session.observer.observe(session.card, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ["disabled", "readonly"]
+          });
+        }
+        this.refreshCloseReasonSession(session);
+      }
+    },
+    isCloseReasonButton(session, button) {
+      if (isIohNode(button) || button.disabled || button.type !== "button") return false;
+      const first = session.buttons[0];
+      return Boolean(first && button.parentElement === first.parentElement);
+    },
+    refreshCloseReasonSession(session) {
+      if (this._closeReasonSessions?.get(session.scope) !== session) return;
+      if (!this.settings?.features?.autoSelectCloseReason) {
+        this.stopCloseReasonSelection();
+        return;
+      }
+      const context = this.getCloseReasonContext(session.textarea);
+      if (!context || context.scope !== session.scope || context.card !== session.card || context.ticketId !== session.ticketId || context.steamId !== session.steamId || normalize(context.category) !== normalize(session.category) || !this.scopeHasInProgressStatus(context.scope, { includeActivePanel: false })) {
+        this.releaseCloseReasonSession(session);
+        return;
+      }
+      session.buttons = context.buttons;
+      if (!this.isCloseReasonContextEditable(context)) return;
+      const interval = Number(this.settings.trackOffenderIntervalWhileReviewing);
+      const cacheTtl = Math.max(5e3, (Number.isFinite(interval) ? interval : 30) * 1e3 + 5e3);
+      const cached = this.getCachedUserData?.(session.steamId, cacheTtl);
+      const state = session.complaintState;
+      if (cached && (!state.punishmentData || cached.fetchedAt > state.punishmentData.fetchedAt)) {
+        state.punishmentData = { ...cached };
+      }
+      if (state.manual || !this.isVisibleTicketTextarea(session.textarea)) return;
+      const clock = context.title.parentElement?.querySelector('use[href="#lc-clock"]');
+      const elapsed = parseCloseReasonTimer(clock?.closest("svg")?.parentElement?.textContent);
+      const data = state.punishmentData || {};
+      const desired = chooseCloseReason(
+        session.category,
+        elapsed,
+        this.settings.closeReasonEvidenceMinutes,
+        data
+      );
+      if (!desired) return;
+      const button = context.buttons.find((candidate) => candidate.textContent.trim() === desired && !candidate.disabled);
+      if (!button) return;
+      if (desired === session.lastApplied && button === session.lastAppliedButton) return;
+      session.lastApplied = desired;
+      session.lastAppliedButton = button;
+      session.applying = true;
+      try {
+        button.click();
+      } finally {
+        session.applying = false;
+      }
+    },
+    onCloseReasonPunishmentData(steamId2, data) {
+      if (!this.settings?.features?.autoSelectCloseReason || !steamId2 || !data) return;
+      for (const session of this._closeReasonSessions?.values() || []) {
+        if (session.steamId !== steamId2) continue;
+        if (data.scope !== void 0 && data.scope !== session.scope) continue;
+        if (data.ticketId !== void 0 && String(data.ticketId) !== session.ticketId) continue;
+        const state = session.complaintState;
+        state.punishmentData = { ...data, fetchedAt: data.fetchedAt ?? Date.now() };
+        this.refreshCloseReasonSession(session);
+      }
+    },
+    releaseCloseReasonSession(session) {
+      session.observer?.disconnect();
+      session.card.removeEventListener("click", session.onClick, true);
+      if (this._closeReasonSessions?.get(session.scope) === session) this._closeReasonSessions.delete(session.scope);
+    },
+    stopCloseReasonSelection() {
+      for (const session of this._closeReasonSessions?.values() || []) this.releaseCloseReasonSession(session);
+      this._closeReasonSessions?.clear();
+      for (const pending of this._closeReasonPendingCards?.values() || []) pending.observer.disconnect();
+      this._closeReasonPendingCards?.clear();
+    }
+  };
+
   // modules/TicketService.js
   var TicketService = class {
     constructor({ document: document2, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome: chrome2 = null }) {
@@ -6656,7 +6896,8 @@ ${nextMessage}` : nextMessage;
     QueueCardsMethods,
     PunishmentPanelMethods,
     OffenderProfileMethods,
-    OffenderTrackingMethods
+    OffenderTrackingMethods,
+    CloseReasonMethods
   );
 
   // modules/PunishmentService.js
@@ -6667,6 +6908,8 @@ ${nextMessage}` : nextMessage;
       this.enabled = true;
       this.debounceId = null;
       this.formBindings = /* @__PURE__ */ new Map();
+      this.punishmentBindings = /* @__PURE__ */ new Map();
+      this.punishmentConfirmations = /* @__PURE__ */ new Set();
     }
     init() {
       this.enabled = true;
@@ -6678,6 +6921,9 @@ ${nextMessage}` : nextMessage;
       this.debounceId = null;
       for (const cleanup of this.formBindings.values()) cleanup();
       this.formBindings.clear();
+      this.stopPunishmentConfirmations();
+      for (const binding of this.punishmentBindings.values()) binding.cleanup();
+      this.punishmentBindings.clear();
     }
     scheduleScan() {
       clearTimeout(this.debounceId);
@@ -6688,10 +6934,18 @@ ${nextMessage}` : nextMessage;
       }, 150);
     }
     isRelevantNode(node) {
-      return Boolean(node?.nodeType === 1 && (node.matches?.('[role="dialog"], #mute-reason, #mute-steamid64') || node.querySelector?.("#mute-reason, #mute-steamid64")));
+      return Boolean(node?.nodeType === 1 && (node.matches?.('[role="dialog"], #mute-reason, #mute-steamid64, #ban-steamid64') || node.querySelector?.("#mute-reason, #mute-steamid64, #ban-steamid64")));
     }
     scanDialogs() {
       if (!this.enabled) return;
+      if (!this.isPunishmentConfirmationEnabled()) this.stopPunishmentConfirmations();
+      for (const [dialog, binding] of this.punishmentBindings) {
+        if (!dialog.isConnected || dialog.getAttribute?.("data-state") === "closed") {
+          binding.cleanup();
+          this.punishmentBindings.delete(dialog);
+          if (binding.submitted) this.startPunishmentConfirmation(binding.submitted);
+        }
+      }
       for (const [reasonSelect, cleanup] of this.formBindings) {
         if (!reasonSelect.isConnected) {
           cleanup();
@@ -6699,9 +6953,113 @@ ${nextMessage}` : nextMessage;
         }
       }
       this.document.querySelectorAll('[role="dialog"]').forEach((dialog) => {
+        this.bindPunishmentConfirmation(dialog);
         const reasonSelect = dialog.querySelector("#mute-reason");
         if (reasonSelect) this.bindMuteForm(reasonSelect, dialog);
       });
+    }
+    isPunishmentConfirmationEnabled() {
+      return this.enabled && this.ticketService?.settings?.features?.autoSelectCloseReason === true;
+    }
+    getPunishmentConfirmationOrigin(scope, steamId2) {
+      const ticket = this.ticketService;
+      if (!scope || !steamId2 || !this.document.contains(scope) || !ticket.isOpenComplaintScope(scope) || !ticket.scopeHasInProgressStatus(scope, { includeActivePanel: false }) || ticket.getOffenderSteamIdForScope(scope) !== steamId2) return null;
+      const textarea = scope.querySelector?.('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]');
+      if (!textarea || textarea.readOnly || textarea.disabled) return null;
+      if (ticket.getCloseReasonContext && ticket.isCloseReasonContextEditable) {
+        const context = ticket.getCloseReasonContext(textarea);
+        if (!context || !ticket.isCloseReasonContextEditable(context)) return null;
+      }
+      const ticketId = ticket.extractTicketIdFromComplaintScope(scope);
+      if (!ticketId) return null;
+      return { scope, steamId: steamId2, ticketId };
+    }
+    isPunishmentConfirmationCurrent(context) {
+      if (!this.isPunishmentConfirmationEnabled() || context.cancelled) return false;
+      const origin = this.getPunishmentConfirmationOrigin(context.scope, context.steamId);
+      return Boolean(origin && origin.ticketId === context.ticketId);
+    }
+    bindPunishmentConfirmation(dialog) {
+      if (!this.isPunishmentConfirmationEnabled() || this.punishmentBindings.has(dialog) || dialog.getAttribute?.("data-state") === "closed") return;
+      const form = dialog.querySelector("form");
+      if (!form) return;
+      const banInput = dialog.querySelector("#ban-steamid64");
+      const input = banInput || dialog.querySelector("#mute-steamid64");
+      if (!input) return;
+      const type = banInput ? "ban" : "mute";
+      const ticket = this.ticketService;
+      const captured = ticket._closeReasonPunishmentOrigins?.get(dialog) || ticket._closeReasonPunishmentOrigin;
+      ticket._closeReasonPunishmentOrigins?.delete(dialog);
+      const initialScope = captured?.scope || ticket.getActivePunishmentScope();
+      let initialOrigin = this.getPunishmentConfirmationOrigin(
+        initialScope,
+        captured?.steamId || initialScope && ticket.getOffenderSteamIdForScope(initialScope)
+      );
+      if (captured && (captured.type !== type || captured.ticketId !== initialOrigin?.ticketId)) initialOrigin = null;
+      const binding = { submitted: null, cleanup: null };
+      const onSubmit = () => {
+        if (!this.isPunishmentConfirmationEnabled() || !initialOrigin) return;
+        const steamId2 = input.value.trim();
+        const origin = this.getPunishmentConfirmationOrigin(initialOrigin.scope, steamId2);
+        binding.submitted = origin && origin.steamId === initialOrigin.steamId && origin.ticketId === initialOrigin.ticketId ? { ...origin, type, cancelled: false, timer: null } : null;
+      };
+      form.addEventListener("submit", onSubmit, true);
+      binding.cleanup = () => {
+        form.removeEventListener("submit", onSubmit, true);
+        ticket._closeReasonPunishmentOrigins?.delete(dialog);
+      };
+      this.punishmentBindings.set(dialog, binding);
+    }
+    stopPunishmentConfirmations() {
+      for (const context of this.punishmentConfirmations) {
+        context.cancelled = true;
+        clearTimeout(context.timer);
+      }
+      this.punishmentConfirmations.clear();
+      for (const binding of this.punishmentBindings.values()) binding.submitted = null;
+    }
+    startPunishmentConfirmation(context) {
+      if (!this.isPunishmentConfirmationCurrent(context)) return;
+      this.punishmentConfirmations.add(context);
+      const delays = [350, 1e3, 2e3];
+      let attempt = 0;
+      const finish = () => {
+        clearTimeout(context.timer);
+        context.timer = null;
+        this.punishmentConfirmations.delete(context);
+      };
+      const schedule = (delay) => {
+        if (!this.isPunishmentConfirmationCurrent(context)) {
+          finish();
+          return;
+        }
+        const cooldown = Math.max(0, (this.ticketService.globalServerCooldown || 0) - Date.now());
+        context.timer = setTimeout(check, Math.max(delay, cooldown));
+      };
+      const check = async () => {
+        context.timer = null;
+        if (!this.isPunishmentConfirmationCurrent(context)) return finish();
+        const cooldown = (this.ticketService.globalServerCooldown || 0) - Date.now();
+        if (cooldown > 0) return schedule(cooldown);
+        attempt += 1;
+        try {
+          const data = await this.ticketService.fetchParsedUserData(context.steamId);
+          if (!this.isPunishmentConfirmationCurrent(context)) return finish();
+          if (context.type === "ban" ? data?.isBanned : data?.isMuted) {
+            this.ticketService.onCloseReasonPunishmentData(context.steamId, {
+              ...data,
+              scope: context.scope,
+              ticketId: context.ticketId
+            });
+            this.ticketService.syncCloseReasonSelection();
+            return finish();
+          }
+        } catch {
+        }
+        if (attempt >= delays.length || !this.isPunishmentConfirmationCurrent(context)) return finish();
+        schedule(delays[attempt]);
+      };
+      schedule(delays[0]);
     }
     bindMuteForm(reasonSelect, dialog) {
       if (this.formBindings.has(reasonSelect)) return;
@@ -7054,6 +7412,9 @@ ${nextMessage}` : nextMessage;
           for (const node of mutation.removedNodes || []) {
             if (!node || node.nodeType !== 1 || isIohNode(node)) continue;
             if (this.isPunishmentDialogNode(node)) this.emit("punishmentDialog");
+            if (node.matches?.('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]') || node.querySelector?.('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]')) {
+              this.emit("ticketMounted");
+            }
           }
         }
         if (this.pending.size) {
@@ -7590,6 +7951,8 @@ ${nextMessage}` : nextMessage;
         if (event.persisted) return;
         pageClosed = true;
         this.serverConnectionMemory.stop();
+        this.ticketService.stopCloseReasonSelection();
+        this.punishmentService.teardown();
       });
       this.window.addEventListener("pageshow", (event) => {
         if (event.persisted) void this.serverConnectionMemory.refresh();
@@ -7849,6 +8212,7 @@ ${nextMessage}` : nextMessage;
     }
     initTicketSectionFeatures() {
       this.initNotificationPanels();
+      this.ticketService.syncCloseReasonSelection();
       const ticketPath = window.location.pathname || window.location.href;
       if (this._lastTicketSectionPath !== ticketPath) {
         this._lastTicketSectionPath = ticketPath;
@@ -8102,6 +8466,7 @@ ${nextMessage}` : nextMessage;
       });
     }
     onTicketTabVisibilityChange() {
+      this.ticketService.syncCloseReasonSelection();
       if (this.ticketService.isSitePunishmentDialogOpen()) {
         return;
       }

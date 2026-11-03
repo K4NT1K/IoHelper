@@ -4,12 +4,12 @@ export const DEFAULT_FEATURES = Object.freeze({
     highlightDuplicateServers: false, processTicketRules: true, translateText: true,
     showSteamAccountCreationDate: true, showCybershokePlaytime: true, showOffenderCountry: true,
     showFaceitElo: true, trackOffenderServer: true, showOffenderVipBadge: true,
-    autoConnectServer: false, scanSchedulePage: false, squareTickets: false
+    autoConnectServer: false, autoSelectCloseReason: false, scanSchedulePage: false, squareTickets: false
 });
 
 export function mergeSettings(base = {}, overrides = {}) {
     const result = {
-        newAccountHours: 7, headshotPercentage: 95, trackOffenderInterval: 5,
+        newAccountHours: 7, headshotPercentage: 95, closeReasonEvidenceMinutes: 3, trackOffenderInterval: 5,
         trackOffenderIntervalWhileReviewing: 30, trackOpenTicketOfflineInterval: 5,
         reasonTriggers: [], reasonTriggersAutoconnect: [], autoConnectReasons: [],
         offenderVipStatuses: [], ...base, ...overrides,

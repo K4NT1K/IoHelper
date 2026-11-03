@@ -10,6 +10,7 @@ import { QueueCardsMethods } from './ticket/QueueCards.js';
 import { PunishmentPanelMethods } from './ticket/PunishmentPanel.js';
 import { OffenderProfileMethods } from './ticket/OffenderProfile.js';
 import { OffenderTrackingMethods } from './ticket/OffenderTracking.js';
+import { CloseReasonMethods } from './ticket/CloseReason.js';
 
 export class TicketService {
     constructor({document, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome = null}) {
@@ -470,5 +471,6 @@ Object.assign(
     QueueCardsMethods,
     PunishmentPanelMethods,
     OffenderProfileMethods,
-    OffenderTrackingMethods
+    OffenderTrackingMethods,
+    CloseReasonMethods
 );

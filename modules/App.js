@@ -151,6 +151,8 @@ export class App {
             if (event.persisted) return;
             pageClosed = true;
             this.serverConnectionMemory.stop();
+            this.ticketService.stopCloseReasonSelection();
+            this.punishmentService.teardown();
         });
         this.window.addEventListener('pageshow', event => {
             if (event.persisted) void this.serverConnectionMemory.refresh();
@@ -470,6 +472,7 @@ export class App {
 
     initTicketSectionFeatures() {
         this.initNotificationPanels();
+        this.ticketService.syncCloseReasonSelection();
 
         const ticketPath = window.location.pathname || window.location.href;
         if (this._lastTicketSectionPath !== ticketPath) {
@@ -777,6 +780,7 @@ export class App {
     }
 
     onTicketTabVisibilityChange() {
+        this.ticketService.syncCloseReasonSelection();
         if (this.ticketService.isSitePunishmentDialogOpen()) {
             return;
         }

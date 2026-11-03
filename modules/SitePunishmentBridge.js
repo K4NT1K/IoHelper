@@ -32,6 +32,26 @@ export class SitePunishmentBridge {
     }
 
     async openForm(type, steamId) {
+        const origin = this.ticketService._closeReasonPunishmentOrigin;
+        try {
+            const opened = await this._openForm(type, steamId);
+            if (opened && origin?.type === type && origin.steamId === steamId) {
+                const input = this.document.querySelector(`[role="dialog"] ${SitePunishmentBridge.PANELS[type].inputSelector}`);
+                const dialog = input?.closest('[role="dialog"]');
+                if (dialog) {
+                    this.ticketService._closeReasonPunishmentOrigins ||= new WeakMap();
+                    this.ticketService._closeReasonPunishmentOrigins.set(dialog, origin);
+                }
+            }
+            return opened;
+        } finally {
+            if (this.ticketService._closeReasonPunishmentOrigin === origin) {
+                this.ticketService._closeReasonPunishmentOrigin = null;
+            }
+        }
+    }
+
+    async _openForm(type, steamId) {
         const hasPermission = type === 'ban'
             ? this.ticketService.canIssueBan
             : this.ticketService.canIssueMute;

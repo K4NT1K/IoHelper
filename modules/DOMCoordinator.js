@@ -270,10 +270,14 @@ export class DOMCoordinator {
                     this.inspectAddedNode(node, rowsToUpdate);
                 }
 
-                // Release form listeners/observers when a mute dialog is closed.
+                // Release listeners/observers even when an entire SPA panel is removed.
                 for (const node of mutation.removedNodes || []) {
                     if (!node || node.nodeType !== 1 || isIohNode(node)) continue;
                     if (this.isPunishmentDialogNode(node)) this.emit('punishmentDialog');
+                    if (node.matches?.('textarea[placeholder*="Опишите детали закрытия"]')
+                        || node.querySelector?.('textarea[placeholder*="Опишите детали закрытия"]')) {
+                        this.emit('ticketMounted');
+                    }
                 }
             }
 

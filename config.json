@@ -14,11 +14,13 @@
       "trackOffenderServer": true,
       "showOffenderVipBadge": true,
       "autoConnectServer": false,
+      "autoSelectCloseReason": false,
       "scanSchedulePage": true,
       "squareTickets": false
     },
     "newAccountHours": 10,
     "headshotPercentage": 90,
+    "closeReasonEvidenceMinutes": 3,
     "trackOffenderInterval": 5,
     "trackOffenderIntervalWhileReviewing": 30,
     "trackOpenTicketOfflineInterval": 7,
