@@ -152,6 +152,7 @@ export class App {
             pageClosed = true;
             this.serverConnectionMemory.stop();
             this.ticketService.stopCloseReasonSelection();
+            this.ticketService.stopTicketPunishmentFeedback();
             this.punishmentService.teardown();
         });
         this.window.addEventListener('pageshow', event => {
@@ -164,6 +165,7 @@ export class App {
             .then(data => {
                 window.Icons = data;
                 this.runDOMUpdates();
+                this.moderatorService.highlightSavedModerators();
             });
 
         this.chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -172,7 +174,7 @@ export class App {
             if (changes.helperConfig && ConfigService.isValid(changes.helperConfig.newValue)) {
                 this.applyConfiguration(changes.helperConfig.newValue, changes.helperConfigMeta?.newValue?.revision || '');
             } else if (changes.helperSettings) this.updateSettings(this.settingsOverrides);
-            if (changes.helperScheduleModerators) this.moderatorService.highlightSavedModerators();
+            if (changes.helperConfig || changes.helperScheduleModerators) this.moderatorService.highlightSavedModerators();
         });
 
         this.initNavigationWatcher();
@@ -473,6 +475,7 @@ export class App {
     initTicketSectionFeatures() {
         this.initNotificationPanels();
         this.ticketService.syncCloseReasonSelection();
+        this.ticketService.syncTicketPunishmentFeedback();
 
         const ticketPath = window.location.pathname || window.location.href;
         if (this._lastTicketSectionPath !== ticketPath) {
@@ -781,6 +784,7 @@ export class App {
 
     onTicketTabVisibilityChange() {
         this.ticketService.syncCloseReasonSelection();
+        this.ticketService.syncTicketPunishmentFeedback();
         if (this.ticketService.isSitePunishmentDialogOpen()) {
             return;
         }

@@ -138,6 +138,9 @@ export const ActivePunishmentMethods = {
     },
 
     buildActivePunishmentBadge(icon, message, activeRow) {
+        if (!activeRow) {
+            return `<div class="ioh-badge-row"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
+        }
         const preview = this.buildPunishmentPreviewPanel(activeRow);
         return `<div class="ioh-badge-row ioh-punishment-preview-tooltip" tabindex="0"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span>${preview}</div>`;
     },

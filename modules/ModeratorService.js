@@ -1,5 +1,6 @@
 import {markIoh} from './shared/dom.js';
 import {flattenModeratorGroup, validScheduleSnapshot} from './shared/moderators.js';
+import {PLAYER_PROFILE_LINK_SELECTOR, steamIdFromPlayerProfileUrl} from './shared/playerProfile.js';
 
 export class ModeratorService {
     static MODERATOR_CATEGORIES = ['Tier', 'Movement', 'Hns', 'Jail'];
@@ -65,10 +66,11 @@ export class ModeratorService {
             return false;
         }
 
-        const existingBadge = link.parentElement?.querySelector('.ioh-admin-icon')
-            || link.querySelector('.ioh-admin-icon');
-        if (existingBadge && link.dataset.moderBadgeType === badgeType) {
+        const scope = link.closest('td') || link.parentElement || link;
+        const existingBadge = scope.querySelector('.ioh-saved-moderator-badge[data-ioh]');
+        if (existingBadge && existingBadge.dataset.moderBadgeType === badgeType) {
             link.dataset.hasModerBadge = 'true';
+            link.dataset.moderBadgeType = badgeType;
             return true;
         }
 
@@ -76,11 +78,13 @@ export class ModeratorService {
             existingBadge.remove();
         }
 
-        const template = document.createElement('template');
+        const template = this.document.createElement('template');
         template.innerHTML = iconSvg.trim();
 
         const badge = template.content.firstElementChild;
-        badge.classList.add('ioh-admin-icon');
+        if (!badge) return false;
+        badge.classList.add('ioh-admin-icon', 'ioh-saved-moderator-badge');
+        badge.dataset.moderBadgeType = badgeType;
         markIoh(badge);
 
         const idContainer = link.closest('div');
@@ -98,67 +102,74 @@ export class ModeratorService {
         return true;
     }
 
-    _findCurrentServerSection() {
-        const header = Array.from(this.document.querySelectorAll('h3'))
-            .find(h => h.textContent?.includes('Текущий сервер') && !h.closest('[aria-hidden="true"]'));
-
-        if (!header) {
-            return null;
-        }
-
-        let container = header.parentElement;
-        for (let depth = 0; depth < 8 && container; depth++) {
-            if (
-                container.querySelector('table')
-                && container.querySelector('a[href*="cybershoke.net/"]')
-            ) {
-                return container;
+    _findCurrentServerSections() {
+        const sections = new Set();
+        const headers = Array.from(this.document.querySelectorAll('h3'))
+            .filter(h => h.textContent?.includes('Текущий сервер')
+                && h.getClientRects().length && !h.closest('[aria-hidden="true"]'));
+        for (const header of headers) {
+            const panel = header.closest('[aria-hidden]') || header.closest('main, [role="main"]');
+            if (!panel) continue;
+            // In the standalone server view, summary and player table are separate
+            // siblings. Identify the player table by its columns within this panel.
+            for (const table of panel.querySelectorAll('table')) {
+                if (!table.getClientRects().length || table.closest('[aria-hidden="true"]')) continue;
+                const columns = Array.from(table.querySelectorAll('thead th'))
+                    .map(cell => cell.textContent.replace(/\s+/g, ' ').trim().toLowerCase());
+                if (columns.includes('игрок') && (columns.includes('команда') || columns.includes('на сервере') || columns.includes('действия'))) {
+                    sections.add(table);
+                }
             }
-            container = container.parentElement;
         }
-
-        return header.closest('main, [role="main"], section, article, [role="tabpanel"]')
-            || header.parentElement;
+        return [...sections];
     }
 
-    highlightSavedModerators() {
-        this.chrome.storage.local.get(['helperConfig', 'helperScheduleModerators'], ({helperConfig, helperScheduleModerators}) => {
-            const moderators = {...(helperConfig?.moderators || {}),
-                ...(validScheduleSnapshot(helperScheduleModerators) ? {Tier: helperScheduleModerators.Tier} : {})};
-            if (Object.keys(moderators).length === 0) return;
+    _findCurrentServerSection() {return this._findCurrentServerSections()[0] || null;}
 
-            const section = this._findCurrentServerSection();
-            if (!section) return;
+    clearSavedModerator(link) {
+        const scope = link.closest('td') || link.parentElement || link;
+        scope.querySelectorAll('.ioh-saved-moderator-badge[data-ioh]').forEach(badge => badge.remove());
+        const row = link.closest('tr');
+        if (row?.dataset.iohSavedModerator) {
+            delete row.dataset.iohSavedModerator;
+            if (!row.querySelector('.ioh-moderator-badge, .ioh-profile-verified, [data-ioh-moderator-source="1"]')) {
+                row.classList.remove('ioh-highlighted-moderator');
+            }
+        }
+        delete link.dataset.hasModerBadge;
+        delete link.dataset.moderBadgeType;
+    }
 
-            const links = section.querySelectorAll('a[href*="cybershoke.net/"]');
-
-            links.forEach(link => {
-                const match = link.href.match(/cybershoke\.net\/(\d+)/);
-                if (!match) return;
-
-                const steamId = match[1];
+    async highlightSavedModerators() {
+        const generation = this._highlightGeneration = (this._highlightGeneration || 0) + 1;
+        let moderators;
+        try {
+            moderators = await this.loadBaselineModerators();
+        } catch (error) {
+            console.warn('[IO HELPER] Не удалось прочитать состав модераторов:', error.message);
+            return;
+        }
+        if (generation !== this._highlightGeneration) return;
+        // Resolve the current visible scopes after the asynchronous storage read.
+        for (const section of this._findCurrentServerSections()) {
+            for (const link of section.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)) {
+                const steamId = steamIdFromPlayerProfileUrl(link.href);
+                if (!steamId) continue;
                 const badgeType = this.resolveModeratorType(steamId, moderators);
                 if (!badgeType) {
-                    if (link.dataset.hasModerBadge) {
-                        const badge = link.parentElement?.querySelector('.ioh-admin-icon[data-ioh]') || link.querySelector('.ioh-admin-icon[data-ioh]')
-                            || link.closest('tr')?.querySelector('.ioh-admin-icon[data-ioh]');
-                        badge?.remove();
-                        link.closest('tr')?.classList.remove('ioh-highlighted-moderator');
-                        delete link.dataset.hasModerBadge;
-                        delete link.dataset.moderBadgeType;
-                    }
-                    return;
+                    this.clearSavedModerator(link);
+                    continue;
                 }
 
                 const row = link.closest('tr');
-                if (row && !row.classList.contains('ioh-highlighted-moderator')) {
+                if (row) {
                     row.classList.add('ioh-highlighted-moderator');
+                    row.dataset.iohSavedModerator = '1';
                 }
 
-                if (!link.dataset.hasModerBadge || link.dataset.moderBadgeType !== badgeType) {
-                    this.insertModeratorBadge(link, badgeType);
-                }
-            });
-        });
+                // Check the actual badge as well: native rerenders may remove only the SVG.
+                this.insertModeratorBadge(link, badgeType);
+            }
+        }
     }
 }

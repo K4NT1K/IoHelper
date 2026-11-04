@@ -51,12 +51,25 @@ function validScheduleSnapshot(snapshot) {
   });
 }
 
+// modules/shared/playerProfile.js
+var PLAYER_PROFILE_LINK_SELECTOR = 'a[href*="cybershoke.net/"], a[href*="cybershoke.ru/"]';
+function steamIdFromPlayerProfileUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    if (!/^https?:$/.test(url.protocol) || !/^(?:www\.)?cybershoke\.(?:net|ru)$/.test(url.hostname)) return null;
+    return url.pathname.match(/^\/(?:id\/)?(\d{17})\/?$/)?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
 // modules/ModeratorService.js
 var ModeratorService = class _ModeratorService {
   static MODERATOR_CATEGORIES = ["Tier", "Movement", "Hns", "Jail"];
   static CATEGORY_KEYS = ["verification", "Tier", "Movement", "Hns", "Jail"];
-  constructor({ document: document2, chrome, isEnabled = () => true }) {
-    this.document = document2;
+  constructor({ document, chrome, isEnabled = () => true }) {
+    this.document = document;
     this.chrome = chrome;
     this.isEnabled = isEnabled;
     this.hasCompletedWeeklyScan = false;
@@ -114,18 +127,22 @@ var ModeratorService = class _ModeratorService {
     if (!iconSvg) {
       return false;
     }
-    const existingBadge = link.parentElement?.querySelector(".ioh-admin-icon") || link.querySelector(".ioh-admin-icon");
-    if (existingBadge && link.dataset.moderBadgeType === badgeType) {
+    const scope = link.closest("td") || link.parentElement || link;
+    const existingBadge = scope.querySelector(".ioh-saved-moderator-badge[data-ioh]");
+    if (existingBadge && existingBadge.dataset.moderBadgeType === badgeType) {
       link.dataset.hasModerBadge = "true";
+      link.dataset.moderBadgeType = badgeType;
       return true;
     }
     if (existingBadge) {
       existingBadge.remove();
     }
-    const template = document.createElement("template");
+    const template = this.document.createElement("template");
     template.innerHTML = iconSvg.trim();
     const badge = template.content.firstElementChild;
-    badge.classList.add("ioh-admin-icon");
+    if (!badge) return false;
+    badge.classList.add("ioh-admin-icon", "ioh-saved-moderator-badge");
+    badge.dataset.moderBadgeType = badgeType;
     markIoh(badge);
     const idContainer = link.closest("div");
     const parentContainer = idContainer ? idContainer.parentElement : null;
@@ -139,54 +156,65 @@ var ModeratorService = class _ModeratorService {
     link.dataset.moderBadgeType = badgeType;
     return true;
   }
-  _findCurrentServerSection() {
-    const header = Array.from(this.document.querySelectorAll("h3")).find((h) => h.textContent?.includes("\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u0435\u0440\u0432\u0435\u0440") && !h.closest('[aria-hidden="true"]'));
-    if (!header) {
-      return null;
-    }
-    let container = header.parentElement;
-    for (let depth = 0; depth < 8 && container; depth++) {
-      if (container.querySelector("table") && container.querySelector('a[href*="cybershoke.net/"]')) {
-        return container;
+  _findCurrentServerSections() {
+    const sections = /* @__PURE__ */ new Set();
+    const headers = Array.from(this.document.querySelectorAll("h3")).filter((h) => h.textContent?.includes("\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u0435\u0440\u0432\u0435\u0440") && h.getClientRects().length && !h.closest('[aria-hidden="true"]'));
+    for (const header of headers) {
+      const panel = header.closest("[aria-hidden]") || header.closest('main, [role="main"]');
+      if (!panel) continue;
+      for (const table of panel.querySelectorAll("table")) {
+        if (!table.getClientRects().length || table.closest('[aria-hidden="true"]')) continue;
+        const columns = Array.from(table.querySelectorAll("thead th")).map((cell) => cell.textContent.replace(/\s+/g, " ").trim().toLowerCase());
+        if (columns.includes("\u0438\u0433\u0440\u043E\u043A") && (columns.includes("\u043A\u043E\u043C\u0430\u043D\u0434\u0430") || columns.includes("\u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435") || columns.includes("\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F"))) {
+          sections.add(table);
+        }
       }
-      container = container.parentElement;
     }
-    return header.closest('main, [role="main"], section, article, [role="tabpanel"]') || header.parentElement;
+    return [...sections];
   }
-  highlightSavedModerators() {
-    this.chrome.storage.local.get(["helperConfig", "helperScheduleModerators"], ({ helperConfig, helperScheduleModerators }) => {
-      const moderators = {
-        ...helperConfig?.moderators || {},
-        ...validScheduleSnapshot(helperScheduleModerators) ? { Tier: helperScheduleModerators.Tier } : {}
-      };
-      if (Object.keys(moderators).length === 0) return;
-      const section = this._findCurrentServerSection();
-      if (!section) return;
-      const links = section.querySelectorAll('a[href*="cybershoke.net/"]');
-      links.forEach((link) => {
-        const match = link.href.match(/cybershoke\.net\/(\d+)/);
-        if (!match) return;
-        const steamId2 = match[1];
+  _findCurrentServerSection() {
+    return this._findCurrentServerSections()[0] || null;
+  }
+  clearSavedModerator(link) {
+    const scope = link.closest("td") || link.parentElement || link;
+    scope.querySelectorAll(".ioh-saved-moderator-badge[data-ioh]").forEach((badge) => badge.remove());
+    const row = link.closest("tr");
+    if (row?.dataset.iohSavedModerator) {
+      delete row.dataset.iohSavedModerator;
+      if (!row.querySelector('.ioh-moderator-badge, .ioh-profile-verified, [data-ioh-moderator-source="1"]')) {
+        row.classList.remove("ioh-highlighted-moderator");
+      }
+    }
+    delete link.dataset.hasModerBadge;
+    delete link.dataset.moderBadgeType;
+  }
+  async highlightSavedModerators() {
+    const generation = this._highlightGeneration = (this._highlightGeneration || 0) + 1;
+    let moderators;
+    try {
+      moderators = await this.loadBaselineModerators();
+    } catch (error) {
+      console.warn("[IO HELPER] \u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u0441\u0442\u0430\u0432 \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u043E\u0432:", error.message);
+      return;
+    }
+    if (generation !== this._highlightGeneration) return;
+    for (const section of this._findCurrentServerSections()) {
+      for (const link of section.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)) {
+        const steamId2 = steamIdFromPlayerProfileUrl(link.href);
+        if (!steamId2) continue;
         const badgeType = this.resolveModeratorType(steamId2, moderators);
         if (!badgeType) {
-          if (link.dataset.hasModerBadge) {
-            const badge = link.parentElement?.querySelector(".ioh-admin-icon[data-ioh]") || link.querySelector(".ioh-admin-icon[data-ioh]") || link.closest("tr")?.querySelector(".ioh-admin-icon[data-ioh]");
-            badge?.remove();
-            link.closest("tr")?.classList.remove("ioh-highlighted-moderator");
-            delete link.dataset.hasModerBadge;
-            delete link.dataset.moderBadgeType;
-          }
-          return;
+          this.clearSavedModerator(link);
+          continue;
         }
         const row = link.closest("tr");
-        if (row && !row.classList.contains("ioh-highlighted-moderator")) {
+        if (row) {
           row.classList.add("ioh-highlighted-moderator");
+          row.dataset.iohSavedModerator = "1";
         }
-        if (!link.dataset.hasModerBadge || link.dataset.moderBadgeType !== badgeType) {
-          this.insertModeratorBadge(link, badgeType);
-        }
-      });
-    });
+        this.insertModeratorBadge(link, badgeType);
+      }
+    }
   }
 };
 export {

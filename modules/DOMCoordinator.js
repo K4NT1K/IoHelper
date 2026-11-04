@@ -1,4 +1,5 @@
 import { isIohNode } from './shared/dom.js';
+import {PLAYER_PROFILE_LINK_SELECTOR} from './shared/playerProfile.js';
 
 export class DOMCoordinator {
     constructor(app) {
@@ -312,7 +313,8 @@ export class DOMCoordinator {
             this.emit('ticketMounted');
         }
 
-        if (this.isCurrentServerNode(node) || node.querySelector?.('a[href*="cybershoke.net/"]')) {
+        if (this.isCurrentServerNode(node) || node.matches?.(PLAYER_PROFILE_LINK_SELECTOR)
+            || node.querySelector?.(PLAYER_PROFILE_LINK_SELECTOR)) {
             this.emit('currentServerMods');
         }
 

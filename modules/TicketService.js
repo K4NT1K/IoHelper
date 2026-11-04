@@ -11,6 +11,7 @@ import { PunishmentPanelMethods } from './ticket/PunishmentPanel.js';
 import { OffenderProfileMethods } from './ticket/OffenderProfile.js';
 import { OffenderTrackingMethods } from './ticket/OffenderTracking.js';
 import { CloseReasonMethods } from './ticket/CloseReason.js';
+import { PunishmentFeedbackMethods } from './ticket/PunishmentFeedback.js';
 
 export class TicketService {
     constructor({document, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome = null}) {
@@ -110,6 +111,7 @@ export class TicketService {
     }
 
     async processTicketRules(textarea) {
+        if (this.renderTicketPunishmentFeedback(textarea)) return {kind: 'skip'};
         if (!this.isVisibleTicketTextarea(textarea)) {
             return {kind: 'skip'};
         }
@@ -472,5 +474,6 @@ Object.assign(
     PunishmentPanelMethods,
     OffenderProfileMethods,
     OffenderTrackingMethods,
-    CloseReasonMethods
+    CloseReasonMethods,
+    PunishmentFeedbackMethods
 );

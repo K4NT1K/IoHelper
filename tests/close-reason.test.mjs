@@ -7,6 +7,7 @@ const punished = 'Нарушитель был наказан';
 const noCheats = 'Читов не найдено';
 const insufficient = 'Недостаточно доказательств';
 const noViolations = 'Нет нарушений';
+const left = 'Игрок вышел с сервера';
 
 test('Cheating uses the displayed timer and inclusive configurable threshold', () => {
     assert.equal(chooseCloseReason('Читерство', 179), noCheats);
@@ -58,14 +59,14 @@ function fixture(t) {
     const state = {category:'Читерство', steamId:'76561198000000001', visible:true, active:true,
         timer:'00:00:00', ticketId:'1234567', clicks:[], cached:null, texts:[], ttl:[]};
     const body = {};
-    const scope = {parentElement:body};
+    const scope = {parentElement:body, attrs:{}, getAttribute(name) {return this.attrs[name] ?? null;}};
     const clockParent = {get textContent() {return state.timer;}};
     const clock = {closest:() => ({parentElement:clockParent})};
     const header = {querySelector:selector => selector === 'use[href="#lc-clock"]' ? clock : null};
     const title = {get textContent() {return 'Результат рассмотрения тикета #' + state.ticketId;}, parentElement:header};
     const handlers = new Map();
     const group = {};
-    const labels = [punished, noCheats, insufficient, noViolations, 'Некорректная жалоба'];
+    const labels = [punished, noCheats, insufficient, noViolations, left, 'Некорректная жалоба'];
     const buttons = labels.map(label => ({textContent:label, type:'button', disabled:false, parentElement:group,
         closest(selector) {return selector === 'button' ? this : null;},
         click() {handlers.get('click')?.({target:this}); state.clicks.push(label);}}));
@@ -75,20 +76,23 @@ function fixture(t) {
         removeEventListener:(name, handler) => {if(handlers.get(name)===handler) handlers.delete(name);}};
     const content = {parentElement:card, querySelectorAll:() => []};
     const comment = {parentElement:content, querySelectorAll:() => []};
-    const textarea = {parentElement:comment, readOnly:false, disabled:false, connected:true};
+    const textarea = {parentElement:comment, readOnly:false, disabled:false, connected:true,
+        getClientRects:() => state.visible ? [{}] : []};
     state.texts = [textarea];
     const ctx = {...CloseReasonMethods,
         settings:{features:{autoSelectCloseReason:true}, closeReasonEvidenceMinutes:3,
             trackOffenderIntervalWhileReviewing:30},
-        document:{body, contains:node => node.connected !== false, querySelectorAll:() => state.texts},
-        getTicketScopeRoot:() => scope,
+        document:{body, contains:node => node.connected !== false, querySelectorAll:() => state.texts,
+            querySelector:() => state.modal ? {} : null,
+            defaultView:{getComputedStyle:node => node.style || {display:'block',visibility:'visible'}}},
+        getTicketScopeRoot:() => state.scopeOverride || scope,
         findInfoFieldScoped:() => ({steamId:state.steamId}),
         extractSteamIdFromField:field => field.steamId,
         getTicketComplaintCategory:() => state.category,
         scopeHasInProgressStatus:(_scope, options) => {assert.equal(options.includeActivePanel,false); return state.active;},
         isVisibleTicketTextarea:() => state.visible,
         getCachedUserData:(_id, ttl) => {state.ttl.push(ttl); return state.cached;}};
-    return {ctx,state,textarea,buttons,card,content,scope,observers,handlers};
+    return {ctx,state,textarea,buttons,card,content,scope,header,observers,handlers};
 }
 
 test('Native baseline, timer transition and punishment transition click once; close is never clicked', t => {
@@ -314,3 +318,226 @@ test('A pending readonly card releases its observer on a status-only close', t =
     assert.equal(ctx._closeReasonPendingCards.size,0);
     assert.deepEqual(state.clicks,[]);
 });
+
+for (const category of ['Читерство','Багоюз','Мониторинг','Спам','Попрошайничество']) {
+    test(category+': punishment outranks offline, explicit online restores the normal baseline', () => {
+        const ban=category==='Читерство'||category==='Багоюз';
+        const data={serverIp:null,isBanned:ban,isMuted:!ban};
+        assert.equal(chooseCloseReason(category,0,3,data),punished);
+        assert.equal(chooseCloseReason(category,0,3,{serverIp:null}),left);
+        assert.equal(chooseCloseReason(category,0,3,{serverIp:'127.0.0.2:27015'}),
+            category==='Читерство'?noCheats:noViolations);
+        assert.equal(chooseCloseReason(category,0,3,{serverIp:undefined}),
+            category==='Читерство'?noCheats:noViolations);
+    });
+}
+
+test('Offline and relocated tracker updates preserve presence across partial punishment data', t => {
+    const {ctx,state}=fixture(t);
+    ctx.syncCloseReasonSelection();
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:null,isBanned:false,isMuted:false});
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:undefined,isMuted:true});
+    assert.deepEqual(state.clicks,[noCheats,left]);
+    ctx.onCloseReasonPunishmentData(state.steamId,{isBanned:true});
+    assert.equal(state.clicks.at(-1),punished);
+    ctx.onCloseReasonPunishmentData(state.steamId,{isBanned:false});
+    assert.equal(state.clicks.at(-1),left);
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:'127.0.0.2:27015'});
+    assert.equal(state.clicks.at(-1),noCheats);
+    ctx.onCloseReasonPunishmentData(state.steamId,{isMuted:false});
+    assert.equal(state.clicks.at(-1),noCheats);
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:null});
+    state.timer='00:04:00';
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:'127.0.0.1:27015'});
+    assert.equal(state.clicks.at(-1),insufficient);
+});
+
+function intentFor(fixture, overrides={}) {
+    return {scope:fixture.scope,steamId:fixture.state.steamId,ticketId:fixture.state.ticketId,
+        type:'ban',attemptToken:{},...overrides};
+}
+
+test('Native intent updates synchronously, survives API false and rolls back on explicit failure', t => {
+    const f=fixture(t), {ctx,state}=f;
+    ctx.syncCloseReasonSelection();
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:null,isBanned:false});
+    const intent=intentFor(f);
+    assert.equal(ctx.onCloseReasonPunishmentIntent(intent),true);
+    assert.equal(state.clicks.at(-1),punished);
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:null,isBanned:false});
+    assert.equal(state.clicks.at(-1),punished);
+    ctx.cancelCloseReasonPunishmentIntent(intent.attemptToken);
+    assert.equal(state.clicks.at(-1),left);
+    ctx.cancelCloseReasonPunishmentIntent(intent.attemptToken);
+    assert.deepEqual(state.clicks,[noCheats,left,punished,left]);
+});
+
+test('API true confirms an intent; a later false then follows current tracker status', t => {
+    const f=fixture(t),{ctx,state}=f;
+    const intent=intentFor(f);
+    ctx.onCloseReasonPunishmentIntent(intent);
+    ctx.onCloseReasonPunishmentData(state.steamId,{isBanned:true,serverIp:null});
+    assert.equal(ctx._closeReasonIntentStates.has(intent.attemptToken),false);
+    ctx.onCloseReasonPunishmentData(state.steamId,{isBanned:false,serverIp:null});
+    assert.equal(state.clicks.at(-1),left);
+    ctx.cancelCloseReasonPunishmentIntent(intent.attemptToken);
+    assert.equal(state.clicks.at(-1),left);
+});
+
+test('Independent attempts cancel individually and unsupported origins and types are ignored', t => {
+    const f=fixture(t),{ctx,state}=f;
+    ctx.syncCloseReasonSelection();
+    for (const overrides of [{scope:{}},{steamId:'76561198000000002'},{ticketId:'999'},
+        {type:'mute'},{type:'unknown'},{attemptToken:null},{attemptToken:'invalid'}]) {
+        assert.equal(ctx.onCloseReasonPunishmentIntent(intentFor(f,overrides)),false);
+    }
+    assert.deepEqual(state.clicks,[noCheats]);
+    const first=intentFor(f),second=intentFor(f);
+    ctx.onCloseReasonPunishmentIntent(first);
+    ctx.onCloseReasonPunishmentIntent(second);
+    ctx.cancelCloseReasonPunishmentIntent(first.attemptToken);
+    assert.deepEqual(state.clicks,[noCheats,punished]);
+    ctx.cancelCloseReasonPunishmentIntent(second.attemptToken);
+    assert.deepEqual(state.clicks,[noCheats,punished,noCheats]);
+});
+
+test('A mute intent belongs to voice complaint categories and respects manual choice', t => {
+    const f=fixture(t),{ctx,state,buttons}=f;
+    state.category='Мониторинг';
+    ctx.syncCloseReasonSelection();
+    assert.equal(ctx.onCloseReasonPunishmentIntent(intentFor(f)),false);
+    const intent=intentFor(f,{type:'mute'});
+    assert.equal(ctx.onCloseReasonPunishmentIntent(intent),true);
+    assert.equal(state.clicks.at(-1),punished);
+    buttons.find(button=>button.textContent===left).click();
+    ctx.onCloseReasonPunishmentData(state.steamId,{isMuted:true,serverIp:'127.0.0.1:27015'});
+    ctx.cancelCloseReasonPunishmentIntent(intent.attemptToken);
+    ctx.onCloseReasonPunishmentIntent(intentFor(f,{type:'mute'}));
+    assert.deepEqual(state.clicks,[noViolations,punished,left]);
+});
+
+test('Modal background aria-hidden and inert do not change source scope or delay native intent selection', t => {
+    const f=fixture(t),{ctx,state,content,scope,header}=f;
+    ctx.syncCloseReasonSelection();
+    state.modal=true;
+    state.scopeOverride=content;
+    content.getAttribute=name=>name==='aria-hidden'||name==='data-aria-hidden'?'true':null;
+    content.inert=true;
+    ctx.isVisibleTicketTextarea=()=>false;
+    header.querySelectorAll=()=>[{textContent:'В работе'}];
+    ctx.scopeHasInProgressStatus=()=>false;
+    assert.equal(ctx.getCloseReasonContext(f.textarea).scope,scope);
+    assert.equal(ctx.onCloseReasonPunishmentIntent(intentFor(f)),true);
+    assert.deepEqual(state.clicks,[noCheats,punished]);
+    assert.equal(ctx._closeReasonSessions.size,1);
+});
+
+for (const hiddenBy of ['display','visibility','tabpanel','inactive','ariaOnly','noRects']) {
+    test('An open modal does not authorize a hidden SPA source: '+hiddenBy, t => {
+        const f=fixture(t),{ctx,state,scope}=f;
+        ctx.syncCloseReasonSelection();
+        state.modal=true;
+        if(hiddenBy==='display') scope.style={display:'none',visibility:'visible'};
+        if(hiddenBy==='visibility') scope.style={display:'block',visibility:'hidden'};
+        if(hiddenBy==='tabpanel') scope.attrs={'role':'tabpanel','aria-hidden':'true'};
+        if(hiddenBy==='inactive') scope.attrs={'data-state':'inactive','aria-hidden':'true'};
+        if(hiddenBy==='ariaOnly') scope.attrs={'aria-hidden':'true'};
+        if(hiddenBy==='noRects') state.visible=false;
+        ctx.onCloseReasonPunishmentIntent(intentFor(f));
+        assert.deepEqual(state.clicks,[noCheats]);
+        delete scope.style; scope.attrs={}; state.visible=true;
+        ctx.syncCloseReasonSelection();
+        assert.deepEqual(state.clicks,[noCheats,punished]);
+    });
+}
+
+test('Complaint replacement and feature disable clean optimistic attempt tokens', t => {
+    const f=fixture(t),{ctx,state}=f;
+    const first=intentFor(f);
+    ctx.onCloseReasonPunishmentIntent(first);
+    assert.equal(ctx._closeReasonIntentStates.has(first.attemptToken),true);
+    state.ticketId='1234568';
+    ctx.syncCloseReasonSelection();
+    assert.equal(ctx._closeReasonIntentStates.has(first.attemptToken),false);
+    assert.equal(state.clicks.at(-1),noCheats);
+    const second=intentFor(f);
+    ctx.onCloseReasonPunishmentIntent(second);
+    ctx.settings.features.autoSelectCloseReason=false;
+    ctx.syncCloseReasonSelection();
+    assert.equal(ctx._closeReasonIntentStates.has(second.attemptToken),false);
+    ctx.settings.features.autoSelectCloseReason=true;
+    ctx.syncCloseReasonSelection();
+    assert.equal(state.clicks.at(-1),noCheats);
+});
+
+test('Explicit detached-scope transfer preserves manual priority on the same remounted complaint', t => {
+    const f=fixture(t),{ctx,state,scope,card,textarea,buttons,observers}=f;
+    ctx.syncCloseReasonSelection();
+    buttons.find(button=>button.textContent===left).click();
+    const intent=intentFor(f);
+    ctx.onCloseReasonPunishmentIntent(intent);
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:null,isBanned:false});
+    const oldState=ctx._closeReasonStateByScope.get(scope);
+    const remountedScope={...scope,connected:true};
+    scope.connected=false;
+    card.parentElement=remountedScope;
+    state.scopeOverride=remountedScope;
+    const context=ctx.getCloseReasonContext(textarea);
+    assert.equal(ctx.transferCloseReasonComplaintScope(scope,context),true);
+    assert.equal(observers[0].connected,false);
+    assert.equal(ctx._closeReasonStateByScope.get(remountedScope),oldState);
+    assert.equal(ctx._closeReasonStateByScope.has(scope),false);
+    ctx.syncCloseReasonSelection();
+    ctx.onCloseReasonPunishmentData(state.steamId,{serverIp:'127.0.0.2:27015',isBanned:true});
+    assert.deepEqual(state.clicks,[noCheats,left]);
+    assert.equal(ctx._closeReasonSessions.get(remountedScope).complaintState.manual,true);
+});
+
+test('Transferred optimistic attempt remains cancellable after the source scope remounts', t => {
+    const f=fixture(t),{ctx,state,scope,card,textarea}=f;
+    const intent=intentFor(f);
+    ctx.onCloseReasonPunishmentIntent(intent);
+    const remountedScope={...scope,connected:true};
+    scope.connected=false; card.parentElement=remountedScope; state.scopeOverride=remountedScope;
+    const context=ctx.getCloseReasonContext(textarea);
+    assert.equal(ctx.transferCloseReasonComplaintScope(scope,context),true);
+    ctx.syncCloseReasonSelection();
+    assert.equal(state.clicks.at(-1),punished);
+    ctx.cancelCloseReasonPunishmentIntent(intent.attemptToken);
+    assert.equal(state.clicks.at(-1),noCheats);
+    assert.equal(ctx._closeReasonIntentStates.has(intent.attemptToken),false);
+});
+
+test('Transfer respects a manual choice already made in the remounted scope', t => {
+    const f=fixture(t),{ctx,state,scope,card,textarea,buttons}=f;
+    ctx.syncCloseReasonSelection();
+    const remountedScope={...scope,connected:true};
+    scope.connected=false; card.parentElement=remountedScope; state.scopeOverride=remountedScope;
+    ctx.syncCloseReasonSelection();
+    buttons.find(button=>button.textContent===left).click();
+    const clicksBeforeTransfer=[...state.clicks];
+    const context=ctx.getCloseReasonContext(textarea);
+    assert.equal(ctx.transferCloseReasonComplaintScope(scope,context),true);
+    ctx.onCloseReasonPunishmentData(state.steamId,{isBanned:true,serverIp:null});
+    assert.deepEqual(state.clicks,clicksBeforeTransfer);
+    assert.equal(ctx._closeReasonSessions.get(remountedScope).complaintState.manual,true);
+});
+
+for (const mismatch of ['mounted','ticket','steam','category','readonly']) {
+    test('Scope transfer rejects a '+mismatch+' source mismatch', t => {
+        const f=fixture(t),{ctx,state,scope,card,textarea}=f;
+        ctx.syncCloseReasonSelection();
+        const oldState=ctx._closeReasonStateByScope.get(scope);
+        const remountedScope={...scope,connected:true};
+        if(mismatch!=='mounted') scope.connected=false;
+        card.parentElement=remountedScope; state.scopeOverride=remountedScope;
+        if(mismatch==='ticket') state.ticketId='1234568';
+        if(mismatch==='steam') state.steamId='76561198000000002';
+        if(mismatch==='category') state.category='Мониторинг';
+        if(mismatch==='readonly') textarea.readOnly=true;
+        const context=ctx.getCloseReasonContext(textarea);
+        assert.equal(ctx.transferCloseReasonComplaintScope(scope,context),false);
+        assert.equal(ctx._closeReasonStateByScope.get(scope),oldState);
+        assert.equal(ctx._closeReasonStateByScope.has(remountedScope),false);
+    });
+}

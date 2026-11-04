@@ -33,14 +33,18 @@ export class SitePunishmentBridge {
 
     async openForm(type, steamId) {
         const origin = this.ticketService._closeReasonPunishmentOrigin;
+        const originPath = this.document.defaultView?.location?.pathname || '';
         try {
             const opened = await this._openForm(type, steamId);
             if (opened && origin?.type === type && origin.steamId === steamId) {
                 const input = this.document.querySelector(`[role="dialog"] ${SitePunishmentBridge.PANELS[type].inputSelector}`);
                 const dialog = input?.closest('[role="dialog"]');
                 if (dialog) {
-                    this.ticketService._closeReasonPunishmentOrigins ||= new WeakMap();
-                    this.ticketService._closeReasonPunishmentOrigins.set(dialog, origin);
+                    const currentOrigin = this.recoverCloseReasonPunishmentOrigin(origin, originPath);
+                    if (currentOrigin) {
+                        this.ticketService._closeReasonPunishmentOrigins ||= new WeakMap();
+                        this.ticketService._closeReasonPunishmentOrigins.set(dialog, currentOrigin);
+                    }
                 }
             }
             return opened;
@@ -49,6 +53,36 @@ export class SitePunishmentBridge {
                 this.ticketService._closeReasonPunishmentOrigin = null;
             }
         }
+    }
+
+    recoverCloseReasonPunishmentOrigin(origin, originPath) {
+        if (!this.document.contains || this.document.contains(origin.scope)) return origin;
+        const ticket = this.ticketService;
+        const getContext = ticket.getTicketPunishmentFeedbackContext || ticket.getCloseReasonContext;
+        const isEditable = ticket.isTicketPunishmentFeedbackContextEditable || ticket.isCloseReasonContextEditable;
+        const currentPath = this.document.defaultView?.location?.pathname || '';
+        const sourceTicketId = originPath.match(/^\/(?:support\/(?:ticket|report)|tickets?|reports?)\/(\d+)\/?$/i)?.[1];
+        // A non-tabbed management visit can remount the original complaint. Only
+        // its explicit return route may authorize a replacement DOM scope.
+        if (sourceTicketId !== String(origin.ticketId)
+            || currentPath.replace(/\/$/, '') !== originPath.replace(/\/$/, '')
+            || !getContext || !isEditable) return null;
+        const candidates = new Map();
+        for (const textarea of this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]')) {
+            const context = getContext.call(ticket, textarea);
+            if (!context || context.ticketId !== String(origin.ticketId) || context.steamId !== origin.steamId
+                || !this.document.contains(context.scope) || !isEditable.call(ticket, context)) continue;
+            const visible = ticket.isCloseReasonTextareaVisible
+                ? ticket.isCloseReasonTextareaVisible(textarea, context.scope)
+                : ticket.isVisibleTicketTextarea?.(textarea);
+            if (!visible || ticket.getOffenderSteamIdForScope(context.scope) !== origin.steamId
+                || ticket.extractTicketIdFromComplaintScope(context.scope) !== String(origin.ticketId)) continue;
+            candidates.set(textarea, context);
+        }
+        if (candidates.size !== 1) return null;
+        const context = candidates.values().next().value;
+        ticket.transferCloseReasonComplaintScope?.(origin.scope, context);
+        return {...origin, scope: context.scope};
     }
 
     async _openForm(type, steamId) {
