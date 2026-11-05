@@ -1,5 +1,6 @@
 import { isIohNode, markIoh } from '../shared/dom.js';
 import {normalizeResponse, requestTime} from '../native/model.js';
+import {steamIdFromPlayerProfileUrl} from '../shared/playerProfile.js';
 
 export const OffenderTrackingMethods = {
     normalizeVipName(raw) {
@@ -1444,6 +1445,15 @@ export const OffenderTrackingMethods = {
         }
     },
 
+    queueOffenderTrackingRows(rows) {
+        this._offenderTrackingArrivals ||= new Set();
+        for (const row of rows) if (row.isConnected) this._offenderTrackingArrivals.add(row);
+    },
+
+    hasPendingOffenderTrackingRows() {
+        return Boolean(this._offenderTrackingArrivals?.size);
+    },
+
     async checkOffendersServers(cacheIntervalMs = null, {singleRowPerPass = false, isCurrent = () => true} = {}) {
         const path = window.location.pathname || '';
         const href = window.location.href || '';
@@ -1452,14 +1462,11 @@ export const OffenderTrackingMethods = {
             && /\/ticket\/|\/reports?\//i.test(path);
 
         if (!isQueuePage && !isDetailPage) {
+            this._offenderTrackingArrivals?.clear();
             return;
         }
 
         if (this.isCheckingServer) return;
-
-        if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
-            return;
-        }
 
         this.isCheckingServer = true;
         const CACHE_INTERVAL = Math.max(
@@ -1469,14 +1476,17 @@ export const OffenderTrackingMethods = {
         const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1000;
         const passIsCurrent = () => this.settings.features.trackOffenderServer
             && !this.document.hidden && window.location.href === href && isCurrent();
-        const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"]';
+        const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"], td:nth-child(4) a[href*="cybershoke.ru/"]';
         const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
 
         try {
-            // Snapshot once: a row cannot become a candidate again during this pass.
-            const now = Date.now();
-            const candidates = Array.from(this.document.querySelectorAll('table tbody tr')).reverse()
-                .map(row => {
+            // Each complaint/row identity is admitted once per pass. New complaints join
+            // behind older first checks, but ahead of scheduled repeat checks.
+            const seen = new Map();
+            this._offenderRowTrackingIdentity ||= new WeakMap();
+            this._offenderTicketChecks ||= new Map();
+            const toCandidate = row => {
+                    const now = Date.now();
                     const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
                     if (timeCell) {
                         const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText)
@@ -1487,9 +1497,27 @@ export const OffenderTrackingMethods = {
                     }
                     const offenderLink = row.querySelector(offenderSelector);
                     const serverLink = row.querySelector(serverSelector);
-                    const steamId = offenderLink?.href.match(/\d{17,18}/)?.[0];
+                    const steamId = steamIdFromPlayerProfileUrl(offenderLink?.href);
                     if (!steamId || !serverLink) {
                         return null;
+                    }
+                    const ip = this.ensureServerLinkOriginalIp(serverLink);
+                    const ticketKey = row.dataset.iohNativeTicket || '';
+                    const identity = `${ticketKey}|${steamId}|${ip}`;
+                    if (seen.get(row) === identity) return null;
+                    seen.set(row, identity);
+                    const previous = this._offenderRowTrackingIdentity.get(row);
+                    if (previous && previous !== identity) {
+                        delete row.dataset.lastIpCheck;
+                        delete row.dataset.lastIpAttempt;
+                        this._offenderRowSnapshots?.delete(row);
+                    }
+                    this._offenderRowTrackingIdentity.set(row, identity);
+                    const saved = ticketKey && this._offenderTicketChecks.get(identity);
+                    if (saved) {
+                        for (const field of ['lastIpCheck', 'lastIpAttempt']) {
+                            row.dataset[field] = String(Math.max(Number(row.dataset[field]) || 0, saved[field] || 0));
+                        }
                     }
                     const lastCheck = Math.max(
                         Number.parseInt(row.dataset.lastIpCheck || '0', 10) || 0,
@@ -1498,12 +1526,23 @@ export const OffenderTrackingMethods = {
                     if (now - lastCheck < CACHE_INTERVAL) {
                         return null;
                     }
-                    return {row, offenderLink, serverLink, steamId, lastCheck,
-                        ip: this.ensureServerLinkOriginalIp(serverLink)};
-                }).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
+                    return {row, offenderLink, serverLink, steamId, lastCheck, ip, identity, ticketKey};
+                };
+            const candidates = Array.from(this.document.querySelectorAll('table tbody tr')).reverse()
+                .map(toCandidate).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
             const dataBySteamId = new Map();
 
-            for (const candidate of candidates) {
+            while (true) {
+                const arrivals = this._offenderTrackingArrivals;
+                this._offenderTrackingArrivals = new Set();
+                const added = [...(arrivals || [])].filter(row => row.isConnected).map(toCandidate).filter(Boolean);
+                if (added.length) {
+                    // Stable sorting keeps earlier never-checked rows ahead of arrivals.
+                    candidates.push(...added);
+                    candidates.sort((a, b) => a.lastCheck - b.lastCheck);
+                }
+                const candidate = candidates.shift();
+                if (!candidate) break;
                 if (!passIsCurrent()) {
                     break;
                 }
@@ -1513,9 +1552,20 @@ export const OffenderTrackingMethods = {
                 }
 
                 const {row: targetRow, steamId: targetSteamId, ip: targetIp, offenderLink, serverLink} = candidate;
+                const markCheck = field => {
+                    targetRow.dataset[field] = Date.now().toString();
+                    if (!candidate.ticketKey) return;
+                    this._offenderTicketChecks.delete(candidate.identity);
+                    this._offenderTicketChecks.set(candidate.identity, {
+                        lastIpCheck: Number(targetRow.dataset.lastIpCheck) || 0,
+                        lastIpAttempt: Number(targetRow.dataset.lastIpAttempt) || 0
+                    });
+                    if (this._offenderTicketChecks.size > 1024) this._offenderTicketChecks.delete(this._offenderTicketChecks.keys().next().value);
+                };
                 const rowIsCurrent = () => targetRow.isConnected
+                    && (targetRow.dataset.iohNativeTicket || '') === candidate.ticketKey
                     && targetRow.querySelector(offenderSelector) === offenderLink
-                    && offenderLink.href.match(/\d{17,18}/)?.[0] === targetSteamId
+                    && steamIdFromPlayerProfileUrl(offenderLink.href) === targetSteamId
                     && targetRow.querySelector(serverSelector) === serverLink
                     && this.ensureServerLinkOriginalIp(serverLink) === targetIp;
                 if (!passIsCurrent() || !rowIsCurrent()) {
@@ -1524,6 +1574,7 @@ export const OffenderTrackingMethods = {
 
                 let userData = dataBySteamId.has(targetSteamId)
                     ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
+                let deferRepeat = false;
                 while (!userData && !dataBySteamId.has(targetSteamId)) {
                     if (!passIsCurrent() || !rowIsCurrent()) {
                         break;
@@ -1538,8 +1589,16 @@ export const OffenderTrackingMethods = {
                     if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
                         continue;
                     }
+                    if (candidate.lastCheck && [...(this._offenderTrackingArrivals || [])].some(row => row.isConnected
+                        && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ''}|`)))) {
+                        // An arrival during the throttle delay takes priority before
+                        // we dispatch a repeat request that has not started yet.
+                        candidates.unshift(candidate);
+                        deferRepeat = true;
+                        break;
+                    }
 
-                    targetRow.dataset.lastIpAttempt = Date.now().toString();
+                    markCheck('lastIpAttempt');
                     try {
                         userData = await this.fetchParsedUserData(targetSteamId);
                         break;
@@ -1553,6 +1612,7 @@ export const OffenderTrackingMethods = {
                         break;
                     }
                 }
+                if (deferRepeat) continue;
                 if (userData) {
                     dataBySteamId.set(targetSteamId, userData);
                 }
@@ -1577,7 +1637,7 @@ export const OffenderTrackingMethods = {
                             if (label.textContent !== text) label.textContent = text;
                         });
                     }
-                    targetRow.dataset.lastIpCheck = Date.now().toString();
+                    markCheck('lastIpCheck');
                     if (singleRowPerPass) {
                         break;
                     }
@@ -1591,15 +1651,16 @@ export const OffenderTrackingMethods = {
                     this.applyOffenderServerStatus(serverLink, targetSteamId, targetIp, userData);
                     this.applyOffenderPunishmentHighlight(targetRow, userData);
                     this.applyOffenderVipBadge(offenderLink, userData.vipName);
-                    this.applyOffenderModeratorHighlight(targetRow, offenderLink, userData.isModerator);
+                    if (!this.nativeData) this.applyOffenderModeratorHighlight(targetRow, offenderLink, userData.isModerator);
                     this.applyOffenderProfileVerification(
                         offenderLink,
                         userData.profileVerified,
                         targetRow
                     );
                     this.applyOffenderMuteBanIcons(offenderLink, targetRow, userData);
+                    this.renderNativeQueue?.();
                 });
-                targetRow.dataset.lastIpCheck = Date.now().toString();
+                markCheck('lastIpCheck');
 
                 if (singleRowPerPass) {
                     break;

@@ -79,6 +79,99 @@ test('T2: 20 rows finish once even when the first row expires before the end', a
     assert.equal(s.rendered.length, 20);
 });
 
+test('A newly woken queue waits out existing cooldown instead of dropping the pass', async t => {
+    const time=clock(t),s=tracker(t,1);
+    s.ctx.globalServerCooldown=Date.now()+660;
+    const run=s.run();await time.advance(659);assert.equal(s.calls.length,0);
+    await time.finish(run);assert.equal(s.calls.length,1);
+});
+
+test('Arrivals wait behind all older first checks, then overtake repeat checks in the running pass', async t => {
+    const time = clock(t), pending = deferred();
+    const s = tracker(t, 4, async () => s.calls.length === 1 ? pending.promise : {});
+    // Reversed DOM order: old unchecked 3,2; already checked repeat 1.
+    const fresh = s.rows.shift();
+    s.rows[0].dataset.lastIpCheck = '1';
+    const first = s.run(); await time.advance(340);
+    assert.deepEqual(s.calls, [s.rows[2].offenderLink.href.split('/').at(-1)]);
+    s.rows.unshift(fresh);
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [fresh]);
+    pending.resolve({}); await time.finish(first);
+    assert.deepEqual(s.calls, [s.rows[3], s.rows[2], fresh, s.rows[1]].map(row => row.offenderLink.href.split('/').at(-1)));
+    assert.equal(s.ctx._offenderTrackingArrivals.size, 0);
+    assert.equal(new Set(s.calls).size, 4);
+});
+
+test('When older complaints were checked, an arrival preempts remaining repeats after the current request', async t => {
+    const time = clock(t), pending = deferred();
+    const s = tracker(t, 4, async () => s.calls.length === 1 ? pending.promise : {});
+    const fresh = s.rows.shift();
+    s.rows.forEach(row => {row.dataset.lastIpCheck = '1';});
+    const run = s.run(); await time.advance(340);
+    const running = s.calls[0];
+    s.rows.unshift(fresh);
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [fresh, fresh]);
+    pending.resolve({}); await time.finish(run);
+    assert.equal(s.calls[0], running);
+    assert.equal(s.calls[1], fresh.offenderLink.href.split('/').at(-1));
+    assert.equal(s.calls.length, 4);
+});
+
+test('A recycled row receives a first check for the new complaint even during the cache pause', async t => {
+    const time = clock(t), s = tracker(t, 1);
+    s.rows[0].dataset.iohNativeTicket = 'ticket:1';
+    await time.finish(s.run());
+    s.rows[0].dataset.iohNativeTicket = 'ticket:2';
+    await time.finish(s.run());
+    assert.equal(s.calls.length, 2);
+});
+
+test('An arrival during the throttle delay takes priority before a repeat request is dispatched', async t => {
+    const time = clock(t), s = tracker(t, 2);
+    const fresh = s.rows.shift(); s.rows[0].dataset.lastIpCheck = '1';
+    const run = s.run(); await time.advance(100);
+    s.rows.unshift(fresh); OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [fresh]);
+    await time.finish(run);
+    assert.equal(s.calls[0], fresh.offenderLink.href.split('/').at(-1));
+    assert.equal(s.calls.length, 2);
+});
+
+test('Replacing queue DOM retains earlier checks by complaint ID and checks only the new complaint immediately', async t => {
+    const time = clock(t), s = tracker(t, 3);
+    const fresh = s.rows.shift(); fresh.dataset.iohNativeTicket = 'report:3';
+    s.rows.forEach((row, i) => {row.dataset.iohNativeTicket = `report:${i + 1}`;});
+    await time.finish(s.run());
+    const replacements = s.rows.map(row => ({...row, dataset: {iohNativeTicket: row.dataset.iohNativeTicket}}));
+    s.rows.splice(0, s.rows.length, fresh, ...replacements);
+    await time.finish(s.run());
+    assert.equal(s.calls.length, 3);
+    assert.equal(s.calls.at(-1), fresh.offenderLink.href.split('/').at(-1));
+    assert(replacements.every(row => row.dataset.lastIpCheck));
+});
+
+test('An in-flight response cannot mark a recycled row for a different complaint of the same player', async t => {
+    const time = clock(t), pending = deferred(), s = tracker(t, 1, () => pending.promise);
+    s.rows[0].dataset.iohNativeTicket = 'ticket:1';
+    const run = s.run(); await time.advance(340);
+    s.rows[0].dataset.iohNativeTicket = 'ticket:2'; pending.resolve({});
+    await time.finish(run); s.jobs.forEach(job => job());
+    assert.equal(s.rows[0].dataset.lastIpCheck, undefined);
+    assert.equal(s.rendered.length, 0);
+});
+
+test('A recycled row announced during a pass is admitted as a new complaint without waiting for the next interval', async t => {
+    const time = clock(t), pending = deferred(), s = tracker(t, 1, () => pending.promise);
+    s.rows[0].dataset.iohNativeTicket = 'ticket:1';
+    const run = s.run(); await time.advance(340);
+    s.rows[0].dataset.iohNativeTicket = 'ticket:2';
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [s.rows[0]]);
+    pending.resolve({}); await time.finish(run); s.jobs.forEach(job => job());
+    assert(s.rows[0].dataset.lastIpCheck);
+    assert.equal(s.rendered.length, 1);
+    assert.equal(s.calls.length, 1); // Same player's successful result is reusable.
+    assert.equal(s.ctx._offenderTrackingArrivals.size, 0);
+});
+
 test('T2: failure attempts each player once and delays retries until the next eligible pass', async t => {
     const time = clock(t);
     const s = tracker(t, 5, async () => { throw new Error('HTTP 500'); });
@@ -236,6 +329,30 @@ function scheduler(t, pathname = '/support/tickets') {
     return ctx;
 }
 
+test('App admits an arrival during a running pass without cancelling it or starting a second full pass', async t => {
+    const time = clock(t), app = scheduler(t), pending = deferred();
+    const s = tracker(t, 3, async () => s.calls.length === 1 ? pending.promise : {});
+    const fresh = s.rows.shift();
+    s.rows.forEach(row => {row.dataset.lastIpCheck = '1';});
+    Object.assign(s.ctx, {queueOffenderTrackingRows: OffenderTrackingMethods.queueOffenderTrackingRows,
+        hasPendingOffenderTrackingRows: OffenderTrackingMethods.hasPendingOffenderTrackingRows,
+        renderNativeQueue() {}});
+    let passes = 0;
+    s.ctx.checkOffendersServers = (_ttl, options) => {passes++; return s.run(options);};
+    app.ticketService = s.ctx;
+    const run = app.runOffenderTrackingPass(); await time.advance(340);
+    const generation = app._offenderTrackingGeneration;
+    s.rows.unshift(fresh); app.onComplaintQueueRowsAdded([fresh]);
+    pending.resolve({});
+    await time.finish(run);
+    assert.equal(app._offenderTrackingGeneration, generation);
+    assert.equal(passes, 1);
+    assert.equal(s.calls[1], fresh.offenderLink.href.split('/').at(-1));
+    assert.equal(s.calls.length, 3);
+    assert.equal(time.timers.size, 1);
+    assert.equal([...time.timers.values()][0].at, Date.now() + 5000);
+});
+
 test('T1: one active pass and the interval starts after completion', async t => {
     const time = clock(t);
     const app = scheduler(t);
@@ -291,9 +408,9 @@ test('Mode change invalidates pending work and uses the new review interval', as
     pending.resolve();
     await time.flush();
     await time.advance(29999);
-    assert.equal(passes, 1);
-    await time.advance(1);
     assert.equal(passes, 2);
+    await time.advance(1);
+    assert.equal(passes, 3);
 });
 
 test('Disabling while a request is pending cannot resurrect the loop', async t => {

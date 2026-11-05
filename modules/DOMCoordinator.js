@@ -134,6 +134,10 @@ export class DOMCoordinator {
 
         if (newRows.size) {
             newRows.forEach(row => this.app._applyRowHighlights(row));
+            if (this.app.onComplaintQueueRowsAdded) {
+                const complaintRows = [...newRows].filter(row => row.isConnected && this.isComplaintQueueRow(row));
+                if (complaintRows.length) this.app.onComplaintQueueRowsAdded(complaintRows);
+            }
         }
         if (updatedRows.size) {
             this.scheduleRowHighlights(updatedRows);
@@ -144,14 +148,13 @@ export class DOMCoordinator {
     }
 
     observeComplaintQueueTable(table) {
-        if (this.complaintQueueTableObservers.has(table)) {
-            return;
-        }
-
         const tbody = table.querySelector('tbody');
         if (!tbody) {
             return;
         }
+        const previous = this.complaintQueueTableObservers.get(table);
+        if (previous?.iohTbody === tbody) return;
+        previous?.disconnect();
 
         const observer = new MutationObserver((mutations) => {
             this.handleComplaintQueueTableMutations(mutations);
@@ -162,7 +165,10 @@ export class DOMCoordinator {
             subtree: true,
             characterData: true
         });
+        observer.iohTbody = tbody;
         this.complaintQueueTableObservers.set(table, observer);
+        const rows = [...tbody.querySelectorAll('tr')].filter(row => row.isConnected && !isIohNode(row) && this.isComplaintQueueRow(row));
+        if (rows.length) this.app.onComplaintQueueRowsAdded?.(rows);
         console.log('[Helper] DOMCoordinator: complaintQueueTableObserver init');
     }
 
@@ -304,6 +310,7 @@ export class DOMCoordinator {
     }
 
     inspectAddedNode(node, rowsToUpdate) {
+        if (node.matches?.('tbody') && this.app.ticketService.isComplaintQueueTable(node.closest('table'))) this.emit('tableAdded');
         if(node.matches?.('main, aside, h3, section') || node.querySelector?.('main, h3')) this.emit('pageTools');
         if (this.isRelevantNotificationNode(node)) {
             this.emit('notification');

@@ -170,6 +170,8 @@ export class App {
             pageClosed = true;
             this._trackingStopped = true;
             this.ticketService._pageClosed = true;
+            this.ticketService._offenderTrackingArrivals?.clear();
+            this.ticketService._offenderTicketChecks?.clear();
             this._nativeUnsubscribe?.();
             this.ticketService.stopOpenTicketOffenderTracking();
             this.ticketService.cancelTriggerNavigation();
@@ -294,6 +296,7 @@ export class App {
         const reviewIntervalChanged = prevReviewInterval !== undefined && prevReviewInterval !== currentReviewInterval;
 
         if (!isEnabled || intervalChanged || reviewIntervalChanged) {
+            if (!isEnabled) this.ticketService._offenderTrackingArrivals?.clear();
             this.restartOffenderTracking();
             return;
         }
@@ -318,6 +321,18 @@ export class App {
         } else {
             this.scheduleNextOffenderInterval();
         }
+    }
+
+    onComplaintQueueRowsAdded(rows = []) {
+        if (this._trackingStopped || !this.features.trackOffenderServer) return;
+        this.ticketService.renderNativeQueue();
+        this.ticketService.queueOffenderTrackingRows(rows);
+        // The running pass admits arrivals between checks, behind its first-check
+        // backlog and ahead of repeat checks. Never cancel its in-flight request.
+        if (this._offenderTrackingPassPromise) {
+            return;
+        }
+        this.restartOffenderTracking({immediate: true});
     }
 
     isComplaintQueuePage() {
@@ -359,7 +374,7 @@ export class App {
         this._offenderTrackingHref = href;
         this._offenderTrackingTextarea = textarea;
 
-        this.restartOffenderTracking({immediate: !next});
+        this.restartOffenderTracking({immediate: true});
     }
 
     runOffenderTrackingPass() {
@@ -403,7 +418,7 @@ export class App {
             this._offenderTrackingPassPromise = null;
             const restart = this._offenderTrackingRestartRequested;
             this._offenderTrackingRestartRequested = false;
-            if (restart && this.features.trackOffenderServer) {
+            if ((restart || this.ticketService.hasPendingOffenderTrackingRows?.()) && this.features.trackOffenderServer) {
                 void this.runOffenderTrackingPass();
             } else {
                 this.scheduleNextOffenderInterval();
