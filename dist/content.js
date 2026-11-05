@@ -41,6 +41,18 @@
   // modules/shared/moderators.js
   var record = (value) => value && typeof value === "object" && !Array.isArray(value);
   var steamId = (value) => /^\d{17}$/.test(value);
+  function moderatorEntries(group) {
+    if (!record(group)) return [];
+    const entries = [];
+    for (const [key, value] of Object.entries(group)) {
+      if (steamId(key) && typeof value === "string") entries.push({ steamId: key, name: value, className: "" });
+      else if (!steamId(key) && record(value)) for (const [id, name] of Object.entries(value)) {
+        if (steamId(id) && typeof name === "string") entries.push({ steamId: id, name, className: key });
+      }
+    }
+    return entries;
+  }
+  var flattenModeratorGroup = (group) => Object.fromEntries(moderatorEntries(group).map((m) => [m.steamId, m.name]));
   function validModeratorGroup(group) {
     if (!record(group)) return false;
     return Object.entries(group).every(([key, value]) => steamId(key) ? typeof value === "string" : key.length > 0 && key.length <= 100 && record(value) && Object.entries(value).every(([id, name]) => steamId(id) && typeof name === "string"));
@@ -66,22 +78,22 @@
       return true;
     }
     static isValid(config) {
-      const record2 = (value) => value && typeof value === "object" && !Array.isArray(value);
-      if (!record2(config) || !record2(config.settings) || !Array.isArray(config.muteRules)) return false;
+      const record3 = (value) => value && typeof value === "object" && !Array.isArray(value);
+      if (!record3(config) || !record3(config.settings) || !Array.isArray(config.muteRules)) return false;
       if (config.schemaVersion != null && config.schemaVersion !== 1) return false;
       if (config.minimumExtensionVersion != null && !/^\d+(?:\.\d+){0,3}$/.test(config.minimumExtensionVersion)) return false;
-      if (config.settings.features != null && (!record2(config.settings.features) || Object.values(config.settings.features).some((v) => typeof v !== "boolean"))) return false;
+      if (config.settings.features != null && (!record3(config.settings.features) || Object.values(config.settings.features).some((v) => typeof v !== "boolean"))) return false;
       for (const key of ["reasonTriggers", "reasonTriggersAutoconnect", "autoConnectReasons", "offenderVipStatuses"]) {
         if (config.settings[key] != null && (!Array.isArray(config.settings[key]) || config.settings[key].some((v) => typeof v !== "string"))) return false;
       }
-      for (const key of ["newAccountHours", "headshotPercentage", "trackOffenderInterval", "trackOffenderIntervalWhileReviewing"]) {
+      for (const key of ["newAccountHours", "headshotPercentage", "trackOffenderInterval", "trackOffenderIntervalWhileReviewing", "trackOpenTicketOfflineInterval"]) {
         if (config.settings[key] != null && (typeof config.settings[key] !== "number" || !Number.isFinite(config.settings[key]) || config.settings[key] < 0)) return false;
       }
-      if (config.muteRules.some((rule) => !record2(rule) || typeof rule.name !== "string" || !Array.isArray(rule.keywords) || rule.keywords.some((k) => typeof k !== "string") || ["severity", "duration", "priority"].some((k) => rule[k] != null && !Number.isFinite(rule[k])))) return false;
-      if (config.muteExceptions != null && (!record2(config.muteExceptions) || Object.values(config.muteExceptions).some((v) => !Array.isArray(v) || v.some((x) => typeof x !== "string")))) return false;
-      if (config.spamRules != null && (!record2(config.spamRules) || Object.values(config.spamRules).some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0))) return false;
-      if (config.templates != null && (!record2(config.templates) || Object.values(config.templates).some((list) => !Array.isArray(list) || list.some((item) => !record2(item) || typeof item.name !== "string" || typeof item.text !== "string")))) return false;
-      return config.moderators == null || record2(config.moderators) && Object.values(config.moderators).every(validModeratorGroup);
+      if (config.muteRules.some((rule) => !record3(rule) || typeof rule.name !== "string" || !Array.isArray(rule.keywords) || rule.keywords.some((k) => typeof k !== "string") || ["severity", "duration", "priority"].some((k) => rule[k] != null && !Number.isFinite(rule[k])))) return false;
+      if (config.muteExceptions != null && (!record3(config.muteExceptions) || Object.values(config.muteExceptions).some((v) => !Array.isArray(v) || v.some((x) => typeof x !== "string")))) return false;
+      if (config.spamRules != null && (!record3(config.spamRules) || Object.values(config.spamRules).some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0))) return false;
+      if (config.templates != null && (!record3(config.templates) || Object.values(config.templates).some((list2) => !Array.isArray(list2) || list2.some((item) => !record3(item) || typeof item.name !== "string" || typeof item.text !== "string")))) return false;
+      return config.moderators == null || record3(config.moderators) && Object.values(config.moderators).every(validModeratorGroup);
     }
     static normalize(config) {
       return { ...config, settings: mergeSettings(config.settings) };
@@ -621,9 +633,9 @@
       }
       return textValue.split("\n").map((line) => line.trimEnd()).filter((line, index, lines) => line.length > 0 || index > 0 && index < lines.length - 1).join("\n").trim();
     }
-    applyTrackedMessage(target, messageKey, nextMessage, { inline = false } = {}) {
+    applyTrackedMessage(target, messageKey2, nextMessage, { inline = false } = {}) {
       const trackedMessages = this.readTrackedMessages(target);
-      const previousMessage = trackedMessages[messageKey];
+      const previousMessage = trackedMessages[messageKey2];
       let nextValue = this.removeTrackedMessage(target.value, previousMessage, { inline });
       if (nextMessage) {
         const trimmedValue = nextValue.trim();
@@ -633,9 +645,9 @@
           nextValue = trimmedValue ? `${trimmedValue}
 ${nextMessage}` : nextMessage;
         }
-        trackedMessages[messageKey] = nextMessage;
+        trackedMessages[messageKey2] = nextMessage;
       } else {
-        delete trackedMessages[messageKey];
+        delete trackedMessages[messageKey2];
       }
       target.value = this.normalizeTextareaValue(nextValue, { inline });
       this.writeTrackedMessages(target, trackedMessages);
@@ -749,21 +761,56 @@ ${nextMessage}` : nextMessage;
       this.HOURS_WATCH_TTL_MS = 3e4;
       this.translationBindings = /* @__PURE__ */ new Map();
     }
-    decorateMessageCell(messageCell) {
-      const textNode = this.utils.extractMainTextNode(messageCell);
-      if (!textNode) return;
+    decorateMessageCell(messageCell, originalText = null, nativeContext = null) {
+      if (this.ticketService?.nativeData && originalText == null) return;
       const previous = this.translationBindings.get(messageCell);
-      if (previous?.node === textNode && (textNode.nodeValue === previous.original || previous.applied && textNode.nodeValue === previous.translated)) return;
+      const sourceMatches = !nativeContext || previous?.nativeId === nativeContext.id && previous.source === originalText && previous.scope === nativeContext.scope && previous.ticketKey === nativeContext.ticketKey && previous.steamId === nativeContext.steamId;
+      const reuseTranslated = sourceMatches && previous?.applied && previous.node?.nodeValue === previous.translated && messageCell.contains(previous.node);
+      let textNode = reuseTranslated ? previous.node : this.utils.extractMainTextNode(messageCell);
+      if (nativeContext && !reuseTranslated && textNode?.nodeValue.trim() !== originalText.trim()) textNode = null;
+      if (nativeContext && !textNode) {
+        const walker = this.document.createTreeWalker?.(messageCell, 4);
+        while (walker) {
+          const candidate = walker.nextNode();
+          if (!candidate) break;
+          if (candidate.nodeValue.trim() === originalText.trim()) {
+            textNode = candidate;
+            break;
+          }
+        }
+      }
+      if (!textNode) {
+        if (previous) this.releaseTranslation(messageCell, previous);
+        return;
+      }
+      if (sourceMatches && previous?.node === textNode && (textNode.nodeValue === previous.original || previous.applied && textNode.nodeValue === previous.translated)) return;
       if (previous) this.releaseTranslation(messageCell, previous);
-      if (this.utils.detectLanguage(textNode.nodeValue) || !new RegExp("\\p{L}", "u").test(textNode.nodeValue)) return;
-      const binding = { node: textNode, original: textNode.nodeValue, translated: null, applied: false, pending: false };
+      const source = originalText ?? textNode.nodeValue;
+      if (this.utils.detectLanguage(source) || !new RegExp("\\p{L}", "u").test(source)) return;
+      const binding = {
+        node: textNode,
+        original: textNode.nodeValue,
+        source,
+        translated: null,
+        applied: false,
+        pending: false,
+        nativeId: nativeContext?.id,
+        scope: nativeContext?.scope,
+        ticketKey: nativeContext?.ticketKey,
+        steamId: nativeContext?.steamId
+      };
       this.translationBindings.set(messageCell, binding);
       messageCell.dataset.mhlprHoverReady = "true";
       messageCell.dataset.mhlprOriginalText = binding.original;
       messageCell.classList.add("ioh-chat-message");
-      const current = () => this.translationBindings.get(messageCell) === binding && messageCell.isConnected && messageCell.contains(textNode) && this.settings.features?.translateText !== false;
+      const identityCurrent = () => !nativeContext || this.ticketService.getNativeTicket(nativeContext.scope)?.key === nativeContext.ticketKey && this.ticketService.getNativeTicket(nativeContext.scope)?.suspectId === nativeContext.steamId && this.ticketService.nativeData.history(nativeContext.steamId, "chats")?.items.some((m) => m.id === nativeContext.id && m.text === source);
+      const current = () => this.translationBindings.get(messageCell) === binding && messageCell.isConnected && messageCell.contains(textNode) && this.settings.features?.translateText !== false && identityCurrent();
       binding.enter = async () => {
         if (textNode.nodeValue !== binding.original && !(binding.applied && textNode.nodeValue === binding.translated)) {
+          if (nativeContext) {
+            this.releaseTranslation(messageCell, binding);
+            return;
+          }
           this.decorateMessageCell(messageCell);
           return this.translationBindings.get(messageCell)?.enter();
         }
@@ -772,7 +819,7 @@ ${nextMessage}` : nextMessage;
           if (!binding.translated) {
             binding.pending = true;
             messageCell.classList.add("ioh-loading");
-            const result = await this.badgeService.translateText(binding.original, "RU");
+            const result = await this.badgeService.translateText(binding.source, "RU");
             if (!current() || textNode.nodeValue !== binding.original) return;
             binding.translated = result?.translated || null;
           }
@@ -788,7 +835,7 @@ ${nextMessage}` : nextMessage;
         }
       };
       binding.leave = () => {
-        if (binding.applied && textNode.nodeValue === binding.translated) textNode.nodeValue = binding.original;
+        if (binding.applied && textNode.nodeValue === binding.translated && identityCurrent()) textNode.nodeValue = binding.original;
         binding.applied = false;
         messageCell.classList.remove("ioh-translated");
       };
@@ -829,6 +876,19 @@ ${nextMessage}` : nextMessage;
       for (const [cell, binding] of this.translationBindings) {
         if (!cell.isConnected) this.releaseTranslation(cell, binding);
       }
+      if (this.ticketService?.nativeData) {
+        for (const textarea of this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]')) {
+          const scope2 = this.ticketService.getTicketScopeRoot(textarea);
+          const t = this.ticketService.getNativeTicket(scope2);
+          if (!t) continue;
+          const messages = this.ticketService.nativeData.history(t.suspectId, "chats")?.items || [];
+          for (const [id, row] of this.ticketService.bindNativeMessageRows(scope2)) {
+            const message = messages.find((m) => m.id === id), cell = row.querySelector("td:last-child");
+            if (cell && message) this.decorateNativeMessageCell(cell, message, scope2);
+          }
+        }
+        return;
+      }
       const scope = this.document.body;
       const chatHistoryBlock = this.ticketService?.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope) || this.ticketService?.getHistorySectionCard("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope) || this._findChatHistoryBlock();
       if (!chatHistoryBlock) return;
@@ -838,7 +898,39 @@ ${nextMessage}` : nextMessage;
         if (cells.length >= 2) this.decorateMessageCell(cells[cells.length - 1]);
       });
     }
+    decorateNativeMessageCell(cell, message, scope) {
+      const ticket = this.ticketService.getNativeTicket(scope);
+      if (!ticket) return;
+      this.decorateMessageCell(cell, message.text, { id: message.id, scope, ticketKey: ticket.key, steamId: ticket.suspectId });
+    }
     highlightComplaintTriggers(targetRow) {
+      if (this.ticketService?.nativeData) {
+        for (const row of targetRow ? [targetRow] : this._getComplaintQueueRows()) {
+          const t = this.ticketService.getNativeRowTicket(row);
+          if (!t || t.message == null) continue;
+          const cell = row.querySelectorAll("td")[5];
+          const node = [...cell?.querySelectorAll("span") || []].find((n) => n.textContent === t.message);
+          if (!node || node.dataset.iohNativeMessage === t.message) continue;
+          node.dataset.iohNativeMessage = t.message;
+          const triggers = (this.settings.reasonTriggers || []).filter(Boolean).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+          if (!triggers.length) continue;
+          const regex = new RegExp(triggers.join("|"), "gi");
+          const fragment = this.document.createDocumentFragment();
+          let pos = 0;
+          for (const match of t.message.matchAll(regex)) {
+            fragment.append(this.document.createTextNode(t.message.slice(pos, match.index)));
+            const span = this.document.createElement("span");
+            markIoh(span);
+            span.className = "ioh-complaint-trigger";
+            span.textContent = match[0];
+            fragment.append(span);
+            pos = match.index + match[0].length;
+          }
+          fragment.append(this.document.createTextNode(t.message.slice(pos)));
+          node.replaceChildren(fragment);
+        }
+        return;
+      }
       const rows = targetRow ? [targetRow] : this._getComplaintQueueRows();
       rows.forEach((row) => {
         if (row.querySelector("th") || row.dataset.triggersChecked) return;
@@ -868,6 +960,7 @@ ${nextMessage}` : nextMessage;
       });
     }
     clearComplaintTriggerHighlights() {
+      this.document.querySelectorAll("[data-ioh-native-message]").forEach((n) => delete n.dataset.iohNativeMessage);
       this.document.querySelectorAll(".ioh-complaint-trigger").forEach((span) => {
         span.replaceWith(this.document.createTextNode(span.textContent || ""));
       });
@@ -951,6 +1044,18 @@ ${nextMessage}` : nextMessage;
       });
     }
     highlightNewAccounts(row) {
+      if (this.ticketService?.nativeData) {
+        const t = this.ticketService.getNativeRowTicket(row);
+        if (!t || t.playtime == null) return;
+        this.releaseHoursWatch(row);
+        const hours2 = Math.round(t.playtime / 3600);
+        if (hours2 > this.settings.newAccountHours) this._clearRowHoursHighlight(row);
+        else {
+          this._setRowHoursState(row, hours2);
+          this._applyRowHoursHighlight(row);
+        }
+        return;
+      }
       if (!row?.querySelector) {
         return;
       }
@@ -997,6 +1102,19 @@ ${nextMessage}` : nextMessage;
     }
     highlightHighHs(row) {
       if (!row?.querySelectorAll) return;
+      if (this.ticketService?.nativeData) {
+        const t = this.ticketService.getNativeRowTicket(row);
+        const serverCell2 = row.querySelector('a[href^="steam://connect/"]')?.closest("td") || row.querySelectorAll("td")[1];
+        const isHeadshotsOnly2 = /HSDM/i.test([t?.mode, t?.category, serverCell2?.textContent].filter(Boolean).join(" "));
+        const hs = t?.kills > 0 && t.headshots != null ? Math.round(t.headshots / t.kills * 100) : NaN;
+        const configured2 = this.settings.headshotPercentage;
+        const threshold2 = configured2 !== null && configured2 !== "" && Number.isFinite(Number(configured2)) ? Math.min(100, Math.max(0, Number(configured2))) : 95;
+        row.querySelectorAll("span").forEach((span) => {
+          const highlight = /^\s*HS:/.test(span.textContent || "") && !isHeadshotsOnly2 && hs >= threshold2 && hs <= 100;
+          if (span.classList.contains("ioh-high-hs") !== highlight) span.classList.toggle("ioh-high-hs", highlight);
+        });
+        return;
+      }
       const serverCell = row.querySelector('a[href^="steam://connect/"]')?.closest("td") || row.querySelectorAll("td")[1];
       const isHeadshotsOnly = /HSDM/i.test(serverCell?.textContent || "");
       const configured = this.settings.headshotPercentage;
@@ -1081,21 +1199,21 @@ ${nextMessage}` : nextMessage;
       this._returnContext = null;
       this._lastFailReason = null;
     }
-    openMuteForm(steamId2) {
-      return this.openForm("mute", steamId2);
+    openMuteForm(steamId3) {
+      return this.openForm("mute", steamId3);
     }
-    openBanForm(steamId2) {
-      return this.openForm("ban", steamId2);
+    openBanForm(steamId3) {
+      return this.openForm("ban", steamId3);
     }
     _debugLog(reason, details = {}) {
       this.ticketService.debugPunishmentLog(reason, details);
     }
-    async openForm(type, steamId2) {
+    async openForm(type, steamId3) {
       const origin = this.ticketService._closeReasonPunishmentOrigin;
       const originPath = this.document.defaultView?.location?.pathname || "";
       try {
-        const opened = await this._openForm(type, steamId2);
-        if (opened && origin?.type === type && origin.steamId === steamId2) {
+        const opened = await this._openForm(type, steamId3);
+        if (opened && origin?.type === type && origin.steamId === steamId3) {
           const input = this.document.querySelector(`[role="dialog"] ${_SitePunishmentBridge.PANELS[type].inputSelector}`);
           const dialog = input?.closest('[role="dialog"]');
           if (dialog) {
@@ -1134,7 +1252,7 @@ ${nextMessage}` : nextMessage;
       ticket.transferCloseReasonComplaintScope?.(origin.scope, context);
       return { ...origin, scope: context.scope };
     }
-    async _openForm(type, steamId2) {
+    async _openForm(type, steamId3) {
       const hasPermission = type === "ban" ? this.ticketService.canIssueBan : this.ticketService.canIssueMute;
       if (!hasPermission) {
         return false;
@@ -1158,11 +1276,11 @@ ${nextMessage}` : nextMessage;
       this.ticketService.markPanelReady(type);
       this.ticketService.recordPunishmentOpenSuccess();
       await this.ticketService.persistPanelReadyState();
-      if (steamId2) {
+      if (steamId3) {
         if (type === "ban") {
-          this.ticketService.prefillBanFormSteamId(steamId2);
+          this.ticketService.prefillBanFormSteamId(steamId3);
         } else {
-          this.ticketService.prefillMuteFormSteamId(steamId2);
+          this.ticketService.prefillMuteFormSteamId(steamId3);
         }
       }
       return true;
@@ -1496,6 +1614,7 @@ ${nextMessage}` : nextMessage;
   var TicketScopeMethods = {
     getChatCacheKey(textarea) {
       const scope = this.getTicketScopeRoot(textarea);
+      if (this.nativeData) return this.getNativeTicket(scope)?.key || "native:pending";
       const blocks = this.getHistoryBlocks(scope);
       const offenderId = blocks.offenderSteamId || "unknown";
       const scopeToken = scope?.getAttribute?.("aria-hidden") ?? scope?.className?.slice(0, 40) ?? "";
@@ -1503,6 +1622,7 @@ ${nextMessage}` : nextMessage;
       return `${path}|${offenderId}|${scopeToken}`;
     },
     getHistoryBlocks(scope, { force = false } = {}) {
+      if (this.nativeData) return this.nativeHistoryBlocks(scope || this.getAutoConnectScope() || this.document.body);
       const root = scope || this.document.body;
       if (!this._scopeCache) {
         this._scopeCache = /* @__PURE__ */ new WeakMap();
@@ -1718,6 +1838,7 @@ ${nextMessage}` : nextMessage;
      * Missing table / zero rows without empty markers = still loading.
      */
     isChatHistorySettledScoped(scopeEl) {
+      if (this.nativeData) return this.nativeAnalysisReady(scopeEl);
       const accordion = this.getHistoryAccordionButton("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scopeEl);
       if (accordion) {
         const hasEmptyBadge = Array.from(accordion.querySelectorAll("span")).some((span) => (span.textContent || "").trim() === "\u041F\u0443\u0441\u0442\u043E");
@@ -1742,6 +1863,7 @@ ${nextMessage}` : nextMessage;
       return rows.length > 0;
     },
     async waitForSettledChatHistory(textarea, { timeoutMs = 3e3, pollMs = 120 } = {}) {
+      if (this.nativeData) return this.nativeAnalysisReady(this.getTicketScopeRoot(textarea));
       if (!textarea || !this.document.contains(textarea)) {
         return false;
       }
@@ -1922,12 +2044,12 @@ ${nextMessage}` : nextMessage;
       const scope = this.getTicketScopeRoot(textarea);
       const key = this.getChatCacheKey(textarea);
       const previous = this._chatAnalysisByScope.get(scope);
-      const steamId2 = this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope)) || "unknown";
+      const steamId3 = (this.nativeData ? this.getNativeTicket(scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope))) || "unknown";
       const state = {
         scope,
         textarea,
         key,
-        steamId: steamId2,
+        steamId: steamId3,
         generation: this._chatAnalysisGeneration || 0,
         completed: false,
         kind: previous?.key === key ? previous.kind : null,
@@ -1937,7 +2059,7 @@ ${nextMessage}` : nextMessage;
       return state;
     },
     isChatAnalysisCurrent(state) {
-      return this._chatAnalysisByScope?.get(state.scope) === state && state.generation === (this._chatAnalysisGeneration || 0) && this.document.contains(state.textarea) && this.isVisibleTicketTextarea(state.textarea) && this.getTicketScopeRoot(state.textarea) === state.scope && (this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", state.scope)) || "unknown") === state.steamId && this.getChatCacheKey(state.textarea) === state.key;
+      return this._chatAnalysisByScope?.get(state.scope) === state && state.generation === (this._chatAnalysisGeneration || 0) && this.document.contains(state.textarea) && this.isVisibleTicketTextarea(state.textarea) && this.getTicketScopeRoot(state.textarea) === state.scope && ((this.nativeData ? this.getNativeTicket(state.scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", state.scope))) || "unknown") === state.steamId && this.getChatCacheKey(state.textarea) === state.key;
     },
     completeChatAnalysis(state, result) {
       if (!this.isChatAnalysisCurrent(state)) return null;
@@ -1946,6 +2068,7 @@ ${nextMessage}` : nextMessage;
       state.completed = ["none", "warning", "mute", "skip"].includes(kind);
       state.kind = state.completed ? kind : null;
       state.signature = signature;
+      if (this.nativeData) state.nativeSignature = this.nativeAnalysisSignature(state.scope);
       return state.completed ? { kind } : null;
     },
     invalidateChatAnalysis(textarea) {
@@ -1956,8 +2079,9 @@ ${nextMessage}` : nextMessage;
     getCompletedChatAnalysis(scope) {
       const state = this._chatAnalysisByScope?.get(scope);
       if (!state?.completed || !this.document.contains(state.textarea) || this.getTicketScopeRoot(state.textarea) !== scope) return null;
-      const steamId2 = this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope)) || "unknown";
-      return state.steamId === steamId2 ? state : null;
+      if (this.nativeData && state.nativeSignature !== this.nativeAnalysisSignature(scope)) return null;
+      const steamId3 = (this.nativeData ? this.getNativeTicket(scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope))) || "unknown";
+      return state.steamId === steamId3 ? state : null;
     },
     resetChatAnalysisCache(textarea, { preserveCompleted = false } = {}) {
       if (textarea) {
@@ -2003,8 +2127,8 @@ ${nextMessage}` : nextMessage;
     },
     parseDateCell(dateCell) {
       const spans = dateCell?.querySelectorAll("span");
-      const dateText = spans && spans[0] ? spans[0].innerText?.trim() : null;
-      const timeText = spans && spans[1] ? spans[1].innerText?.trim() : "00:00";
+      const dateText = spans && spans[0] ? (spans[0].textContent || spans[0].innerText || "").trim() : null;
+      const timeText = spans && spans[1] ? (spans[1].textContent || spans[1].innerText || "").trim() : "00:00";
       if (!dateText) return null;
       const [d, m, y] = dateText.split(".").map(Number);
       const [hh = 0, mm = 0, ss = 0] = timeText.split(":").map(Number);
@@ -2019,6 +2143,11 @@ ${nextMessage}` : nextMessage;
   // modules/ticket/Verdict.js
   var VerdictMethods = {
     findRecentMuteForReasons(muteHistoryBlock, reasonNames) {
+      if (muteHistoryBlock?.nativeHistory) {
+        const names = reasonNames.map((n) => this.normalizeReason(n));
+        const p = muteHistoryBlock.items.filter((p2) => p2.created >= Date.now() - 30 * 864e5 && p2.length > 0 && names.includes(this.normalizeReason(p2.reason))).sort((a, b) => b.created - a.created)[0];
+        return p ? { date: new Date(p.created), duration: p.length / 60 } : null;
+      }
       if (!muteHistoryBlock) return null;
       const acceptedReasons = reasonNames.map((reason) => this.normalizeReason(reason)).filter(Boolean);
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3);
@@ -2133,6 +2262,7 @@ ${nextMessage}` : nextMessage;
       return this.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0439", scope) || this.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0439", scope);
     },
     parseWarningHistoryRows(warningHistoryBlock) {
+      if (warningHistoryBlock?.nativeHistory) return warningHistoryBlock.items.map((w) => ({ date: new Date(w.timeMs), text: w.text }));
       if (!warningHistoryBlock) {
         return [];
       }
@@ -2171,6 +2301,7 @@ ${nextMessage}` : nextMessage;
       return patterns.some((pattern) => pattern.test(lowered));
     },
     getWarningHistorySignaturePart(warningHistoryBlock) {
+      if (warningHistoryBlock?.nativeHistory) return JSON.stringify(warningHistoryBlock.items);
       if (!warningHistoryBlock) {
         return "warn:0|";
       }
@@ -2207,15 +2338,15 @@ ${nextMessage}` : nextMessage;
 
   // modules/ticket/AnalysisBadge.js
   var AnalysisBadgeMethods = {
-    setSuggestedMuteReason(steamId2, label) {
-      this.suggestedMuteReason = label ? { steamId: steamId2 || "", label } : null;
+    setSuggestedMuteReason(steamId3, label) {
+      this.suggestedMuteReason = label ? { steamId: steamId3 || "", label } : null;
     },
-    getSuggestedMuteReason(steamId2) {
+    getSuggestedMuteReason(steamId3) {
       const entry = this.suggestedMuteReason;
       if (!entry?.label) {
         return null;
       }
-      if (!entry.steamId || !steamId2 || entry.steamId === steamId2) {
+      if (!entry.steamId || !steamId3 || entry.steamId === steamId3) {
         return entry.label;
       }
       return null;
@@ -2269,7 +2400,42 @@ ${nextMessage}` : nextMessage;
       }
       button.remove();
     },
-    handleTriggerClick(e) {
+    cancelTriggerNavigation() {
+      this._triggerNavigationCancel?.();
+      this._triggerNavigationCancel = null;
+      clearTimeout(this._triggerHighlightTimer);
+      this._triggerHighlightedRows?.forEach((row) => row.classList.remove("ioh-chat-highlight"));
+      this._triggerHighlightedRows = null;
+    },
+    waitForNativeMessageRows(scope, textarea, messages) {
+      const key = this.getNativeTicket(scope)?.key;
+      return new Promise((resolve) => {
+        let observer, timer, finished = false;
+        const finish = (rows) => {
+          if (finished) return;
+          finished = true;
+          observer?.disconnect();
+          clearTimeout(timer);
+          if (this._triggerNavigationCancel === cancel) this._triggerNavigationCancel = null;
+          resolve(rows);
+        };
+        const cancel = () => finish([]);
+        const check = () => {
+          if (!this.document.contains(textarea) || !this.isVisibleTicketTextarea(textarea) || this.getTicketScopeRoot(textarea) !== scope || this.getNativeTicket(scope)?.key !== key) return finish([]);
+          const bindings = this.bindNativeMessageRows(scope);
+          const rows = messages.map((m) => bindings.get(m.id)).filter(Boolean);
+          if (rows.length) finish(rows);
+        };
+        this._triggerNavigationCancel = cancel;
+        observer = new MutationObserver(check);
+        observer.observe(this.getHistorySectionCard("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope) || scope, { childList: true, subtree: true });
+        timer = setTimeout(() => finish([]), 2e3);
+        const accordion = this.getHistoryAccordionButton("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope);
+        if (accordion?.getAttribute("aria-expanded") === "false") accordion.click();
+        check();
+      });
+    },
+    async handleTriggerClick(e) {
       const more = e.target.closest(".ioh-more-triggers");
       if (more) {
         this.revealMoreTriggers(more);
@@ -2279,17 +2445,31 @@ ${nextMessage}` : nextMessage;
       if (!trigger) return;
       const target = this.triggerRows.get(trigger.dataset.triggerId);
       if (!target) return;
-      const rows = Array.isArray(target) ? target : [target];
+      this.cancelTriggerNavigation();
+      let rows = Array.isArray(target) ? target : [target];
+      if (this.nativeData) {
+        const textarea = this.findVisibleTicketResolutionTextarea();
+        const scope = textarea && this.getTicketScopeRoot(textarea);
+        const binding = scope && this.bindNativeMessageRows(scope);
+        const messages = rows;
+        rows = messages.map((message) => binding?.get(message.id)).filter(Boolean);
+        if (!rows.length && scope) rows = await this.waitForNativeMessageRows(scope, textarea, messages);
+        if (!rows.length) return;
+      }
       rows[0].scrollIntoView({
         behavior: "smooth",
         block: "center"
       });
       rows.forEach((row) => row.classList.add("ioh-chat-highlight"));
-      setTimeout(() => {
+      this._triggerHighlightedRows = rows;
+      this._triggerHighlightTimer = setTimeout(() => {
         rows.forEach((row) => row.classList.remove("ioh-chat-highlight"));
+        this._triggerHighlightedRows = null;
       }, 1e3);
     },
     clearTicketRuleBadge() {
+      this.cancelTriggerNavigation();
+      this.stopActivePunishmentPreviews?.();
       this.document.getElementById("helper-suggest-badge")?.remove();
       this.activePunishmentBadgeByKey.clear();
       this._sortedTriggers = [];
@@ -2314,10 +2494,86 @@ ${nextMessage}` : nextMessage;
 
   // modules/ticket/ActivePunishment.js
   var ActivePunishmentMethods = {
+    getPunishmentPreviewBlock(record3, scope) {
+      if (!(record3?.nativePunishment || record3?.nativeStatus) || !scope) return null;
+      const label = record3.kind === "bans" ? "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0411\u0430\u043D\u043E\u0432" : record3.kind === "warnings" ? "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0439" : "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u041C\u0443\u0442\u043E\u0432";
+      return this.getBlockByHeaderScoped(label, scope) || record3.kind === "warnings" && this.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0439", scope) || this.getBlockByHeaderScoped(label.toLowerCase().replace("\u0438\u0441\u0442\u043E\u0440\u0438\u044F", "\u0418\u0441\u0442\u043E\u0440\u0438\u044F"), scope);
+    },
+    findPunishmentPreviewRow(record3, scope) {
+      const block = this.getPunishmentPreviewBlock(record3, scope);
+      if (!block) return null;
+      const rows = [...block.querySelectorAll("tbody tr")].filter((r) => !isIohNode(r));
+      const byId = rows.filter((r) => [r.dataset?.bid, r.dataset?.id, r.getAttribute?.("data-punishment-id")].some((id) => id && String(id) === record3.id));
+      if (byId.length === 1) return byId[0];
+      const candidates = rows.filter((row) => {
+        const cells = row.querySelectorAll("td");
+        const date = this.parseDateCell(cells[this.getColumnIndex(row, ["\u0434\u0430\u0442\u0430"], 1)]);
+        if (!date || !Number.isFinite(record3.created) || Math.abs(date.getTime() - record3.created) >= 6e4) return false;
+        const text = (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim();
+        const reasonCell = cells[this.getColumnIndex(row, ["\u043F\u0440\u0438\u0447\u0438\u043D\u0430", "\u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044F"], 2)];
+        const reason = reasonCell?.firstElementChild?.firstElementChild?.textContent || reasonCell?.textContent;
+        return record3.kind === "warnings" ? text.includes(record3.reason.replace(/\s+/g, " ").trim()) : this.normalizeReason(reason) === this.normalizeReason(record3.reason);
+      });
+      if (candidates.length === 1) return candidates[0];
+      if (record3.kind === "warnings") return null;
+      const active = rows.filter((row) => this.findActivePunishmentRow({ querySelectorAll: () => [row] }) === row);
+      return active.length === 1 ? active[0] : null;
+    },
+    syncActivePunishmentPreview(textarea, record3, icon, message) {
+      if (!this.nativeData || !(record3?.nativePunishment || record3?.nativeStatus)) return;
+      const scope = this.getTicketScopeRoot(textarea), ticket = this.getNativeTicket(scope);
+      if (!ticket) return;
+      this._activePreviewSessions ||= /* @__PURE__ */ new Map();
+      const identity = `${ticket.key}:${ticket.suspectId}:${record3.kind}:${record3.id}:${record3.created}`;
+      const previous = this._activePreviewSessions.get(textarea);
+      if (previous?.identity === identity) {
+        previous.refresh();
+        return;
+      }
+      this.releaseActivePunishmentPreview(textarea);
+      const session = { identity, textarea, scope, record: record3, observer: null, html: null };
+      const refresh = () => {
+        const current = this.getNativeTicket(scope);
+        if (!this.document.contains(textarea) || this.getTicketScopeRoot(textarea) !== scope || current?.key !== ticket.key || current?.suspectId !== ticket.suspectId) return this.releaseActivePunishmentPreview(textarea);
+        if (!this.isVisibleTicketTextarea(textarea)) return;
+        const badge = this.document.getElementById("helper-suggest-badge");
+        if (!badge || badge.parentNode !== textarea.parentNode || !badge.textContent.includes(message.trim())) return;
+        const html = this.buildActivePunishmentBadge(icon, message, record3, textarea);
+        const table = this.getPunishmentPreviewBlock(record3, scope)?.querySelector("table");
+        if (table && table !== session.table) {
+          session.table = table;
+          session.observer.observe(table, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ["class", "style", "data-punishment-id", "data-id", "data-bid"]
+          });
+        }
+        if (session.html === html) return;
+        session.html = html;
+        this.badgeService.updateInfoBadge("helper-suggest-badge", record3.kind === "bans" ? "accent" : "warning", html, textarea);
+      };
+      session.refresh = refresh;
+      session.observer = new MutationObserver((mutations) => {
+        if (!mutations.every((m) => isIohNode(m.target))) refresh();
+      });
+      session.observer.observe(scope, { childList: true, subtree: true });
+      this._activePreviewSessions.set(textarea, session);
+      refresh();
+    },
+    releaseActivePunishmentPreview(textarea) {
+      this._activePreviewSessions?.get(textarea)?.observer.disconnect();
+      this._activePreviewSessions?.delete(textarea);
+    },
+    stopActivePunishmentPreviews() {
+      for (const textarea of this._activePreviewSessions?.keys() || []) this.releaseActivePunishmentPreview(textarea);
+    },
     LIFTED_STATUS_RGB: "21, 141, 183",
     ACTIVE_STATUS_RGBS: ["234, 179, 8", "250, 204, 21", "255, 193, 7"],
     DURATION_TEXT_RE: /(\d+)\s*(день|дня|дней|д\.|час|часа|часов|ч\.|мин|минут|м\.)/i,
     findActivePunishmentRow(historyBlock) {
+      if (historyBlock?.nativeHistory) return historyBlock.active;
       if (!historyBlock) {
         return null;
       }
@@ -2337,9 +2593,9 @@ ${nextMessage}` : nextMessage;
         const durationIndex = this.getColumnIndex(punishmentRow, ["\u0434\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C"], cells.length - 1);
         const dateCell = cells[dateIndex];
         const spans = dateCell?.querySelectorAll("span") || [];
-        const dateText = spans[0]?.innerText?.trim();
-        const timeText = spans[1]?.innerText?.trim();
-        const durationText = cells[durationIndex]?.innerText?.trim();
+        const dateText = spans[0]?.textContent?.trim() || spans[0]?.innerText?.trim();
+        const timeText = spans[1]?.textContent?.trim() || spans[1]?.innerText?.trim();
+        const durationText = cells[durationIndex]?.textContent?.trim() || cells[durationIndex]?.innerText?.trim();
         if (!this.isRealDurationText(durationText) || !dateText || !timeText) {
           continue;
         }
@@ -2404,13 +2660,18 @@ ${nextMessage}` : nextMessage;
     hasActiveBan(banHistoryBlock) {
       return Boolean(this.findActivePunishmentRow(banHistoryBlock));
     },
-    buildPunishmentPreviewPanel(activeRow) {
+    buildPunishmentPreviewPanel(activeRow, scope = null) {
+      if (activeRow?.nativePunishment || activeRow?.nativeStatus) {
+        activeRow = this.findPunishmentPreviewRow(activeRow, scope);
+      }
       if (!activeRow) {
         return "";
       }
       return `<span class="ioh-punishment-preview-tooltip__panel"><span class="ioh-punishment-preview-tooltip__panel-inner"><table><tbody>${activeRow.outerHTML}</tbody></table></span></span>`;
     },
     getPunishmentRowFingerprint(row) {
+      if (row?.nativeStatus) return JSON.stringify(row);
+      if (row?.nativePunishment) return JSON.stringify(row);
       return (row?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 300);
     },
     shouldSkipActivePunishmentBadge(type, row, textarea) {
@@ -2423,11 +2684,13 @@ ${nextMessage}` : nextMessage;
       this.activePunishmentBadgeByKey.set(key, { type, fingerprint });
       return false;
     },
-    buildActivePunishmentBadge(icon, message, activeRow) {
+    buildActivePunishmentBadge(icon, message, activeRow, textarea = null) {
       if (!activeRow) {
         return `<div class="ioh-badge-row"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
       }
-      const preview = this.buildPunishmentPreviewPanel(activeRow);
+      const preview = this.buildPunishmentPreviewPanel(activeRow, textarea && this.getTicketScopeRoot?.(textarea));
+      if (!preview && activeRow.kind === "warnings") return `<div class="ioh-badge-row ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(activeRow.reason)}" title=""><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
+      if (!preview) return `<div class="ioh-badge-row"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
       return `<div class="ioh-badge-row ioh-punishment-preview-tooltip" tabindex="0"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span>${preview}</div>`;
     }
   };
@@ -2435,8 +2698,8 @@ ${nextMessage}` : nextMessage;
   // modules/ServerConnectionMemory.js
   function normalizeServerEndpoint(value) {
     const text = String(value || "").trim().replace(/^steam:\/\/connect\//i, "");
-    const endpoint = text.split(/[/?#]/, 1)[0].toLowerCase();
-    const match = endpoint.match(/^([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\]):(\d{1,10})$/i);
+    const endpoint2 = text.split(/[/?#]/, 1)[0].toLowerCase();
+    const match = endpoint2.match(/^([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\]):(\d{1,10})$/i);
     if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535) return null;
     return `${match[1]}:${Number(match[2])}`;
   }
@@ -2454,8 +2717,8 @@ ${nextMessage}` : nextMessage;
     const command = options.match(/^\+connect\s+(?:"([^"]+)"|([^\s;"+]+))(?=\s|;|$)/i);
     return command ? normalizeServerEndpoint(command[1] || command[2]) : null;
   }
-  function validRecord(record2) {
-    return record2 && normalizeServerEndpoint(record2.endpoint) === record2.endpoint && Number.isSafeInteger(record2.revision) && record2.revision > 0;
+  function validRecord(record3) {
+    return record3 && normalizeServerEndpoint(record3.endpoint) === record3.endpoint && Number.isSafeInteger(record3.revision) && record3.revision > 0;
   }
   var ServerConnectionMemory = class {
     constructor({ document: document2, chrome: chrome2 }) {
@@ -2468,8 +2731,8 @@ ${nextMessage}` : nextMessage;
       this.onClick = (event) => {
         if (event.button > 1 || this.automaticClick) return;
         const link = event.target?.closest?.("a[href]");
-        const endpoint = serverEndpointFromConnectUrl(link?.href);
-        if (endpoint) this.remember(endpoint, "manual");
+        const endpoint2 = serverEndpointFromConnectUrl(link?.href);
+        if (endpoint2) this.remember(endpoint2, "manual");
       };
       this.onMessage = (message) => {
         if (message.action === "serverConnectionChanged") this.accept(message.record);
@@ -2478,9 +2741,9 @@ ${nextMessage}` : nextMessage;
     get endpoint() {
       return this.optimistic?.endpoint || this.record?.endpoint || null;
     }
-    accept(record2) {
-      if (this.alive && validRecord(record2) && record2.revision > (this.record?.revision || 0)) {
-        this.record = record2;
+    accept(record3) {
+      if (this.alive && validRecord(record3) && record3.revision > (this.record?.revision || 0)) {
+        this.record = record3;
         if (this.optimistic && !this.optimistic.pending) this.optimistic = null;
       }
     }
@@ -2501,14 +2764,14 @@ ${nextMessage}` : nextMessage;
       }
     }
     remember(value, source = "auto") {
-      const endpoint = normalizeServerEndpoint(value);
-      if (!this.alive || !endpoint) return;
+      const endpoint2 = normalizeServerEndpoint(value);
+      if (!this.alive || !endpoint2) return;
       const version = ++this.writeVersion;
-      this.optimistic = { endpoint, pending: true };
-      console.log(`[Helper] \u0417\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043E \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (${source === "manual" ? "\u0432\u0440\u0443\u0447\u043D\u0443\u044E" : "\u0430\u0432\u0442\u043E"}):`, endpoint);
+      this.optimistic = { endpoint: endpoint2, pending: true };
+      console.log(`[Helper] \u0417\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043E \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 (${source === "manual" ? "\u0432\u0440\u0443\u0447\u043D\u0443\u044E" : "\u0430\u0432\u0442\u043E"}):`, endpoint2);
       void (async () => {
         try {
-          const response = await this.chrome?.runtime?.sendMessage({ action: "rememberServerConnection", endpoint, source });
+          const response = await this.chrome?.runtime?.sendMessage({ action: "rememberServerConnection", endpoint: endpoint2, source });
           if (!this.alive) return;
           if (response?.success) {
             this.accept(response.record);
@@ -2520,8 +2783,8 @@ ${nextMessage}` : nextMessage;
         }
       })();
     }
-    clickAutomatically(link, endpoint) {
-      this.remember(endpoint, "auto");
+    clickAutomatically(link, endpoint2) {
+      this.remember(endpoint2, "auto");
       this.automaticClick = true;
       try {
         link.click();
@@ -2549,6 +2812,10 @@ ${nextMessage}` : nextMessage;
       const scope = this.getAutoConnectScope();
       if (!scope || !this.isActiveComplaintScope(scope)) {
         return null;
+      }
+      if (this.nativeData) {
+        const ticket = this.getNativeTicket(scope);
+        return ticket ? `${ticket.key}|${ticket.suspectId}` : null;
       }
       const offenderId = this.extractSteamIdFromField(
         this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope)
@@ -2596,12 +2863,12 @@ ${nextMessage}` : nextMessage;
         console.log(message);
       }
     },
-    markOffenderOffline(steamId2) {
-      if (!steamId2) return;
-      this.offenderOffline.set(steamId2, Date.now() + this.LEFT_OFFENDER_TTL_MS);
+    markOffenderOffline(steamId3) {
+      if (!steamId3) return;
+      this.offenderOffline.set(steamId3, Date.now() + this.LEFT_OFFENDER_TTL_MS);
       let tracked = false;
       for (const session of this._openTicketTrackingSessions?.values() || []) {
-        if (session.steamId !== steamId2) continue;
+        if (session.steamId !== steamId3) continue;
         session.waitingForReturn = true;
         session.lastConnectedIp = null;
         tracked = true;
@@ -2610,42 +2877,46 @@ ${nextMessage}` : nextMessage;
         this.syncOpenTicketOffenderTracking();
       }
     },
-    clearOffenderOffline(steamId2) {
-      if (!steamId2) return;
-      this.offenderOffline.delete(steamId2);
+    clearOffenderOffline(steamId3) {
+      if (!steamId3) return;
+      this.offenderOffline.delete(steamId3);
     },
-    isOffenderOffline(steamId2) {
-      if (!steamId2) return false;
-      const expiresAt = this.offenderOffline.get(steamId2);
+    isOffenderOffline(steamId3) {
+      if (!steamId3) return false;
+      const expiresAt = this.offenderOffline.get(steamId3);
       if (!expiresAt) return false;
       if (Date.now() >= expiresAt) {
-        this.offenderOffline.delete(steamId2);
+        this.offenderOffline.delete(steamId3);
         return false;
       }
       return true;
     },
-    markOffenderRelocated(steamId2, serverIp) {
-      if (!steamId2 || !serverIp) return;
-      this.offenderRelocated.set(steamId2, {
+    markOffenderRelocated(steamId3, serverIp) {
+      if (!steamId3 || !serverIp) return;
+      this.offenderRelocated.set(steamId3, {
         serverIp: String(serverIp).trim().toLowerCase(),
         expiresAt: Date.now() + this.LEFT_OFFENDER_TTL_MS
       });
     },
-    clearOffenderRelocated(steamId2) {
-      if (!steamId2) return;
-      this.offenderRelocated.delete(steamId2);
+    clearOffenderRelocated(steamId3) {
+      if (!steamId3) return;
+      this.offenderRelocated.delete(steamId3);
     },
-    getOffenderRelocatedServer(steamId2) {
-      if (!steamId2) return null;
-      const entry = this.offenderRelocated.get(steamId2);
+    getOffenderRelocatedServer(steamId3) {
+      if (!steamId3) return null;
+      const entry = this.offenderRelocated.get(steamId3);
       if (!entry) return null;
       if (Date.now() >= entry.expiresAt) {
-        this.offenderRelocated.delete(steamId2);
+        this.offenderRelocated.delete(steamId3);
         return null;
       }
       return entry.serverIp;
     },
     getTicketComplaintParts(scope = null) {
+      if (this.nativeData) {
+        const t = this.getNativeTicket(scope);
+        return { category: t?.reason || "", playerText: t?.message || "" };
+      }
       const categoryField = this.findInfoFieldByLabels(["\u041F\u0440\u0438\u0447\u0438\u043D\u0430 \u0436\u0430\u043B\u043E\u0431\u044B", "\u041F\u0440\u0438\u0447\u0438\u043D\u0430"], scope);
       const valueBlock = this.findFieldValueBlock(categoryField);
       let category = valueBlock?.querySelector(":scope > span")?.textContent?.trim() || "";
@@ -2659,6 +2930,7 @@ ${nextMessage}` : nextMessage;
       return { category, playerText };
     },
     getTicketPlayerMessageText(scope = null) {
+      if (this.nativeData) return this.getNativeTicket(scope)?.message || "";
       const messageField = this.findInfoFieldByLabels(["\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043E\u0442 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F"], scope);
       if (!messageField) {
         return "";
@@ -2697,6 +2969,10 @@ ${nextMessage}` : nextMessage;
     },
     canAutoConnectAfterAnalysis(scope) {
       if (!this.isVoiceFallbackCategory(this.getTicketComplaintCategory(scope))) return true;
+      if (this.nativeData) {
+        const t = this.getNativeTicket(scope), p = t && this.nativePlayer(t.suspectId);
+        if (typeof p?.isBanned !== "boolean" || typeof p?.isMuted !== "boolean") return false;
+      }
       if (this.complaintTextMatchesAutoconnectTrigger(this.getPlayerComplaintText(scope))) {
         return !this.hasActivePunishmentForVoiceFallback(null, scope);
       }
@@ -2713,6 +2989,10 @@ ${nextMessage}` : nextMessage;
       return this.findActiveComplaintScope();
     },
     scopeHasInProgressStatus(scope, { includeActivePanel = true } = {}) {
+      if (this.nativeData) {
+        const t = this.getNativeTicket(scope);
+        return Boolean(t && t.status === 1 && !t.endedAt && t.adminId && t.adminId === this.nativeData.account?.steamId);
+      }
       if (!scope) {
         return false;
       }
@@ -2742,6 +3022,7 @@ ${nextMessage}` : nextMessage;
       return false;
     },
     shouldAutoConnectToServer({ analysisFallback = false } = {}) {
+      if (this.nativeData) return this.nativeAutoConnectDecision({ analysisFallback });
       const allowedPaths = [
         "/reports/4",
         "/reports/5",
@@ -2838,8 +3119,8 @@ ${nextMessage}` : nextMessage;
     isAlreadyOnRequestedServer(serverIp) {
       return !!this.serverConnectionMemory?.endpoint && this.serverConnectionMemory.endpoint === normalizeServerEndpoint(serverIp);
     },
-    clickServerConnectLink(link, endpoint) {
-      if (this.serverConnectionMemory) this.serverConnectionMemory.clickAutomatically(link, endpoint);
+    clickServerConnectLink(link, endpoint2) {
+      if (this.serverConnectionMemory) this.serverConnectionMemory.clickAutomatically(link, endpoint2);
       else link.click();
     },
     connectToSteamServer(serverIp) {
@@ -2902,6 +3183,14 @@ ${nextMessage}` : nextMessage;
       return true;
     },
     connectToCurrentServer({ forceRelocate = false, analysisFallback = false } = {}) {
+      if (this.nativeData) {
+        const t = this.getNativeTicket(this.getAutoConnectScope());
+        const p = t && this.nativePlayer(t.suspectId);
+        if (!p?.serverIp || !this.shouldAutoConnectToServer({ analysisFallback }).allowed) return false;
+        if (this.hasRecentlyAutoConnected(p.serverIp)) return false;
+        this.markAutoConnected(p.serverIp);
+        return this.connectToSteamServer(p.serverIp);
+      }
       if (forceRelocate) {
         return this.connectToRelocatedServerForced();
       }
@@ -3032,6 +3321,10 @@ ${nextMessage}` : nextMessage;
       return button?.id === this.TICKET_MUTE_BUTTON_ID || button?.id === this.TICKET_BAN_BUTTON_ID || Boolean(button?.closest(`#${this.TICKET_PUNISHMENT_ACTIONS_ID}`));
     },
     async loadModeratorPermissions() {
+      if (this.nativeData) {
+        this.syncNativePermissions();
+        return;
+      }
       let permissions = null;
       if (this.chrome?.storage?.local) {
         try {
@@ -3486,6 +3779,10 @@ ${nextMessage}` : nextMessage;
       });
     },
     extractTicketIdFromComplaintScope(scopeEl) {
+      if (this.nativeData) {
+        const ticket = this.getNativeTicket(scopeEl);
+        return ticket ? String(ticket.id) : null;
+      }
       if (!scopeEl) {
         return null;
       }
@@ -3991,6 +4288,13 @@ ${nextMessage}` : nextMessage;
       this._cachedMuteIssueButton = button;
     },
     async scanModeratorPunishmentPermissions() {
+      if (this.nativeData) {
+        this.syncNativePermissions();
+        const mute = this.findSiteIssueMuteButton(), ban = this.findSiteIssueBanButton();
+        if (mute) this._cacheIssueHandlerFromButton(mute, "mute");
+        if (ban) this._cacheIssueHandlerFromButton(ban, "ban");
+        return;
+      }
       if (this._isUpdatingPunishmentButtons || this._permissionScanSuppressed > 0) {
         return;
       }
@@ -4240,6 +4544,7 @@ ${nextMessage}` : nextMessage;
       this.clearTicketPunishmentButtons();
     },
     getOffenderSteamIdForScope(scope) {
+      if (this.nativeData) return this.getNativeTicket(scope)?.suspectId || null;
       const offenderField = this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope);
       return this.extractSteamIdFromField(offenderField);
     },
@@ -4248,25 +4553,25 @@ ${nextMessage}` : nextMessage;
     },
     handleTicketMuteButtonClick() {
       const scope = this.getActivePunishmentScope();
-      const steamId2 = this.getOffenderSteamIdForScope(scope);
+      const steamId3 = this.getOffenderSteamIdForScope(scope);
       this._closeReasonPunishmentOrigin = {
         type: "mute",
         scope,
-        steamId: steamId2,
+        steamId: steamId3,
         ticketId: this.extractTicketIdFromComplaintScope(scope)
       };
-      void this.openSiteMuteForm(steamId2);
+      void this.openSiteMuteForm(steamId3);
     },
     handleTicketBanButtonClick() {
       const scope = this.getActivePunishmentScope();
-      const steamId2 = this.getOffenderSteamIdForScope(scope);
+      const steamId3 = this.getOffenderSteamIdForScope(scope);
       this._closeReasonPunishmentOrigin = {
         type: "ban",
         scope,
-        steamId: steamId2,
+        steamId: steamId3,
         ticketId: this.extractTicketIdFromComplaintScope(scope)
       };
-      void this.openSiteBanForm(steamId2);
+      void this.openSiteBanForm(steamId3);
     },
     invokeCachedSiteHandler(handler, type, button = null) {
       if (typeof handler !== "function") {
@@ -4294,28 +4599,28 @@ ${nextMessage}` : nextMessage;
         return false;
       }
     },
-    openSiteMuteForm(steamId2) {
-      return this.punishmentBridge.openMuteForm(steamId2);
+    openSiteMuteForm(steamId3) {
+      return this.punishmentBridge.openMuteForm(steamId3);
     },
-    openSiteBanForm(steamId2) {
-      return this.punishmentBridge.openBanForm(steamId2);
+    openSiteBanForm(steamId3) {
+      return this.punishmentBridge.openBanForm(steamId3);
     },
-    prefillMuteFormSteamId(steamId2) {
-      this._prefillPunishmentFormSteamId(steamId2, "#mute-steamid64");
+    prefillMuteFormSteamId(steamId3) {
+      this._prefillPunishmentFormSteamId(steamId3, "#mute-steamid64");
     },
-    prefillBanFormSteamId(steamId2) {
-      this._prefillPunishmentFormSteamId(steamId2, "#ban-steamid64");
+    prefillBanFormSteamId(steamId3) {
+      this._prefillPunishmentFormSteamId(steamId3, "#ban-steamid64");
     },
-    _prefillPunishmentFormSteamId(steamId2, inputSelector) {
-      if (!steamId2) {
+    _prefillPunishmentFormSteamId(steamId3, inputSelector) {
+      if (!steamId3) {
         return;
       }
       const applyValue = (input) => {
         if (!input) {
           return false;
         }
-        if (input.value !== steamId2) {
-          input.value = steamId2;
+        if (input.value !== steamId3) {
+          input.value = steamId3;
           input.dispatchEvent(new Event("input", { bubbles: true }));
           input.dispatchEvent(new Event("change", { bubbles: true }));
         }
@@ -4340,6 +4645,38 @@ ${nextMessage}` : nextMessage;
       setTimeout(() => observer.disconnect(), 2100);
     }
   };
+
+  // modules/shared/faceitIcons.js
+  var SHELL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><defs><radialGradient id="bar-bg-gradient__ID__" cx="0.5" cy="0.5" r="0.55"><stop offset="0.4" stop-color="#5D5D5D" /><stop offset="1" stop-color="#242424" /></radialGradient><linearGradient id="fill-gradient__ID__" x1="0" y1="0" x2="0" y2="1"><stop class="startStop" offset="0.5" stop-color="var(--fill-start,#F1F1F1)" /><stop class="endStop" offset="1" stop-color="var(--fill-end,#383838)" /></linearGradient><radialGradient id="fill-calibration__ID__" cx="0" cy="0.9" r="2"><stop offset="0.0865385" stop-color="#2A2A2A" /><stop offset="0.384615" stop-color="#4A4A4A" /><stop offset="0.711538" stop-color="#8D8D8D" /><stop offset="1" stop-color="#A6A6A6" /></radialGradient></defs><circle class="background" r="50%" cx="50%" cy="50%" fill="#060606" /><path class="bar-bg" d="         M 6.5, 18.4         A 8.4, 8.4 0 1 1 17.5, 18.4       " stroke="url(#bar-bg-gradient__ID__)" stroke-width="2.4" /><path class="progress" d="         M 6.5, 18.4         A 8.4, 8.4 0 1 1 17.5, 18.4       " stroke="url(#fill-gradient__ID__)" stroke-width="2.4" pathLength="10" /><path class="calibration" d="         M 6.5, 18.4         A 8.4, 8.4 0 1 1 17.5, 18.4       " stroke="url(#fill-calibration__ID__)" stroke-width="2.4" /></svg>';
+  var DIGITS = { "1": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n1" opacity="1" fill="#f1f1f1" transform="matrix(1.026794 0 0 0.9086 -0.503212 0.771038)" d="M11.625 15V10.5262L10.5 10.9971V9.80233L12.1047 9H13.1424V15H11.625Z" />', "2": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n2" opacity="1" fill="#f1f1f1" transform="matrix(0.881606 0 0 0.9226 1.383817 0.561249)" d="M9.83 15V14.181C9.83 13.8534 9.83862 13.5718 9.85586 13.3362C9.8731 13.1006 9.91046 12.8994 9.96793 12.7328C10.0311 12.5661 10.1289 12.4253 10.261 12.3103C10.3932 12.1897 10.5743 12.0805 10.8041 11.9828L12.1145 11.4569C12.2811 11.3879 12.4047 11.3276 12.4852 11.2759C12.5656 11.2184 12.6174 11.1494 12.6403 11.069C12.6633 10.9885 12.6748 10.8764 12.6748 10.7328C12.6748 10.5546 12.6461 10.4253 12.5886 10.3448C12.5311 10.2586 12.4277 10.2069 12.2783 10.1897C12.1289 10.1667 11.9191 10.1552 11.649 10.1552C11.5225 10.1552 11.3645 10.1609 11.1748 10.1724C10.9909 10.1839 10.7926 10.1983 10.58 10.2155C10.3674 10.2328 10.1576 10.2529 9.95069 10.2759V9.18966C10.1403 9.15517 10.3559 9.12356 10.5972 9.09483C10.8386 9.06609 11.0857 9.0431 11.3386 9.02586C11.5972 9.00862 11.8357 9 12.0541 9C12.3415 9 12.6116 9.02011 12.8645 9.06035C13.1231 9.09483 13.3501 9.16667 13.5455 9.27586C13.7409 9.38506 13.8932 9.54885 14.0024 9.76724C14.1174 9.98563 14.1748 10.2787 14.1748 10.6466C14.1748 11.0144 14.1346 11.3103 14.0541 11.5345C13.9794 11.7586 13.8674 11.9368 13.7179 12.069C13.5685 12.2011 13.3875 12.3103 13.1748 12.3966L11.6921 12.9741C11.5771 13.0201 11.488 13.069 11.4248 13.1207C11.3674 13.1667 11.3271 13.2299 11.3041 13.3103C11.2811 13.3851 11.2697 13.4856 11.2697 13.6121V13.8362H14.1748V15H9.83Z" />', "3": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n3" opacity="1" fill="#f1f1f1" transform="matrix(0.895103 0 0 0.9366 1.123928 0.435248)" d="M11.7535 15C11.5603 15 11.3501 14.9915 11.1228 14.9744C10.8956 14.9631 10.6711 14.9432 10.4495 14.9148C10.2336 14.8807 10.0405 14.8494 9.87 14.821V13.7557C10.0745 13.7727 10.2848 13.7898 10.5007 13.8068C10.7166 13.8239 10.9211 13.8381 11.1143 13.8494C11.3132 13.8551 11.4808 13.858 11.6172 13.858C11.8728 13.858 12.0745 13.8494 12.2223 13.8324C12.3757 13.8097 12.4836 13.7528 12.5461 13.6619C12.6143 13.571 12.6484 13.4233 12.6484 13.2188C12.6484 13.0256 12.6257 12.8807 12.5802 12.7841C12.5348 12.6818 12.4552 12.6136 12.3416 12.5795C12.228 12.5455 12.0689 12.5284 11.8643 12.5284H10.8842V11.4034H11.8643C12.0461 11.4034 12.1882 11.3892 12.2905 11.3608C12.3984 11.3267 12.4751 11.267 12.5206 11.1818C12.5717 11.0909 12.5973 10.9545 12.5973 10.7727C12.5973 10.5682 12.5689 10.4233 12.512 10.3381C12.4552 10.2472 12.3501 10.1932 12.1967 10.1761C12.0433 10.1534 11.8217 10.142 11.5319 10.142C11.3672 10.142 11.1853 10.1477 10.9865 10.1591C10.7933 10.1705 10.6001 10.1847 10.4069 10.2017C10.2194 10.2131 10.0518 10.2301 9.90409 10.2528V9.17898C10.0689 9.14489 10.2592 9.11364 10.4751 9.08523C10.6967 9.05682 10.9183 9.03693 11.1399 9.02557C11.3672 9.00852 11.5745 9 11.762 9C12.2109 9 12.5831 9.03409 12.8785 9.10227C13.1797 9.17045 13.4183 9.26989 13.5944 9.40057C13.7706 9.53125 13.8956 9.69318 13.9694 9.88636C14.049 10.0739 14.0887 10.2926 14.0887 10.5426C14.0887 10.9688 14.0035 11.2869 13.8331 11.4972C13.6626 11.7074 13.4098 11.8494 13.0745 11.9233V11.9574C13.3018 12.0085 13.495 12.0824 13.6541 12.179C13.8132 12.2756 13.9325 12.4176 14.012 12.6051C14.0973 12.7926 14.1399 13.0455 14.1399 13.3636C14.1399 13.608 14.1058 13.8324 14.0376 14.0369C13.9751 14.2358 13.8586 14.4091 13.6882 14.5568C13.5177 14.6989 13.2762 14.8097 12.9638 14.8892C12.6513 14.9631 12.2478 15 11.7535 15Z" />', "4": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n4" opacity="1" fill="#f1f1f1" transform="matrix(0.826548 0 0 0.9086 1.971934 0.771038)" d="M12.3105 15V13.7965H9.45V12.7587L11.5081 9H13.1477L11.0372 12.6279H12.3541L12.7901 11.1802H13.8105V12.6279H14.5517V13.7965H13.8105V15H12.3105Z" />', "5": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n5" opacity="1" fill="#f1f1f1" transform="matrix(0.856234 0 0 0.9226 1.659005 0.645038)" d="M11.7524 15C11.5628 15 11.353 14.9914 11.1231 14.9741C10.8932 14.9626 10.6662 14.9454 10.4421 14.9224C10.2179 14.8937 10.0139 14.8592 9.83 14.819V13.75C10.0311 13.7672 10.238 13.7845 10.4507 13.8017C10.6691 13.8132 10.876 13.8247 11.0714 13.8362C11.2668 13.842 11.4363 13.8448 11.58 13.8448C11.8099 13.8448 11.9938 13.8362 12.1317 13.819C12.2697 13.796 12.376 13.7586 12.4507 13.7069C12.5311 13.6552 12.5857 13.5805 12.6145 13.4828C12.6432 13.3793 12.6576 13.25 12.6576 13.0948C12.6576 12.9282 12.6403 12.796 12.6059 12.6983C12.5771 12.5948 12.5225 12.5201 12.4421 12.4741C12.3616 12.4224 12.2495 12.3879 12.1059 12.3707C11.9622 12.3534 11.7783 12.3448 11.5541 12.3448C11.4047 12.3448 11.2323 12.3506 11.0369 12.3621C10.8415 12.3678 10.6461 12.3793 10.4507 12.3966C10.2553 12.408 10.0714 12.4224 9.89897 12.4397V9H13.7266V10.1638H11.2093V11.2759C11.307 11.2644 11.4191 11.2529 11.5455 11.2414C11.6777 11.2299 11.8099 11.2213 11.9421 11.2155C12.0743 11.2098 12.1949 11.2069 12.3041 11.2069C12.6777 11.2069 12.9852 11.2471 13.2266 11.3276C13.4679 11.408 13.6576 11.5259 13.7955 11.681C13.9334 11.8305 14.0283 12.0144 14.08 12.2328C14.1375 12.4511 14.1662 12.704 14.1662 12.9914C14.1662 13.342 14.1317 13.6437 14.0628 13.8966C13.9938 14.1494 13.8702 14.3592 13.6921 14.5259C13.5197 14.6868 13.2754 14.8075 12.9593 14.8879C12.649 14.9626 12.2467 15 11.7524 15Z" />', "6": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n6" opacity="1" fill="#f1f1f1" transform="matrix(0.830162 0 0 0.9366 2.040408 0.435248)" d="M12.0831 15C11.6797 15 11.3359 14.9801 11.0518 14.9403C10.7677 14.9006 10.5291 14.821 10.3359 14.7017C10.1484 14.5824 9.995 14.4006 9.87568 14.1562C9.81886 14.0256 9.77057 13.8636 9.73079 13.6705C9.69102 13.4716 9.66261 13.2358 9.64557 12.9631C9.62852 12.6847 9.62 12.3693 9.62 12.017C9.62 11.7216 9.62568 11.4545 9.63705 11.2159C9.65409 10.9716 9.67966 10.7528 9.71375 10.5597C9.75352 10.3608 9.80466 10.1875 9.86716 10.0398C9.96943 9.77273 10.1143 9.56534 10.3018 9.41761C10.495 9.26989 10.7422 9.16477 11.0433 9.10227C11.3444 9.03409 11.7109 9 12.1427 9C12.3075 9 12.495 9.00852 12.7052 9.02557C12.9211 9.04261 13.1456 9.06534 13.3785 9.09375C13.6115 9.11648 13.8302 9.14773 14.0348 9.1875V10.2528C13.8302 10.2301 13.6228 10.2102 13.4126 10.1932C13.2081 10.1761 13.0206 10.1648 12.8501 10.1591C12.6797 10.1477 12.5376 10.142 12.424 10.142C12.1285 10.142 11.8927 10.1619 11.7166 10.2017C11.5405 10.2358 11.4069 10.3068 11.316 10.4148C11.2308 10.517 11.174 10.6676 11.1456 10.8665C11.1172 11.0653 11.103 11.3295 11.103 11.6591H11.1541C11.1995 11.608 11.2677 11.5511 11.3586 11.4886C11.4495 11.4261 11.5831 11.3722 11.7592 11.3267C11.941 11.2756 12.1797 11.25 12.4751 11.25C12.7876 11.25 13.0632 11.2727 13.3018 11.3182C13.5405 11.3636 13.7393 11.4489 13.8984 11.5739C14.0575 11.6932 14.1768 11.8665 14.2564 12.0938C14.3359 12.321 14.3757 12.6165 14.3757 12.9801C14.3757 13.3438 14.3444 13.6563 14.2819 13.9176C14.2194 14.1733 14.103 14.3807 13.9325 14.5398C13.7677 14.6989 13.5376 14.8153 13.2422 14.8892C12.9467 14.9631 12.5603 15 12.0831 15ZM12.0149 13.875C12.2081 13.875 12.3643 13.8693 12.4836 13.858C12.6086 13.8409 12.7052 13.8097 12.7734 13.7642C12.8416 13.7131 12.8899 13.6392 12.9183 13.5426C12.9467 13.4403 12.9609 13.3068 12.9609 13.142C12.9609 12.9659 12.9467 12.8267 12.9183 12.7244C12.8899 12.6165 12.8416 12.5398 12.7734 12.4943C12.7109 12.4432 12.6172 12.4119 12.4922 12.4006C12.3672 12.3835 12.2081 12.375 12.0149 12.375C11.8103 12.375 11.6484 12.3864 11.5291 12.4091C11.4098 12.4318 11.3189 12.4716 11.2564 12.5284C11.1995 12.5795 11.1626 12.6477 11.1456 12.733C11.1285 12.8125 11.12 12.9119 11.12 13.0313C11.12 13.2358 11.1342 13.3949 11.1626 13.5085C11.1967 13.6222 11.2478 13.7074 11.316 13.7642C11.3842 13.8153 11.4751 13.8466 11.5888 13.858C11.7024 13.8693 11.8444 13.875 12.0149 13.875Z" />', "7": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n7" opacity="1" fill="#f1f1f1" transform="matrix(0.911503 0 0 0.9086 0.967267 0.771038)" d="M10.3843 15L12.5907 10.1773H9.8V9H14.1866V10.0727L12.05 15H10.3843Z" />', "8": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n8" opacity="1" fill="#f1f1f1" transform="matrix(0.83328 0 0 0.9366 2.000248 0.435248)" d="M12 15C11.4872 15 11.0647 14.9631 10.7325 14.8892C10.4062 14.8153 10.1527 14.7074 9.97203 14.5653C9.7972 14.4233 9.67483 14.2528 9.6049 14.054C9.53497 13.8494 9.5 13.6193 9.5 13.3636C9.5 13.0398 9.54079 12.7869 9.62238 12.6051C9.70979 12.4176 9.83508 12.2756 9.99825 12.179C10.1614 12.0824 10.3596 12.0085 10.5927 11.9574V11.9233C10.243 11.8494 9.98077 11.7074 9.80594 11.4972C9.63695 11.2869 9.55245 10.9687 9.55245 10.5426C9.55245 10.2926 9.59033 10.071 9.66609 9.87784C9.74767 9.68466 9.87879 9.52273 10.0594 9.39205C10.2459 9.26136 10.4965 9.16477 10.8112 9.10227C11.1317 9.03409 11.528 9 12 9C12.472 9 12.8654 9.03409 13.1801 9.10227C13.5006 9.16477 13.7512 9.26136 13.9318 9.39205C14.1183 9.52273 14.2494 9.68466 14.3252 9.87784C14.4068 10.071 14.4476 10.2926 14.4476 10.5426C14.4476 10.9687 14.3601 11.2869 14.1853 11.4972C14.0163 11.7074 13.757 11.8494 13.4073 11.9233V11.9574C13.6463 12.0085 13.8444 12.0824 14.0017 12.179C14.1649 12.2756 14.2873 12.4176 14.3689 12.6051C14.4563 12.7869 14.5 13.0398 14.5 13.3636C14.5 13.6193 14.465 13.8494 14.3951 14.054C14.3252 14.2528 14.1999 14.4233 14.0192 14.5653C13.8386 14.7074 13.5851 14.8153 13.2587 14.8892C12.9324 14.9631 12.5128 15 12 15ZM12 13.892C12.2622 13.892 12.4633 13.8807 12.6031 13.858C12.743 13.8295 12.8392 13.767 12.8916 13.6705C12.9499 13.5682 12.979 13.4119 12.979 13.2017C12.979 13.0426 12.9645 12.9148 12.9353 12.8182C12.912 12.7216 12.8625 12.6506 12.7867 12.6051C12.7168 12.554 12.6177 12.5199 12.4895 12.5028C12.3613 12.4858 12.1981 12.4773 12 12.4773C11.8019 12.4773 11.6387 12.4858 11.5105 12.5028C11.3823 12.5199 11.2832 12.554 11.2133 12.6051C11.1434 12.6506 11.0938 12.7216 11.0647 12.8182C11.0414 12.9148 11.0297 13.0426 11.0297 13.2017C11.0297 13.4119 11.0559 13.5682 11.1084 13.6705C11.1608 13.767 11.257 13.8295 11.3969 13.858C11.5425 13.8807 11.7436 13.892 12 13.892ZM12 11.4545C12.2681 11.4545 12.4662 11.4403 12.5944 11.4119C12.7284 11.3835 12.8158 11.321 12.8566 11.2244C12.9033 11.1278 12.9266 10.983 12.9266 10.7898C12.9266 10.5852 12.9033 10.4375 12.8566 10.3466C12.8158 10.25 12.7284 10.1875 12.5944 10.1591C12.4662 10.125 12.2681 10.108 12 10.108C11.7378 10.108 11.5396 10.125 11.4056 10.1591C11.2716 10.1875 11.1842 10.25 11.1434 10.3466C11.1026 10.4375 11.0822 10.5852 11.0822 10.7898C11.0822 10.983 11.1026 11.1278 11.1434 11.2244C11.1842 11.321 11.2716 11.3835 11.4056 11.4119C11.5396 11.4403 11.7378 11.4545 12 11.4545Z" />', "9": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n9" opacity="1" fill="#f1f1f1" transform="matrix(0.831928 0 0 0.9366 2.023415 0.435248)" d="M11.853 15C11.6882 15 11.495 14.9915 11.2734 14.9744C11.0575 14.9574 10.8331 14.9347 10.6001 14.9062C10.3728 14.8778 10.1598 14.8466 9.96091 14.8125V13.7472C10.1768 13.7699 10.3842 13.7898 10.5831 13.8068C10.7876 13.8239 10.978 13.8381 11.1541 13.8494C11.3302 13.8551 11.4694 13.858 11.5717 13.858C11.8728 13.858 12.1086 13.8409 12.2791 13.8068C12.4552 13.767 12.5859 13.696 12.6711 13.5938C12.762 13.4858 12.8217 13.3324 12.8501 13.1335C12.8842 12.9347 12.9012 12.6705 12.9012 12.3409H12.8501C12.8047 12.392 12.7336 12.4489 12.637 12.5114C12.5461 12.5739 12.4126 12.6307 12.2365 12.6818C12.0603 12.7273 11.8245 12.75 11.5291 12.75C11.2109 12.75 10.9325 12.7273 10.6939 12.6818C10.4609 12.6364 10.2649 12.554 10.1058 12.4347C9.9467 12.3097 9.82454 12.1335 9.73932 11.9063C9.65977 11.679 9.62 11.3835 9.62 11.0199C9.62 10.6563 9.65125 10.3466 9.71375 10.0909C9.78193 9.82955 9.89841 9.61932 10.0632 9.46023C10.228 9.30114 10.4581 9.18466 10.7535 9.1108C11.0547 9.03693 11.441 9 11.9126 9C12.3615 9 12.7365 9.02557 13.0376 9.0767C13.3388 9.12216 13.5802 9.21591 13.762 9.35795C13.9495 9.49432 14.0888 9.70455 14.1797 9.98864C14.2535 10.2216 14.3047 10.5 14.3331 10.8239C14.3615 11.1477 14.3757 11.5341 14.3757 11.983C14.3757 12.3182 14.3643 12.6193 14.3416 12.8864C14.3245 13.1534 14.2933 13.3892 14.2478 13.5938C14.2024 13.7983 14.1399 13.9773 14.0603 14.1307C13.9467 14.3466 13.7933 14.5199 13.6001 14.6506C13.4069 14.7756 13.1683 14.8665 12.8842 14.9233C12.6001 14.9744 12.2564 15 11.853 15ZM11.9808 11.625C12.1853 11.625 12.3473 11.6136 12.4666 11.5909C12.5916 11.5682 12.6825 11.5312 12.7393 11.4801C12.7961 11.4233 12.8331 11.3551 12.8501 11.2756C12.8672 11.1903 12.8757 11.0881 12.8757 10.9687C12.8757 10.7642 12.8586 10.6051 12.8245 10.4915C12.7961 10.3778 12.7478 10.2955 12.6797 10.2443C12.6115 10.1875 12.5206 10.1534 12.4069 10.142C12.2933 10.1307 12.1512 10.125 11.9808 10.125C11.7933 10.125 11.637 10.1335 11.512 10.1506C11.387 10.1619 11.2905 10.1932 11.2223 10.2443C11.1541 10.2898 11.1058 10.3636 11.0774 10.4659C11.0547 10.5625 11.0433 10.6932 11.0433 10.858C11.0433 11.0341 11.0547 11.1761 11.0774 11.2841C11.1058 11.3864 11.1541 11.4631 11.2223 11.5142C11.2905 11.5597 11.3842 11.5909 11.5035 11.608C11.6285 11.6193 11.7876 11.625 11.9808 11.625Z" />', "10": '<g xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number n10" opacity="1" fill="#f1f1f1" transform="matrix(1.012282 0 0 0.9366 -0.352162 0.435248)"><path d="M13.7515 15C13.3348 15 12.9884 14.9773 12.7124 14.9318C12.4365 14.8807 12.2173 14.7926 12.0549 14.6676C11.8926 14.5426 11.7708 14.3693 11.6897 14.1477C11.6139 13.9205 11.5652 13.6307 11.5435 13.2784C11.5219 12.9261 11.5111 12.5 11.5111 12C11.5111 11.5 11.5219 11.0739 11.5435 10.7216C11.5652 10.3693 11.6139 10.0824 11.6897 9.8608C11.7708 9.63352 11.8926 9.45739 12.0549 9.33239C12.2173 9.20739 12.4365 9.12216 12.7124 9.0767C12.9884 9.02557 13.3348 9 13.7515 9C14.1736 9 14.5199 9.02557 14.7905 9.0767C15.0665 9.12216 15.2857 9.20739 15.448 9.33239C15.6104 9.45739 15.7294 9.63352 15.8052 9.8608C15.8864 10.0824 15.9378 10.3693 15.9594 10.7216C15.9865 11.0739 16 11.5 16 12C16 12.5 15.9865 12.9261 15.9594 13.2784C15.9378 13.6307 15.8864 13.9205 15.8052 14.1477C15.7294 14.3693 15.6104 14.5426 15.448 14.6676C15.2857 14.7926 15.0665 14.8807 14.7905 14.9318C14.5199 14.9773 14.1736 15 13.7515 15ZM13.7515 13.858C13.9138 13.858 14.0464 13.8523 14.1492 13.8409C14.2521 13.8239 14.3332 13.7869 14.3928 13.7301C14.4523 13.6733 14.4956 13.5795 14.5226 13.4489C14.5497 13.3125 14.5659 13.1278 14.5713 12.8949C14.5822 12.6619 14.5876 12.3636 14.5876 12C14.5876 11.6364 14.5822 11.3381 14.5713 11.1051C14.5659 10.8722 14.5497 10.6903 14.5226 10.5597C14.4956 10.4233 14.4523 10.3267 14.3928 10.2699C14.3332 10.2131 14.2521 10.179 14.1492 10.1676C14.0518 10.1506 13.9192 10.142 13.7515 10.142C13.5945 10.142 13.462 10.1506 13.3537 10.1676C13.2509 10.179 13.1697 10.2131 13.1102 10.2699C13.0561 10.3267 13.0155 10.4233 12.9884 10.5597C12.9614 10.6903 12.9424 10.8722 12.9316 11.1051C12.9262 11.3381 12.9235 11.6364 12.9235 12C12.9235 12.3636 12.9262 12.6619 12.9316 12.8949C12.9424 13.1278 12.9614 13.3125 12.9884 13.4489C13.0155 13.5795 13.0561 13.6733 13.1102 13.7301C13.1697 13.7869 13.2509 13.8239 13.3537 13.8409C13.4565 13.8523 13.5891 13.858 13.7515 13.858Z" /><path d="M9.04715 14.9318V10.5597L8 11.0199V9.85228L9.49361 9.06819H10.4596V14.9318H9.04715Z" /></g>', "q": '<path xmlns="http://www.w3.org/2000/svg" class="level-number rebranded-level-number nq" opacity="1" fill="#f1f1f1" d="M10.9551 13V12.4138C10.9551 12.1897 10.9803 12.0115 11.0307 11.8793C11.0812 11.7471 11.1537 11.6466 11.2482 11.5776C11.3491 11.5086 11.472 11.4511 11.617 11.4052L11.9291 11.3103C12.0615 11.2701 12.1592 11.2328 12.2222 11.1983C12.2916 11.158 12.3357 11.1006 12.3546 11.0259C12.3798 10.9454 12.3924 10.8305 12.3924 10.681C12.3924 10.5086 12.3641 10.3851 12.3073 10.3103C12.2506 10.2356 12.156 10.1925 12.0236 10.181C11.8976 10.1638 11.7179 10.1552 11.4846 10.1552C11.3901 10.1552 11.2766 10.158 11.1442 10.1638C11.0181 10.1695 10.8826 10.1782 10.7376 10.1897C10.5989 10.1954 10.4634 10.204 10.331 10.2155C10.2049 10.2213 10.0946 10.2299 10 10.2414V9.15517C10.1765 9.12644 10.3783 9.10057 10.6052 9.07759C10.8322 9.04885 11.0623 9.02874 11.2955 9.01724C11.5351 9.00575 11.7557 9 11.9574 9C12.279 9 12.5658 9.02299 12.818 9.06897C13.0701 9.11494 13.2845 9.19828 13.461 9.31897C13.6375 9.43391 13.7699 9.5977 13.8582 9.81034C13.9527 10.0172 14 10.2874 14 10.6207C14 10.8563 13.9779 11.0546 13.9338 11.2155C13.8897 11.3764 13.8266 11.5086 13.7447 11.6121C13.6627 11.7098 13.565 11.7902 13.4515 11.8534C13.3381 11.9167 13.2151 11.9713 13.0827 12.0172L12.7707 12.1121C12.6635 12.1408 12.5784 12.1695 12.5154 12.1983C12.4523 12.2213 12.405 12.2529 12.3735 12.2931C12.3483 12.3276 12.3294 12.3793 12.3168 12.4483C12.3105 12.5172 12.3073 12.6121 12.3073 12.7328V13H10.9551ZM10.8322 15V13.75H12.4492V15H10.8322Z" />' };
+  var COLORS = ["#8d8d8d", "#f1f1f1", "#05ff00", "#05ff00", "#ffc700", "#ffc700", "#ffc700", "#ffc700", "#ff4b00", "#ff4b00", "#ef0000"];
+  var nextId = 0;
+  function createFaceitLevelIcon(document2, level) {
+    const n = Number.isInteger(level) && level >= 1 && level <= 10 ? level : 0;
+    const token = `__iohFaceit${++nextId}`;
+    const template = document2.createElement("template");
+    template.innerHTML = SHELL.replaceAll("__ID__", token);
+    const svg = template.content.firstElementChild;
+    svg.classList.add("ioh-faceit-rank");
+    svg.setAttribute("width", "22");
+    svg.setAttribute("height", "22");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", n ? `Faceit \u0443\u0440\u043E\u0432\u0435\u043D\u044C ${n}` : "Faceit: \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0443\u0440\u043E\u0432\u0435\u043D\u044C \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442");
+    svg.style.setProperty("--fill-start", COLORS[n]);
+    svg.style.setProperty("--fill-end", COLORS[n]);
+    svg.querySelector(".background").setAttribute("fill", "#121212");
+    const progress = svg.querySelector(".progress");
+    progress.setAttribute("stroke-dasharray", "10.1 10000");
+    progress.setAttribute("stroke-dashoffset", String(n === 10 ? 0 : 10 - 0.99 * n));
+    progress.setAttribute("opacity", n ? "1" : "0");
+    svg.querySelector(".calibration").setAttribute("opacity", n ? "0" : "1");
+    template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${DIGITS[n || "q"].replaceAll("__ID__", token)}</svg>`;
+    const digit = template.content.firstElementChild.firstElementChild;
+    if (!n) digit.setAttribute("fill", "#a6a6a6");
+    svg.append(digit);
+    markIoh(svg);
+    return svg;
+  }
 
   // modules/ticket/OffenderProfile.js
   var OffenderProfileMethods = {
@@ -4509,7 +4846,7 @@ ${nextMessage}` : nextMessage;
       }
       const scope = this.getTicketScopeRoot(ticketTextarea);
       const offenderField = this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope) || this.findInfoField("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C");
-      const offenderSteamId = this.extractSteamIdFromField(offenderField);
+      const offenderSteamId = this.nativeData ? this.getNativeTicket(scope)?.suspectId : this.extractSteamIdFromField(offenderField);
       if (!offenderField || !offenderSteamId) {
         return null;
       }
@@ -4546,70 +4883,19 @@ ${nextMessage}` : nextMessage;
         return code;
       }
     },
-    extractSkillLevelFromFastmm(faceitProfile, elo, faceitMissing = false) {
-      if (faceitMissing) {
-        return { skillLevel: null, rankIconUrl: null };
-      }
-      let skillLevel = null;
-      const level = Number(faceitProfile?.level);
-      if (Number.isFinite(level) && level >= 1 && level <= 10) {
-        skillLevel = String(level);
-      }
-      if (!skillLevel && elo) {
-        const fromElo = this.faceitEloToSkillLevel(Number(elo));
-        if (fromElo != null) {
-          skillLevel = String(fromElo);
-        }
-      }
-      const rankIconUrl = skillLevel ? `https://mobile.fastmm.win/img/rank/faceit/level${skillLevel}.png` : null;
-      return { skillLevel, rankIconUrl };
-    },
     extractOffenderProfileData(data, source = "fastmm") {
-      const payload = data && typeof data === "object" ? data : {};
-      const steamProfile = payload.steam?.profile || null;
-      const faceitPayload = payload.faceit || null;
-      const faceitProfile = faceitPayload?.profile || null;
-      const creationDate = this.formatSteamCreationDate(steamProfile?.timecreated);
-      const eloRaw = faceitProfile?.elo;
-      const elo = eloRaw != null && String(eloRaw).trim() !== "" ? String(eloRaw).trim() : null;
-      let faceitMissing = Boolean(faceitPayload?.error) || !faceitProfile || !elo;
-      const { skillLevel, rankIconUrl } = this.extractSkillLevelFromFastmm(
-        faceitProfile,
-        elo,
-        faceitMissing
-      );
-      return {
-        creationDate,
-        elo: faceitMissing ? null : elo,
-        skillLevel: faceitMissing ? null : skillLevel,
-        rankIconUrl: faceitMissing ? null : rankIconUrl,
-        faceitMissing,
-        source
-      };
+      return { creationDate: this.formatSteamCreationDate(data?.steam?.profile?.timecreated), source };
     },
-    faceitEloToSkillLevel(elo) {
-      if (!Number.isFinite(elo) || elo <= 0) return null;
-      if (elo < 801) return 1;
-      if (elo < 951) return 2;
-      if (elo < 1101) return 3;
-      if (elo < 1251) return 4;
-      if (elo < 1401) return 5;
-      if (elo < 1551) return 6;
-      if (elo < 1701) return 7;
-      if (elo < 1851) return 8;
-      if (elo < 2001) return 9;
-      return 10;
-    },
-    fetchOffenderProfile(steamId2, { force = false } = {}) {
-      if (!force && this.offenderProfileCache.has(steamId2)) {
-        return Promise.resolve(this.offenderProfileCache.get(steamId2));
+    fetchOffenderProfile(steamId3, { force = false } = {}) {
+      if (!force && this.offenderProfileCache.has(steamId3)) {
+        return Promise.resolve(this.offenderProfileCache.get(steamId3));
       }
-      if (!force && this.offenderProfileInflight.has(steamId2)) {
-        return this.offenderProfileInflight.get(steamId2);
+      if (!force && this.offenderProfileInflight.has(steamId3)) {
+        return this.offenderProfileInflight.get(steamId3);
       }
       const requestPromise = new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
-          { action: "fetchOffenderProfile", steamId: steamId2 },
+          { action: "fetchOffenderProfile", steamId: steamId3 },
           (response) => {
             if (chrome.runtime.lastError) {
               return reject(chrome.runtime.lastError);
@@ -4621,14 +4907,14 @@ ${nextMessage}` : nextMessage;
               response.data,
               response.source || "fastmm"
             );
-            this.offenderProfileCache.set(steamId2, profileData);
+            this.offenderProfileCache.set(steamId3, profileData);
             resolve(profileData);
           }
         );
       }).finally(() => {
-        this.offenderProfileInflight.delete(steamId2);
+        this.offenderProfileInflight.delete(steamId3);
       });
-      this.offenderProfileInflight.set(steamId2, requestPromise);
+      this.offenderProfileInflight.set(steamId3, requestPromise);
       return requestPromise;
     },
     renderCybershokePlaytimeValue(valueNode, data) {
@@ -4653,6 +4939,7 @@ ${nextMessage}` : nextMessage;
       containerNode.hidden = false;
       containerNode.dataset.countryLabel = this.formatCountryTooltip(country);
       const img = this.document.createElement("img");
+      markIoh(img);
       img.className = "ioh-offender-flag";
       img.alt = country;
       img.width = 16;
@@ -4661,34 +4948,15 @@ ${nextMessage}` : nextMessage;
       img.style.flexShrink = "0";
       containerNode.appendChild(img);
     },
-    renderFaceitEloValue(valueNode, profileData) {
-      if (!valueNode) return false;
-      valueNode.textContent = "";
-      valueNode.classList.remove("ioh-account-value--error");
-      if (!profileData?.elo) {
-        return false;
-      }
-      if (profileData.rankIconUrl) {
-        const img = this.document.createElement("img");
-        img.className = "ioh-faceit-rank";
-        img.src = profileData.rankIconUrl;
-        img.alt = profileData.skillLevel ? `FaceIt level ${profileData.skillLevel} icon` : "FaceIt level icon";
-        img.width = 22;
-        img.height = 22;
-        valueNode.appendChild(img);
-      }
-      const eloText = this.document.createElement("span");
-      eloText.textContent = `${profileData.elo} Elo`;
-      valueNode.appendChild(eloText);
-      return true;
-    },
-    renderProfileFieldError(valueNode, containerNode, steamId2, reloadFn, cacheMap = this.offenderProfileCache) {
+    renderProfileFieldError(valueNode, containerNode, steamId3, reloadFn, cacheMap = this.offenderProfileCache) {
       valueNode.textContent = "";
       valueNode.classList.add("ioh-account-value--error");
       const errorSpan = this.document.createElement("span");
+      markIoh(errorSpan);
       errorSpan.className = "ioh-account-error";
       errorSpan.textContent = "\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438";
       const retryBtn = this.document.createElement("button");
+      markIoh(retryBtn);
       retryBtn.type = "button";
       retryBtn.className = "ioh-account-retry";
       retryBtn.title = "\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C";
@@ -4696,38 +4964,37 @@ ${nextMessage}` : nextMessage;
       retryBtn.addEventListener("click", () => {
         valueNode.classList.remove("ioh-account-value--error");
         containerNode.dataset.loaded = "false";
-        cacheMap.delete(steamId2);
+        cacheMap.delete(steamId3);
         reloadFn({ force: true });
       });
       valueNode.appendChild(errorSpan);
       valueNode.appendChild(retryBtn);
     },
-    async loadSteamAccountCreationDate(containerNode, steamId2, { force = false } = {}) {
+    async loadSteamAccountCreationDate(containerNode, steamId3, { force = false } = {}) {
       const valueNode = containerNode.querySelector(".ioh-account-value");
       if (!valueNode) return;
-      if (!force && containerNode.dataset.steamId === steamId2 && containerNode.dataset.loaded === "true") {
+      if (!force && containerNode.dataset.steamId === steamId3 && containerNode.dataset.loaded === "true") {
         return;
       }
-      containerNode.dataset.steamId = steamId2;
+      containerNode.dataset.steamId = steamId3;
       containerNode.dataset.loaded = "false";
       valueNode.textContent = "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...";
       try {
-        const profileData = await this.fetchOffenderProfile(steamId2, { force });
+        const profileData = await this.fetchOffenderProfile(steamId3, { force });
+        if (!containerNode.isConnected || containerNode.dataset.steamId !== steamId3) return;
         valueNode.classList.remove("ioh-account-value--error");
         valueNode.textContent = profileData.creationDate ? profileData.creationDate : "\u041F\u0440\u043E\u0444\u0438\u043B\u044C \u0441\u043A\u0440\u044B\u0442";
         containerNode.dataset.loaded = "true";
       } catch (error) {
+        if (!containerNode.isConnected || containerNode.dataset.steamId !== steamId3) return;
         this.renderProfileFieldError(
           valueNode,
           containerNode,
-          steamId2,
-          (opts) => this.loadSteamAccountCreationDate(containerNode, steamId2, opts)
+          steamId3,
+          (opts) => this.loadSteamAccountCreationDate(containerNode, steamId3, opts)
         );
         containerNode.dataset.loaded = "true";
       }
-    },
-    async loadFaceitElo(_containerNode, _steamId, { force = false } = {}) {
-      await this.renderFaceitElo({ force });
     },
     async renderSteamAccountCreationDate() {
       const context = this.getOffenderFieldContext();
@@ -4739,45 +5006,27 @@ ${nextMessage}` : nextMessage;
       const containerNode = valueNode.closest(".ioh-account-created");
       await this.loadSteamAccountCreationDate(containerNode, context.offenderSteamId);
     },
-    async renderFaceitElo({ force = false } = {}) {
+    async renderFaceitElo() {
       const context = this.getOffenderFieldContext();
       if (!context) {
         this.clearFaceitElo();
         return;
       }
-      const { offenderField, offenderSteamId } = context;
-      const existing = offenderField.parentNode.querySelector(".ioh-faceit-elo");
-      if (!force && existing && existing.dataset.steamId === offenderSteamId && existing.dataset.loaded === "true") {
+      const faceit = this.nativeData?.player(context.offenderSteamId)?.faceit;
+      if (!faceit) {
+        this.clearFaceitElo();
         return;
       }
-      if (!existing || force) {
-        this.clearFaceitElo();
-      }
-      try {
-        const profileData = await this.fetchOffenderProfile(offenderSteamId, { force });
-        if (!profileData?.elo) {
-          this.clearFaceitElo();
-          return;
-        }
-        const valueNode = this.ensureFaceitEloNode(offenderField);
-        const containerNode = valueNode.closest(".ioh-faceit-elo");
-        this.renderFaceitEloValue(valueNode, profileData);
-        containerNode.dataset.steamId = offenderSteamId;
-        containerNode.dataset.loaded = "true";
-        containerNode.hidden = false;
-      } catch (error) {
-        const valueNode = this.ensureFaceitEloNode(offenderField);
-        const containerNode = valueNode.closest(".ioh-faceit-elo");
-        containerNode.dataset.steamId = offenderSteamId;
-        containerNode.hidden = false;
-        this.renderProfileFieldError(
-          valueNode,
-          containerNode,
-          offenderSteamId,
-          (opts) => this.renderFaceitElo(opts)
-        );
-        containerNode.dataset.loaded = "true";
-      }
+      const value = this.ensureFaceitEloNode(context.offenderField);
+      const signature = `${context.offenderSteamId}:${faceit.elo}:${faceit.level}`;
+      if (value.dataset.iohFaceitValue === signature) return;
+      value.dataset.iohFaceitValue = signature;
+      value.replaceChildren();
+      const badge = createFaceitLevelIcon(this.document, faceit.level);
+      const label = this.document.createElement("span");
+      markIoh(label);
+      label.textContent = faceit.elo == null ? "\u0411\u0435\u0437 \u0440\u0435\u0439\u0442\u0438\u043D\u0433\u0430" : `${faceit.elo} Elo`;
+      value.append(badge, label);
     },
     async renderOffenderProjectInfo({ force = false } = {}) {
       const showPlaytime = this.settings?.features?.showCybershokePlaytime;
@@ -4798,6 +5047,33 @@ ${nextMessage}` : nextMessage;
         return;
       }
       const { offenderField, offenderSteamId } = context;
+      if (this.nativeData) {
+        const data = this.nativePlayer(offenderSteamId);
+        this._nativeProfileLoads ||= /* @__PURE__ */ new Map();
+        if (data?.playtime == null && !this._nativeProfileLoads.has(offenderSteamId)) {
+          this._nativeProfileLoads.set(offenderSteamId, "pending");
+          void this.fetchParsedUserData(offenderSteamId).then(
+            () => this._nativeProfileLoads.set(offenderSteamId, "ready"),
+            () => this._nativeProfileLoads.set(offenderSteamId, "error")
+          ).finally(() => {
+            if (!this._pageClosed && this.getOffenderFieldContext()?.offenderSteamId === offenderSteamId) void this.renderOffenderProjectInfo();
+          });
+        }
+        if (showPlaytime) {
+          const value = this.ensureCybershokePlaytimeNode(offenderField);
+          value.classList.remove("ioh-account-value--error");
+          value.textContent = typeof data?.playtime === "number" && data.playtime >= 0 ? this.formatCybershokePlaytime(data.playtime) : this._nativeProfileLoads.get(offenderSteamId) === "pending" ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430..." : "\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445";
+          if (data?.playtime == null && this._nativeProfileLoads.get(offenderSteamId) === "error") this.renderProfileFieldError(
+            value,
+            value.closest(".ioh-cybershoke-playtime"),
+            offenderSteamId,
+            () => this.renderOffenderProjectInfo(),
+            this._nativeProfileLoads
+          );
+        }
+        if (showCountry) this.renderOffenderCountryValue(this.ensureOffenderCountryNode(offenderField), data);
+        return;
+      }
       const playtimeValue = showPlaytime ? this.ensureCybershokePlaytimeNode(offenderField) : null;
       const playtimeContainer = playtimeValue?.closest(".ioh-cybershoke-playtime") || null;
       const countryContainer = showCountry ? this.ensureOffenderCountryNode(offenderField) : null;
@@ -4874,106 +5150,251 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // modules/ticket/OffenderTracking.js
-  var OffenderTrackingMethods = {
-    extractServerLabel(result) {
-      const server = result?.server;
-      if (!server) {
-        return null;
+  // modules/native/model.js
+  var requestTime = (view) => view?.performance?.timeOrigin && typeof view.performance.now === "function" ? view.performance.timeOrigin + view.performance.now() : Date.now();
+  var steamId2 = (value) => /^\d{17}$/.test(String(value || "")) ? String(value) : null;
+  var record2 = (value) => value && typeof value === "object" && !Array.isArray(value);
+  var own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+  var str = (value, max = 4e3) => typeof value === "string" ? value.slice(0, max) : "";
+  var number = (value) => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  var bool = (value) => value === true || value === 1 || value === "1" ? true : value === false || value === 0 || value === "0" ? false : void 0;
+  var list = (value) => Array.isArray(value) && value.length <= 1e4 ? value : null;
+  function messageKey(message) {
+    const source = JSON.stringify([message.timeMs, message.text, message.channel, message.mode, message.num]);
+    let a = 2166136261, b = 5381;
+    for (let i = 0; i < source.length; i++) {
+      const c = source.charCodeAt(i);
+      a = Math.imul(a ^ c, 16777619);
+      b = Math.imul(b, 33) ^ c;
+    }
+    return `${message.timeMs}:${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}`;
+  }
+  function siteTime(value) {
+    if (value == null || value === "") return null;
+    if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+      const n2 = Number(value);
+      return n2 > 1e12 ? n2 : n2 * 1e3;
+    }
+    const s = String(value).replace(" ", "T");
+    const n = Date.parse(/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?$/.test(s) ? s + "+03:00" : s);
+    return Number.isFinite(n) ? n : null;
+  }
+  var REASONS = {
+    ReasonPlayer_Cheating: "\u0427\u0438\u0442\u0435\u0440\u0441\u0442\u0432\u043E",
+    ReasonPlayer_BugAbuse: "\u0411\u0430\u0433\u043E\u044E\u0437",
+    ReasonPlayer_Bug: "\u0411\u0430\u0433\u043E\u044E\u0437",
+    ReasonPlayer_Monitoring: "\u041C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433",
+    ReasonPlayer_Rules: "\u041D\u0430\u0440\u0443\u0448\u0435\u043D\u0438\u0435 \u043F\u0440\u0430\u0432\u0438\u043B",
+    ReasonPlayer_RulesViolation: "\u041D\u0430\u0440\u0443\u0448\u0435\u043D\u0438\u0435 \u043F\u0440\u0430\u0432\u0438\u043B",
+    ReasonPlayer_ViolatingRules: "\u041D\u0430\u0440\u0443\u0448\u0435\u043D\u0438\u0435 \u043F\u0440\u0430\u0432\u0438\u043B",
+    ReasonPlayer_Bugs: "\u0411\u0430\u0433\u043E\u044E\u0437",
+    ReasonPlayer_Spam: "\u0421\u043F\u0430\u043C",
+    ReasonPlayer_Begging: "\u041F\u043E\u043F\u0440\u043E\u0448\u0430\u0439\u043D\u0438\u0447\u0435\u0441\u0442\u0432\u043E",
+    Reason_Mute_Toxic: "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C",
+    Reason_Mute_Insult: "\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435",
+    Reason_Mute_Trolling: "\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F",
+    Reason_Mute_Spam: "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442",
+    Reason_Mute_Racism: "\u0420\u0430\u0441\u0438\u0437\u043C / \u0434\u0438\u0441\u043A\u0440\u0438\u043C\u0438\u043D\u0430\u0446\u0438\u044F",
+    Reason_Mute_Rasism: "\u0420\u0430\u0441\u0438\u0437\u043C / \u0434\u0438\u0441\u043A\u0440\u0438\u043C\u0438\u043D\u0430\u0446\u0438\u044F",
+    Reason_Mute_Monitoring: "\u041C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433",
+    Reason_Ban_Cheat: "\u0427\u0438\u0442\u0435\u0440\u0441\u0442\u0432\u043E"
+  };
+  var reasonLabel = (value) => REASONS[value] || str(value, 200);
+  function endpoint(ip, port) {
+    if (typeof ip !== "string" || !/^[a-z0-9.:[\]-]+$/i.test(ip) || ip === "0.0.0.0") return null;
+    const n = number(port);
+    return n > 0 && n <= 65535 ? `${ip.toLowerCase()}:${n}` : null;
+  }
+  function normalizePunishment(value, kind) {
+    if (!record2(value)) return null;
+    const created = siteTime(value.created ?? value.timestamp ?? value.unixtime_from);
+    const length = number(value.length ?? value.unixtime_length);
+    const ends = siteTime(value.ends ?? value.end) ?? (created && length > 0 ? created + length * 1e3 : null);
+    if (!created || length == null || length < 0) return null;
+    return {
+      nativePunishment: true,
+      id: String(value.bid ?? value.id ?? `${kind}:${created}`),
+      kind,
+      created,
+      ends,
+      length,
+      reason: reasonLabel(value.reason),
+      reasonCode: str(value.reason, 200),
+      removed: value.RemoveType === "U" || value.is_lifted === true || Number(value.RemovedOn) > 0,
+      expired: value.RemoveType === "E",
+      permanent: value.is_permanent === true || length === 0,
+      admin: str(value.admin_name ?? value.admin, 100),
+      type: number(value.type)
+    };
+  }
+  function punishmentActive(p, now = Date.now()) {
+    return Boolean(p && !p.removed && !p.expired && (p.permanent || p.ends > now));
+  }
+  function notice(v) {
+    const timeMs = siteTime(v?.unixtime);
+    return timeMs && typeof v.text === "string" ? { timeMs, text: str(v.text), adminId: steamId2(v.steamid64_admin) } : null;
+  }
+  function complaint(v, entity) {
+    if (!record2(v) || !Number.isSafeInteger(Number(v.id)) || Number(v.id) <= 0 || !steamId2(v.steamid64_suspect)) return null;
+    const result = { key: `${entity}:${v.id}`, entity, id: Number(v.id), suspectId: steamId2(v.steamid64_suspect), senderId: steamId2(v.steamid64_sender) };
+    const strings = { message: "message", reasonCode: "reason", mode: "mode", category: "server_category", suspectCountry: "country_suspect", senderCountry: "country_sender" };
+    for (const [key, source] of Object.entries(strings)) if (own(v, source)) result[key] = str(v[source]);
+    if (own(v, "reason")) result.reason = reasonLabel(v.reason);
+    for (const [key, source] of Object.entries({ status: "status", result: "result", playtime: "playtime_suspect", kills: "kills", deaths: "deaths", headshots: "headshots", cs2Hours: "cs2_hours_suspect", complaints: "complaints_count" })) if (own(v, source)) result[key] = number(v[source]);
+    if (own(v, "server_ip")) result.complaintServer = endpoint(v.server_ip, v.server_port);
+    if (own(v, "steamid64_admin")) result.adminId = steamId2(v.steamid64_admin);
+    if (own(v, "timestamp") || own(v, "timestamp_unixtime")) result.createdAt = siteTime(v.timestamp_unixtime ?? v.timestamp);
+    if (own(v, "start_timestamp")) result.startedAt = siteTime(v.start_timestamp);
+    if (own(v, "end_timestamp") || own(v, "end_unixtime")) result.endedAt = siteTime(v.end_unixtime ?? v.end_timestamp);
+    if (own(v, "complaint_unixtime")) result.chatAnchor = siteTime(v.complaint_unixtime);
+    if (Array.isArray(v.suspect_notice)) result.warnings = v.suspect_notice.slice(0, 3e3).map(notice).filter(Boolean);
+    if (Array.isArray(v.suspect_connect) && v.suspect_connect.length) {
+      const latest = [...v.suspect_connect].sort((a, b) => Number(b.unixtime_connect) - Number(a.unixtime_connect))[0];
+      const online = bool(latest.is_online) ?? latest.unixtime_disconnect == null;
+      result.presence = { serverIp: online ? endpoint(latest.server_ip, latest.server_port) : null, lastconnect: number(latest.unixtime_disconnect ?? latest.unixtime_connect) };
+    }
+    return result;
+  }
+  function player(v, id) {
+    if (!record2(v)) return null;
+    const data = record2(v.result) ? v.result : record2(v.data) ? v.data : v;
+    if (!record2(data.basic) && !record2(data.cybershoke)) return null;
+    if (data.basic?.steamid64 && steamId2(data.basic.steamid64) !== id) return null;
+    const p = { steamId: id };
+    const b = data.basic || {}, global = data.cybershoke?.global || {};
+    if (own(b, "country") && (b.country == null || /^[a-z]{2}$/i.test(b.country))) p.country = b.country?.toLowerCase() || null;
+    if (own(b, "vip_name")) p.vipName = str(b.vip_name, 60);
+    for (const [key, source2] of Object.entries({ profileVerified: "profile", isModerator: "moderation" })) {
+      const value = bool(b.verification?.[source2]);
+      if (value !== void 0) p[key] = value;
+    }
+    if (own(global, "playtime")) p.playtime = number(global.playtime);
+    if (own(global, "lastconnect")) p.lastconnect = number(global.lastconnect);
+    if (own(data, "server") && (data.server === null || record2(data.server))) p.serverIp = data.server ? endpoint(data.server.server_ip, data.server.server_port) : null;
+    if (data.server?.mode) p.serverLabel = [str(data.server.mode, 80), data.server.num ? "#" + data.server.num : "", str(data.server.category, 100)].filter(Boolean).join(" ");
+    if (list(b.bans_list)) {
+      for (const [kind, type] of [["bans", 4], ["mutes", 3]]) {
+        const rows = b.bans_list.filter((x) => Number(x.type) === type).map((x) => normalizePunishment(x, kind));
+        if (rows.some((x) => !x)) continue;
+        p[kind] = rows;
+        p[kind === "bans" ? "isBanned" : "isMuted"] = p[kind].some((x) => punishmentActive(x));
       }
-      const parts = [];
-      if (server.mode) {
-        parts.push(String(server.mode));
-      }
-      if (server.category) {
-        parts.push(String(server.category));
-      }
-      if (server.num != null && server.num !== "") {
-        parts.push(`#${server.num}`);
-      }
-      return parts.length ? parts.join(" ") : null;
-    },
-    extractBansList(result) {
-      const candidates = [
-        result?.basic?.bans_list,
-        result?.bans_list,
-        result?.cybershoke?.bans_list
-      ];
-      for (const list of candidates) {
-        if (Array.isArray(list) && list.length) {
-          return list;
+    }
+    const source = [b.connect, data.connect, data, b].find((x) => own(x, "faceit"));
+    const f = source?.faceit;
+    if (record2(f)) {
+      const profile = record2(f.profile) ? f.profile : f;
+      const elo = number(profile.elo ?? profile.faceit_elo), level = number(profile.level ?? profile.skill_level);
+      if (f.hide === true || own(f, "name") && !f.name) p.faceit = null;
+      else if (f.error || f.exists === false) p.faceit = null;
+      else if (own(f, "name") || elo != null || level != null) p.faceit = {
+        elo: elo != null && elo >= 0 ? elo : null,
+        level: Number.isInteger(level) && level >= 1 && level <= 10 ? level : null
+      };
+    } else if (source && f === null) p.faceit = null;
+    return p;
+  }
+  function normalizeResponse(descriptor, raw, { startedAt = Date.now(), receivedAt = Date.now(), sequence = 0, status = 200 } = {}) {
+    if (descriptor?.kind === "action" && status >= 400) {
+      return {
+        version: 1,
+        kind: "action",
+        key: descriptor.key,
+        startedAt,
+        receivedAt,
+        sequence,
+        payload: { steamId: descriptor.steamId, resource: descriptor.resource, success: false }
+      };
+    }
+    if (!descriptor || status < 200 || status >= 300 || !record2(raw) && !Array.isArray(raw)) return null;
+    if (raw?.result === "error" || raw?.success === false) {
+      if (descriptor.kind !== "action") return null;
+    }
+    const d = descriptor;
+    let payload;
+    if (d.kind === "queue") {
+      const a = list(raw) || list(raw.tickets) || list(raw.reports);
+      if (!a) return null;
+      const items = a.map((v) => complaint(v, d.entity));
+      if (items.some((x) => !x)) return null;
+      payload = { entity: d.entity, items, complete: d.complete };
+    } else if (d.kind === "ticket") {
+      const v = raw.json ?? raw;
+      payload = complaint(v, d.entity);
+      if (!payload || payload.id !== d.id) return null;
+      if (!own(v, "start_timestamp")) payload.startedAt = null;
+      if (!own(v, "end_timestamp") && !own(v, "end_unixtime")) payload.endedAt = null;
+    } else if (d.kind === "player") payload = player(raw, d.steamId);
+    else if (d.kind === "history") {
+      const a = list(raw) || list(raw.data);
+      if (!a || !d.complete) return null;
+      let items;
+      if (d.resource === "bans" || d.resource === "mutes") items = a.map((v) => normalizePunishment(v, d.resource));
+      else if (d.resource === "chats") {
+        const occurrences = /* @__PURE__ */ new Map();
+        items = a.map((v) => {
+          const timeMs = siteTime(v.unixtime ?? v.timestamp_unixtime), text = v.msg ?? v.message;
+          if (!timeMs || typeof text !== "string" || v.steamid64 && steamId2(v.steamid64) !== d.steamId) return null;
+          const message = { timeMs, text: str(text), author: str(v.name, 100), channel: v.type === 1 || v.type === "team" ? "team" : "all", mode: str(v.mode, 80), num: number(v.num ?? v.server_num) };
+          const base = v.id == null ? messageKey(message) : String(v.id).slice(0, 100);
+          const count = occurrences.get(base) || 0;
+          occurrences.set(base, count + 1);
+          return { ...message, id: `${base}:${count}` };
+        });
+      } else items = a.map((v) => ({ id: number(v.id), timeMs: siteTime(v.unixtime ?? v.timestamp_unixtime), reason: reasonLabel(v.reason), result: number(v.result), status: number(v.status) }));
+      if (items.some((x) => !x)) return null;
+      payload = { steamId: d.steamId, resource: d.resource, items };
+    } else if (d.kind === "account") {
+      const a = raw["admin-data"];
+      if (!record2(a) || !steamId2(a.steamid64)) return null;
+      let groups = a.access_group;
+      if (typeof groups === "string") {
+        try {
+          groups = JSON.parse(groups);
+        } catch {
+          return null;
         }
       }
-      return [];
-    },
-    isPunishmentActive(entry, type) {
-      if (Number(entry?.type) !== type) {
-        return false;
-      }
-      const now = Math.floor(Date.now() / 1e3);
-      const end = Number(entry?.end);
-      const created = Number(entry?.created);
-      const length = Number(entry?.length);
-      if (Number.isFinite(end) && end > now) {
-        return true;
-      }
-      if (Number.isFinite(created) && Number.isFinite(length) && length > 0 && created + length > now) {
-        return true;
-      }
-      return false;
-    },
-    isBanActive(ban) {
-      return this.isPunishmentActive(ban, 4);
-    },
-    isMuteActive(mute) {
-      return this.isPunishmentActive(mute, 3);
-    },
-    extractActiveBan(result) {
-      const bans = this.extractBansList(result);
-      if (!bans.length) {
-        return false;
-      }
-      return bans.some((ban) => this.isBanActive(ban));
-    },
-    extractActiveMute(result) {
-      const bans = this.extractBansList(result);
-      if (!bans.length) {
-        return false;
-      }
-      return bans.some((entry) => this.isMuteActive(entry));
-    },
-    extractServerIpFromUserData(result) {
-      if (result?.server?.server_ip && result?.server?.server_port) {
-        return `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
-      }
+      payload = { steamId: steamId2(a.steamid64), groups: Array.isArray(groups) ? groups.filter((x) => typeof x === "string").slice(0, 500) : [], flags: str(a.access_abc, 200) };
+    } else if (d.kind === "bypass") {
+      const v = raw.data;
+      if (raw.result !== "success" || !record2(v)) return null;
+      payload = { steamId: d.steamId, checked: bool(v.checked), hasBypass: bool(v.has_bypass), bannedAccounts: number(v.banned_accounts), isPublicIp: bool(v.is_public_ip) };
+    } else if (d.kind === "servers") {
+      const a = list(raw.all_servers);
+      if (!a) return null;
+      payload = a.map((v) => ({ endpoint: endpoint(v.ip, v.port), label: [str(v.mode, 80), v.num ? "#" + v.num : "", str(v.category, 100)].filter(Boolean).join(" ") })).filter((v) => v.endpoint);
+    } else if (d.kind === "serverPlayers") {
+      if (!list(raw.players)) return null;
+      const s = raw.serverInfo ?? raw.server;
+      payload = {
+        steamId: d.steamId,
+        endpoint: record2(s) ? endpoint(s.server_ip ?? s.ip, s.server_port ?? s.port) : null,
+        players: raw.players.map((v) => ({ steamId: steamId2(v.steamid64), isModerator: bool(v.is_moderator) })).filter((v) => v.steamId)
+      };
+    } else if (d.kind === "action") {
+      const success = bool(raw.success) ?? (raw.result === "success" || raw.results?.[0]?.status === "success" ? true : raw.result === "error" || raw.results?.[0]?.status === "error" ? false : void 0);
+      if (success === void 0) return null;
+      payload = { steamId: d.steamId, resource: d.resource, success };
+    }
+    return payload == null ? null : { version: 1, kind: d.kind, key: d.key, startedAt, receivedAt, sequence, payload };
+  }
+
+  // modules/shared/playerProfile.js
+  var PLAYER_PROFILE_LINK_SELECTOR = 'a[href*="cybershoke.net/"], a[href*="cybershoke.ru/"]';
+  function steamIdFromPlayerProfileUrl(value) {
+    if (typeof value !== "string") return null;
+    try {
+      const url = new URL(value);
+      if (!/^https?:$/.test(url.protocol) || !/^(?:www\.)?cybershoke\.(?:net|ru)$/.test(url.hostname)) return null;
+      return url.pathname.match(/^\/(?:id\/)?(\d{17})\/?$/)?.[1] || null;
+    } catch {
       return null;
-    },
-    extractLastConnect(result) {
-      const raw = result?.cybershoke?.global?.lastconnect;
-      if (raw == null || raw === "") {
-        return null;
-      }
-      const seconds = Number(raw);
-      return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
-    },
-    normalizeCountryCode(raw) {
-      if (raw == null || raw === "") {
-        return null;
-      }
-      const value = String(raw).trim().toLowerCase();
-      return /^[a-z]{2}$/.test(value) ? value : null;
-    },
-    extractCountry(result) {
-      return this.normalizeCountryCode(result?.basic?.country);
-    },
-    extractPlaytime(result) {
-      const raw = result?.cybershoke?.global?.playtime;
-      if (raw == null || raw === "") {
-        return null;
-      }
-      const seconds = Number(raw);
-      return Number.isFinite(seconds) ? seconds : null;
-    },
+    }
+  }
+
+  // modules/ticket/OffenderTracking.js
+  var OffenderTrackingMethods = {
     normalizeVipName(raw) {
       if (raw == null) {
         return null;
@@ -4984,51 +5405,19 @@ ${nextMessage}` : nextMessage;
       }
       return value;
     },
-    extractVipName(result) {
-      return this.normalizeVipName(result?.basic?.vip_name);
+    getCachedUserData(steamId3, maxAge = Infinity) {
+      const p = this.nativeData ? this.nativePlayer(steamId3) : this.userDataCache.get(steamId3) || null;
+      if (Number.isFinite(maxAge) && (!p || !Object.hasOwn(p, "serverIp") || Date.now() - (p.presenceAt ?? p.fetchedAt ?? 0) >= maxAge)) return null;
+      return p;
     },
-    extractVerification(result) {
-      return result?.basic?.verification ?? result?.personal_data?.verification ?? result?.verification ?? null;
-    },
-    extractProfileVerified(result) {
-      return Boolean(this.extractVerification(result)?.profile);
-    },
-    extractIsModerator(result) {
-      return Boolean(this.extractVerification(result)?.moderation);
-    },
-    parseUserDataResult(result) {
-      return {
-        serverIp: this.extractServerIpFromUserData(result),
-        lastconnect: this.extractLastConnect(result),
-        serverLabel: this.extractServerLabel(result),
-        isBanned: this.extractActiveBan(result),
-        isMuted: this.extractActiveMute(result),
-        vipName: this.extractVipName(result),
-        profileVerified: this.extractProfileVerified(result),
-        isModerator: this.extractIsModerator(result),
-        country: this.extractCountry(result),
-        playtime: this.extractPlaytime(result)
-      };
-    },
-    getCachedUserData(steamId2, ttlMs = 5e3) {
-      const entry = this.userDataCache.get(steamId2);
-      if (!entry) {
-        return null;
-      }
-      if (Date.now() - entry.fetchedAt >= ttlMs) {
-        this.userDataCache.delete(steamId2);
-        return null;
-      }
-      return entry;
-    },
-    setOffenderProjectCache(steamId2, data) {
-      this.offenderProjectCache.set(steamId2, {
+    setOffenderProjectCache(steamId3, data) {
+      this.offenderProjectCache.set(steamId3, {
         country: data.country ?? null,
         playtime: data.playtime ?? null
       });
     },
-    setOffenderTicketProjectCache(steamId2, data) {
-      this.offenderTicketProjectCache.set(steamId2, {
+    setOffenderTicketProjectCache(steamId3, data) {
+      this.offenderTicketProjectCache.set(steamId3, {
         country: data.country ?? null,
         playtime: data.playtime ?? null
       });
@@ -5048,108 +5437,72 @@ ${nextMessage}` : nextMessage;
     },
     pruneOffenderProjectCache(presentSteamIds = null) {
       const present = presentSteamIds || this.collectComplaintQueueOffenderSteamIds();
-      for (const steamId2 of [...this.offenderProjectCache.keys()]) {
-        if (!present.has(steamId2)) {
-          this.offenderProjectCache.delete(steamId2);
+      for (const steamId3 of [...this.offenderProjectCache.keys()]) {
+        if (!present.has(steamId3)) {
+          this.offenderProjectCache.delete(steamId3);
         }
       }
     },
-    setCachedUserData(steamId2, data) {
-      this.userDataCache.set(steamId2, {
-        serverIp: data.serverIp ?? null,
-        lastconnect: data.lastconnect ?? null,
-        serverLabel: data.serverLabel ?? null,
-        isBanned: Boolean(data.isBanned),
-        isMuted: Boolean(data.isMuted),
-        vipName: data.vipName ?? null,
-        profileVerified: Boolean(data.profileVerified),
-        isModerator: Boolean(data.isModerator),
-        fetchedAt: Date.now()
-      });
-      this.setOffenderProjectCache(steamId2, data);
-      this.onCloseReasonPunishmentData?.(steamId2, data);
+    setCachedUserData(steamId3, data) {
+      const previous = this.userDataCache.get(steamId3) || {};
+      const next = { ...previous, ...data, fetchedAt: data.fetchedAt ?? Date.now() };
+      this.userDataCache.set(steamId3, next);
+      this.setOffenderProjectCache(steamId3, next);
+      this.onCloseReasonPunishmentData?.(steamId3, next);
     },
-    async fetchParsedUserData(steamId2) {
-      if (this.offenderProjectInflight.has(steamId2)) {
-        return this.offenderProjectInflight.get(steamId2);
+    async fetchParsedUserData(steamId3) {
+      if (this.offenderProjectInflight.has(steamId3)) {
+        return this.offenderProjectInflight.get(steamId3);
       }
       const requestPromise = (async () => {
-        const response = await this.fetchUserData(steamId2);
-        if (response.status === 429) {
-          this.globalServerCooldown = Date.now() + 660;
-          throw new Error("429");
-        }
-        if (!response.ok) {
-          throw new Error(`fetch failed ${response.status}`);
-        }
-        const result = await response.json();
-        const userData = this.parseUserDataResult(result);
-        this.setCachedUserData(steamId2, userData);
-        return userData;
-      })().finally(() => {
-        this.offenderProjectInflight.delete(steamId2);
-      });
-      this.offenderProjectInflight.set(steamId2, requestPromise);
-      return requestPromise;
-    },
-    async fetchOffenderTicketProjectData(steamId2) {
-      if (this.offenderTicketProjectInflight.has(steamId2)) {
-        return this.offenderTicketProjectInflight.get(steamId2);
-      }
-      if (this.offenderProjectInflight.has(steamId2)) {
-        const shared = this.offenderProjectInflight.get(steamId2).then((userData) => {
-          const fromQueue = this.offenderProjectCache.get(steamId2);
-          if (fromQueue) {
-            return fromQueue;
-          }
-          const project = {
-            country: userData?.country ?? null,
-            playtime: userData?.playtime ?? null
-          };
-          this.setOffenderTicketProjectCache(steamId2, project);
-          return project;
-        });
-        this.offenderTicketProjectInflight.set(steamId2, shared);
+        const startedAt = requestTime(typeof window === "undefined" ? null : window), sequence = this._trackerResponseSequence = (this._trackerResponseSequence || 0) + 1;
+        const controller = new AbortController();
+        let timer;
         try {
-          return await shared;
+          const response = await Promise.race([this.fetchUserData(steamId3, { signal: controller.signal }), new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              controller.abort();
+              reject(new Error("\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0438\u0433\u0440\u043E\u043A\u0430"));
+            }, 15e3);
+          })]);
+          if (response.status === 429) {
+            this.globalServerCooldown = Date.now() + 660;
+            throw new Error("429");
+          }
+          if (!response.ok) {
+            throw new Error(`fetch failed ${response.status}`);
+          }
+          const result = await response.json();
+          if (this.nativeData) {
+            const event = normalizeResponse(
+              { kind: "player", steamId: steamId3, key: "player:" + steamId3 },
+              result,
+              { startedAt, receivedAt: Date.now(), sequence }
+            );
+            if (!event) throw new Error("\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0438\u0433\u0440\u043E\u043A\u0430");
+            event.source = "tracker";
+            this.nativeData.apply(event);
+            return this.nativePlayer(steamId3);
+          }
+          const userData = this.parseUserDataResult(result);
+          this.setCachedUserData(steamId3, userData);
+          return userData;
         } finally {
-          this.offenderTicketProjectInflight.delete(steamId2);
+          clearTimeout(timer);
         }
-      }
-      const requestPromise = (async () => {
-        const response = await this.fetchUserData(steamId2);
-        if (response.status === 429) {
-          this.globalServerCooldown = Date.now() + 660;
-          throw new Error("429");
-        }
-        if (!response.ok) {
-          throw new Error(`fetch failed ${response.status}`);
-        }
-        const result = await response.json();
-        const userData = this.parseUserDataResult(result);
-        const project = {
-          country: userData.country ?? null,
-          playtime: userData.playtime ?? null
-        };
-        this.setOffenderTicketProjectCache(steamId2, project);
-        return project;
       })().finally(() => {
-        this.offenderTicketProjectInflight.delete(steamId2);
+        this.offenderProjectInflight.delete(steamId3);
       });
-      this.offenderTicketProjectInflight.set(steamId2, requestPromise);
+      this.offenderProjectInflight.set(steamId3, requestPromise);
       return requestPromise;
     },
-    async getOffenderProjectData(steamId2, { force = false } = {}) {
-      if (force) {
-        this.offenderTicketProjectCache.delete(steamId2);
-      }
-      if (!force && this.offenderProjectCache.has(steamId2)) {
-        return this.offenderProjectCache.get(steamId2);
-      }
-      if (!force && this.offenderTicketProjectCache.has(steamId2)) {
-        return this.offenderTicketProjectCache.get(steamId2);
-      }
-      return this.fetchOffenderTicketProjectData(steamId2);
+    async fetchOffenderTicketProjectData(steamId3) {
+      const p = this.nativePlayer?.(steamId3) || this.offenderProjectCache.get(steamId3);
+      if (p && typeof p.playtime === "number") return p;
+      return this.fetchParsedUserData(steamId3);
+    },
+    async getOffenderProjectData(steamId3) {
+      return this.fetchOffenderTicketProjectData(steamId3);
     },
     getServerLinkLabelElement(link) {
       return link.querySelector(":scope > span") || link.querySelector("span");
@@ -5180,9 +5533,9 @@ ${nextMessage}` : nextMessage;
       const labelEl = this.getServerLinkLabelElement(link);
       const setLabelText = (text) => {
         if (labelEl) {
-          labelEl.textContent = text;
+          if (labelEl.textContent !== text) labelEl.textContent = text;
         } else {
-          link.textContent = text;
+          if (link.textContent !== text) link.textContent = text;
         }
       };
       if (status === "offline") {
@@ -5212,6 +5565,7 @@ ${nextMessage}` : nextMessage;
       if (!row) {
         return "";
       }
+      if (this.nativeData) return this.getNativeRowTicket(row)?.reason || "";
       const cells = row.querySelectorAll("td");
       if (!cells.length) {
         return "";
@@ -5310,6 +5664,7 @@ ${nextMessage}` : nextMessage;
       return null;
     },
     rowActionIsInReview(row) {
+      if (this.nativeData) return this.getNativeRowTicket(row)?.status === 1;
       if (!row) {
         return false;
       }
@@ -5571,7 +5926,7 @@ ${nextMessage}` : nextMessage;
           delete offenderLink.dataset.iohModeratorSource;
         }
       }
-      const show = this.settings.features?.trackOffenderServer && Boolean(isModerator);
+      const show = Boolean(isModerator);
       if (row) {
         row.classList.toggle("ioh-highlighted-moderator", show);
       }
@@ -5945,7 +6300,7 @@ ${nextMessage}` : nextMessage;
       offenderLink.closest("td")?.classList.add("ioh-offender-vip-cell");
       offenderLink.dataset.iohVipName = meta.label;
     },
-    async fetchUserData(steamId2) {
+    async fetchUserData(steamId3, { signal } = {}) {
       const response = await fetch("https://cybershoke.net/api/user/data", {
         method: "POST",
         headers: {
@@ -5954,7 +6309,8 @@ ${nextMessage}` : nextMessage;
           "X-Requested-With": "XMLHttpRequest"
         },
         credentials: "include",
-        body: new URLSearchParams({ steamid64: steamId2 }).toString()
+        signal,
+        body: new URLSearchParams({ steamid64: steamId3 }).toString()
       });
       return response;
     },
@@ -5962,6 +6318,7 @@ ${nextMessage}` : nextMessage;
       if (!linkToUpdate) {
         return;
       }
+      if (!Object.hasOwn(userData, "serverIp")) return;
       const currentIp = userData.serverIp;
       const lastconnect = userData.lastconnect;
       if (!currentIp) {
@@ -5988,6 +6345,10 @@ ${nextMessage}` : nextMessage;
       if (!this.settings?.features?.autoConnectServer || !this.settings?.features?.trackOffenderServer) {
         return null;
       }
+      if (this.nativeData) {
+        const scope2 = this.getAutoConnectScope(), ticket = this.getNativeTicket(scope2);
+        return ticket && this.scopeHasInProgressStatus(scope2, { includeActivePanel: false }) ? { scope: scope2, steamId: ticket.suspectId, href: window.location.href } : null;
+      }
       const href = window.location.href;
       const path = window.location.pathname || "";
       if (/\/support\/(tickets|reports)\b/i.test(path) || !/\/ticket\/|\/reports?\//i.test(path)) {
@@ -6001,8 +6362,8 @@ ${nextMessage}` : nextMessage;
       if (offenderField?.closest?.('[aria-hidden="true"]')) {
         return null;
       }
-      const steamId2 = this.extractSteamIdFromField(offenderField);
-      return steamId2 ? { scope, steamId: steamId2, href } : null;
+      const steamId3 = this.extractSteamIdFromField(offenderField);
+      return steamId3 ? { scope, steamId: steamId3, href } : null;
     },
     ticketServerShowsOffenderLeft(scope) {
       const field = this.findInfoFieldScoped("\u0421\u0435\u0440\u0432\u0435\u0440", scope);
@@ -6015,11 +6376,60 @@ ${nextMessage}` : nextMessage;
       const seconds = Number(this.settings.trackOpenTicketOfflineInterval);
       return (Number.isFinite(seconds) && seconds > 0 ? Math.max(seconds, 1) : 5) * 1e3;
     },
+    syncOffenderTrackerStatus() {
+      if (!this.document.createElement || !this.document.body?.append) return;
+      this._trackerResults ||= /* @__PURE__ */ new Map();
+      const lines = /* @__PURE__ */ new Map();
+      for (const session of this._openTicketTrackingSessions?.values() || []) {
+        if (!session.waitingForReturn && !session.pendingServer) continue;
+        const ticket = this.getNativeTicket?.(session.scope);
+        const label = ticket ? `#${ticket.id}` : "\u043E\u0442\u043A\u0440\u044B\u0442\u0430\u044F \u0436\u0430\u043B\u043E\u0431\u0430";
+        lines.set(session.steamId, session.pendingServer ? `\u0418\u0433\u0440\u043E\u043A ${label} \u043D\u0430\u0439\u0434\u0435\u043D \xB7 \u043E\u0436\u0438\u0434\u0430\u0435\u043C \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0438\u044F \u0430\u043D\u0430\u043B\u0438\u0437\u0430` : `\u0422\u0440\u0435\u043A\u0435\u0440 ${label} \xB7 \u0436\u0434\u0451\u043C \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u0438\u044F \u0438\u0433\u0440\u043E\u043A\u0430`);
+      }
+      clearTimeout(this._trackerStatusTimer);
+      let next = Infinity;
+      for (const [id, result] of this._trackerResults) {
+        if (result.until <= Date.now()) {
+          this._trackerResults.delete(id);
+          continue;
+        }
+        if (!lines.has(id)) lines.set(id, result.text);
+        next = Math.min(next, result.until - Date.now());
+      }
+      let host = this.document.getElementById("ioh-offender-tracker-status");
+      if (!lines.size) {
+        host?.remove();
+        return;
+      }
+      if (!host) {
+        host = this.document.createElement("div");
+        markIoh(host);
+        host.id = "ioh-offender-tracker-status";
+        host.className = "ioh-tracker-status";
+        host.setAttribute("role", "status");
+        host.setAttribute("aria-live", "polite");
+        this.document.body.append(host);
+      }
+      const text = [...lines.values()].join("\n");
+      if (host.textContent !== text) host.textContent = text;
+      host.classList.toggle("ioh-tracker-status--waiting", [...this._openTicketTrackingSessions?.values() || []].some((s) => s.waitingForReturn || s.pendingServer));
+      if (next < Infinity) this._trackerStatusTimer = setTimeout(() => this.syncOffenderTrackerStatus(), next + 10);
+    },
+    announceOffenderTrackerResult(session, connected) {
+      this._trackerResults ||= /* @__PURE__ */ new Map();
+      const ticket = this.getNativeTicket?.(session.scope);
+      const label = ticket ? ` #${ticket.id}` : "";
+      this._trackerResults.set(session.steamId, {
+        until: Date.now() + 5e3,
+        text: connected ? `\u0418\u0433\u0440\u043E\u043A${label} \u043D\u0430\u0439\u0434\u0435\u043D \xB7 \u043A\u043E\u043C\u0430\u043D\u0434\u0430 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0430` : `\u0418\u0433\u0440\u043E\u043A${label} \u043D\u0430\u0439\u0434\u0435\u043D \xB7 \u0441\u0435\u0440\u0432\u0435\u0440 \u0443\u0436\u0435 \u0432\u044B\u0431\u0440\u0430\u043D`
+      });
+      this.syncOffenderTrackerStatus();
+    },
     isOpenTicketTrackingSessionCurrent(session) {
       if (!this.settings?.features?.autoConnectServer || !this.settings?.features?.trackOffenderServer || !session || this._openTicketTrackingSessions?.get(session.scope) !== session) {
         return false;
       }
-      return this.document.contains(session.scope) && this.isOpenComplaintScope(session.scope) && this.scopeHasInProgressStatus(session.scope, { includeActivePanel: false }) && this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", session.scope)) === session.steamId;
+      return this.document.contains(session.scope) && this.isOpenComplaintScope(session.scope) && this.scopeHasInProgressStatus(session.scope, { includeActivePanel: false }) && (this.nativeData ? this.getNativeTicket(session.scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", session.scope))) === session.steamId;
     },
     stopOpenTicketOffenderTracking(session = null) {
       const sessions = session ? [session] : [...this._openTicketTrackingSessions?.values() || []];
@@ -6027,7 +6437,9 @@ ${nextMessage}` : nextMessage;
         if (entry.timer != null) clearTimeout(entry.timer);
         entry.observer?.disconnect();
         this._openTicketTrackingSessions.delete(entry.scope);
+        this._trackerResults?.delete(entry.steamId);
       }
+      this.syncOffenderTrackerStatus();
     },
     syncOpenTicketOffenderTracking() {
       if (!this.settings?.features?.autoConnectServer || !this.settings?.features?.trackOffenderServer) {
@@ -6056,6 +6468,7 @@ ${nextMessage}` : nextMessage;
       for (const session of this._openTicketTrackingSessions.values()) {
         this.refreshOpenTicketTrackingSession(session);
       }
+      this.syncOffenderTrackerStatus();
       return context ? this._openTicketTrackingSessions.get(context.scope) : null;
     },
     refreshOpenTicketTrackingSession(session) {
@@ -6075,7 +6488,7 @@ ${nextMessage}` : nextMessage;
         }) : null;
         session.observer?.observe(serverField, { childList: true, subtree: true, characterData: true });
       }
-      if (session.waitingForReturn && session.timer == null && !session.pending) {
+      if ((session.waitingForReturn || session.pendingServer) && session.timer == null && !session.pending) {
         session.timer = setTimeout(() => {
           session.timer = null;
           if (!this.isOpenTicketTrackingSessionCurrent(session)) {
@@ -6091,7 +6504,7 @@ ${nextMessage}` : nextMessage;
             this.syncOpenTicketOffenderTracking();
           });
         }, this.getOpenTicketOfflineIntervalMs());
-      } else if (!session.waitingForReturn && session.timer != null) {
+      } else if (!session.waitingForReturn && !session.pendingServer && session.timer != null) {
         clearTimeout(session.timer);
         session.timer = null;
       }
@@ -6102,14 +6515,14 @@ ${nextMessage}` : nextMessage;
       if (!this.isOpenTicketTrackingSessionCurrent(session)) return;
       const { scope, steamId: offenderSteamId } = session;
       const ticketConnectLink = this.findTicketServerConnectLink(scope);
-      const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
+      const ticketServerIp = this.nativeData ? this.getNativeTicket(scope)?.complaintServer : this.extractServerIpFromConnectLink(ticketConnectLink);
       const normalInterval = Math.max(
         Number(cacheIntervalMs) || (this.settings.trackOffenderIntervalWhileReviewing || 30) * 1e3,
         1e3
       );
       const CACHE_INTERVAL = session.waitingForReturn ? Math.min(normalInterval, this.getOpenTicketOfflineIntervalMs()) : normalInterval;
       const now = Date.now();
-      if (session.lastCheck && now - session.lastCheck < CACHE_INTERVAL) {
+      if (session.lastCheck && now - session.lastCheck < CACHE_INTERVAL && !session.pendingServer) {
         return;
       }
       if (this.globalServerCooldown && now < this.globalServerCooldown) {
@@ -6132,7 +6545,8 @@ ${nextMessage}` : nextMessage;
         return;
       }
       session.lastCheck = Date.now();
-      const currentIp = userData?.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
+      if (!userData || !Object.hasOwn(userData, "serverIp")) return;
+      const currentIp = userData.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
       if (!currentIp) {
         this.markOffenderOffline(offenderSteamId);
         this.clearOffenderRelocated(offenderSteamId);
@@ -6151,7 +6565,7 @@ ${nextMessage}` : nextMessage;
       }
       const previousRelocated = this.getOffenderRelocatedServer(offenderSteamId);
       this.markOffenderRelocated(offenderSteamId, currentIp);
-      if (!returned && (previousRelocated === currentIp || session.lastConnectedIp === currentIp)) {
+      if (!returned && !session.pendingServer && (previousRelocated === currentIp || session.lastConnectedIp === currentIp)) {
         return;
       }
       console.log(`[Helper] \u0422\u0440\u0435\u043A\u0435\u0440 \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0433\u043E \u0442\u0438\u043A\u0435\u0442\u0430: ${returned ? "\u0432\u043E\u0437\u0432\u0440\u0430\u0442 \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440" : "\u043F\u0435\u0440\u0435\u0435\u0437\u0434"} \u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0435\u043D`, {
@@ -6161,11 +6575,23 @@ ${nextMessage}` : nextMessage;
         previousRelocated
       });
       if (this.settings?.features?.autoConnectServer) {
-        this.connectToTrackedOffenderServer(session, currentIp);
+        session.pendingServer = currentIp;
+        const connected = this.connectToTrackedOffenderServer(session, currentIp);
+        if (connected || this.isAlreadyOnRequestedServer(currentIp)) {
+          for (const tracked of this._openTicketTrackingSessions.values()) if (tracked.steamId === offenderSteamId) tracked.pendingServer = null;
+          this.announceOffenderTrackerResult(session, connected);
+        } else this.syncOffenderTrackerStatus();
       }
       if (currentIp === ticketServerIp) {
         this.clearOffenderRelocated(offenderSteamId);
       }
+    },
+    queueOffenderTrackingRows(rows) {
+      this._offenderTrackingArrivals ||= /* @__PURE__ */ new Set();
+      for (const row of rows) if (row.isConnected) this._offenderTrackingArrivals.add(row);
+    },
+    hasPendingOffenderTrackingRows() {
+      return Boolean(this._offenderTrackingArrivals?.size);
     },
     async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false, isCurrent = () => true } = {}) {
       const path = window.location.pathname || "";
@@ -6173,12 +6599,10 @@ ${nextMessage}` : nextMessage;
       const isQueuePage = href.includes("/support/reports") || href.includes("/support/tickets");
       const isDetailPage = !/\/support\/(tickets|reports)\b/i.test(path) && /\/ticket\/|\/reports?\//i.test(path);
       if (!isQueuePage && !isDetailPage) {
+        this._offenderTrackingArrivals?.clear();
         return;
       }
       if (this.isCheckingServer) return;
-      if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
-        return;
-      }
       this.isCheckingServer = true;
       const CACHE_INTERVAL = Math.max(
         Number(cacheIntervalMs) || (this.settings.trackOffenderInterval || 5) * 1e3,
@@ -6186,11 +6610,14 @@ ${nextMessage}` : nextMessage;
       );
       const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1e3;
       const passIsCurrent = () => this.settings.features.trackOffenderServer && !this.document.hidden && window.location.href === href && isCurrent();
-      const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"]';
+      const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"], td:nth-child(4) a[href*="cybershoke.ru/"]';
       const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
       try {
-        const now = Date.now();
-        const candidates = Array.from(this.document.querySelectorAll("table tbody tr")).reverse().map((row) => {
+        const seen = /* @__PURE__ */ new Map();
+        this._offenderRowTrackingIdentity ||= /* @__PURE__ */ new WeakMap();
+        this._offenderTicketChecks ||= /* @__PURE__ */ new Map();
+        const toCandidate = (row) => {
+          const now = Date.now();
           const timeCell = row.querySelector(".ticket-time, td:nth-child(1), td:nth-child(2)");
           if (timeCell) {
             const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
@@ -6200,9 +6627,27 @@ ${nextMessage}` : nextMessage;
           }
           const offenderLink = row.querySelector(offenderSelector);
           const serverLink = row.querySelector(serverSelector);
-          const steamId2 = offenderLink?.href.match(/\d{17,18}/)?.[0];
-          if (!steamId2 || !serverLink) {
+          const steamId3 = steamIdFromPlayerProfileUrl(offenderLink?.href);
+          if (!steamId3 || !serverLink) {
             return null;
+          }
+          const ip = this.ensureServerLinkOriginalIp(serverLink);
+          const ticketKey = row.dataset.iohNativeTicket || "";
+          const identity = `${ticketKey}|${steamId3}|${ip}`;
+          if (seen.get(row) === identity) return null;
+          seen.set(row, identity);
+          const previous = this._offenderRowTrackingIdentity.get(row);
+          if (previous && previous !== identity) {
+            delete row.dataset.lastIpCheck;
+            delete row.dataset.lastIpAttempt;
+            this._offenderRowSnapshots?.delete(row);
+          }
+          this._offenderRowTrackingIdentity.set(row, identity);
+          const saved = ticketKey && this._offenderTicketChecks.get(identity);
+          if (saved) {
+            for (const field of ["lastIpCheck", "lastIpAttempt"]) {
+              row.dataset[field] = String(Math.max(Number(row.dataset[field]) || 0, saved[field] || 0));
+            }
           }
           const lastCheck = Math.max(
             Number.parseInt(row.dataset.lastIpCheck || "0", 10) || 0,
@@ -6211,17 +6656,20 @@ ${nextMessage}` : nextMessage;
           if (now - lastCheck < CACHE_INTERVAL) {
             return null;
           }
-          return {
-            row,
-            offenderLink,
-            serverLink,
-            steamId: steamId2,
-            lastCheck,
-            ip: this.ensureServerLinkOriginalIp(serverLink)
-          };
-        }).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
+          return { row, offenderLink, serverLink, steamId: steamId3, lastCheck, ip, identity, ticketKey };
+        };
+        const candidates = Array.from(this.document.querySelectorAll("table tbody tr")).reverse().map(toCandidate).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
         const dataBySteamId = /* @__PURE__ */ new Map();
-        for (const candidate of candidates) {
+        while (true) {
+          const arrivals = this._offenderTrackingArrivals;
+          this._offenderTrackingArrivals = /* @__PURE__ */ new Set();
+          const added = [...arrivals || []].filter((row) => row.isConnected).map(toCandidate).filter(Boolean);
+          if (added.length) {
+            candidates.push(...added);
+            candidates.sort((a, b) => a.lastCheck - b.lastCheck);
+          }
+          const candidate = candidates.shift();
+          if (!candidate) break;
           if (!passIsCurrent()) {
             break;
           }
@@ -6230,11 +6678,22 @@ ${nextMessage}` : nextMessage;
             await new Promise((resolve) => setTimeout(resolve, waitMs));
           }
           const { row: targetRow, steamId: targetSteamId, ip: targetIp, offenderLink, serverLink } = candidate;
-          const rowIsCurrent = () => targetRow.isConnected && targetRow.querySelector(offenderSelector) === offenderLink && offenderLink.href.match(/\d{17,18}/)?.[0] === targetSteamId && targetRow.querySelector(serverSelector) === serverLink && this.ensureServerLinkOriginalIp(serverLink) === targetIp;
+          const markCheck = (field) => {
+            targetRow.dataset[field] = Date.now().toString();
+            if (!candidate.ticketKey) return;
+            this._offenderTicketChecks.delete(candidate.identity);
+            this._offenderTicketChecks.set(candidate.identity, {
+              lastIpCheck: Number(targetRow.dataset.lastIpCheck) || 0,
+              lastIpAttempt: Number(targetRow.dataset.lastIpAttempt) || 0
+            });
+            if (this._offenderTicketChecks.size > 1024) this._offenderTicketChecks.delete(this._offenderTicketChecks.keys().next().value);
+          };
+          const rowIsCurrent = () => targetRow.isConnected && (targetRow.dataset.iohNativeTicket || "") === candidate.ticketKey && targetRow.querySelector(offenderSelector) === offenderLink && steamIdFromPlayerProfileUrl(offenderLink.href) === targetSteamId && targetRow.querySelector(serverSelector) === serverLink && this.ensureServerLinkOriginalIp(serverLink) === targetIp;
           if (!passIsCurrent() || !rowIsCurrent()) {
             continue;
           }
           let userData = dataBySteamId.has(targetSteamId) ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
+          let deferRepeat = false;
           while (!userData && !dataBySteamId.has(targetSteamId)) {
             if (!passIsCurrent() || !rowIsCurrent()) {
               break;
@@ -6249,7 +6708,12 @@ ${nextMessage}` : nextMessage;
             if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
               continue;
             }
-            targetRow.dataset.lastIpAttempt = Date.now().toString();
+            if (candidate.lastCheck && [...this._offenderTrackingArrivals || []].some((row) => row.isConnected && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ""}|`)))) {
+              candidates.unshift(candidate);
+              deferRepeat = true;
+              break;
+            }
+            markCheck("lastIpAttempt");
             try {
               userData = await this.fetchParsedUserData(targetSteamId);
               break;
@@ -6262,6 +6726,7 @@ ${nextMessage}` : nextMessage;
               break;
             }
           }
+          if (deferRepeat) continue;
           if (userData) {
             dataBySteamId.set(targetSteamId, userData);
           }
@@ -6282,7 +6747,7 @@ ${nextMessage}` : nextMessage;
                 if (label.textContent !== text) label.textContent = text;
               });
             }
-            targetRow.dataset.lastIpCheck = Date.now().toString();
+            markCheck("lastIpCheck");
             if (singleRowPerPass) {
               break;
             }
@@ -6296,15 +6761,16 @@ ${nextMessage}` : nextMessage;
             this.applyOffenderServerStatus(serverLink, targetSteamId, targetIp, userData);
             this.applyOffenderPunishmentHighlight(targetRow, userData);
             this.applyOffenderVipBadge(offenderLink, userData.vipName);
-            this.applyOffenderModeratorHighlight(targetRow, offenderLink, userData.isModerator);
+            if (!this.nativeData) this.applyOffenderModeratorHighlight(targetRow, offenderLink, userData.isModerator);
             this.applyOffenderProfileVerification(
               offenderLink,
               userData.profileVerified,
               targetRow
             );
             this.applyOffenderMuteBanIcons(offenderLink, targetRow, userData);
+            this.renderNativeQueue?.();
           });
-          targetRow.dataset.lastIpCheck = Date.now().toString();
+          markCheck("lastIpCheck");
           if (singleRowPerPass) {
             break;
           }
@@ -6329,6 +6795,130 @@ ${nextMessage}` : nextMessage;
         this._vipPending.clear();
         jobs.forEach((fn) => fn());
       });
+    },
+    extractServerLabel(result) {
+      const server = result?.server;
+      if (!server) {
+        return null;
+      }
+      const parts = [];
+      if (server.mode) {
+        parts.push(String(server.mode));
+      }
+      if (server.category) {
+        parts.push(String(server.category));
+      }
+      if (server.num != null && server.num !== "") {
+        parts.push(`#${server.num}`);
+      }
+      return parts.length ? parts.join(" ") : null;
+    },
+    extractBansList(result) {
+      const candidates = [
+        result?.basic?.bans_list,
+        result?.bans_list,
+        result?.cybershoke?.bans_list
+      ];
+      for (const list2 of candidates) {
+        if (Array.isArray(list2) && list2.length) {
+          return list2;
+        }
+      }
+      return [];
+    },
+    isPunishmentActive(entry, type) {
+      if (Number(entry?.type) !== type) {
+        return false;
+      }
+      const now = Math.floor(Date.now() / 1e3);
+      const end = Number(entry?.end);
+      const created = Number(entry?.created);
+      const length = Number(entry?.length);
+      if (Number.isFinite(end) && end > now) {
+        return true;
+      }
+      if (Number.isFinite(created) && Number.isFinite(length) && length > 0 && created + length > now) {
+        return true;
+      }
+      return false;
+    },
+    isBanActive(ban) {
+      return this.isPunishmentActive(ban, 4);
+    },
+    isMuteActive(mute) {
+      return this.isPunishmentActive(mute, 3);
+    },
+    extractActiveBan(result) {
+      const bans = this.extractBansList(result);
+      if (!bans.length) {
+        return false;
+      }
+      return bans.some((ban) => this.isBanActive(ban));
+    },
+    extractActiveMute(result) {
+      const bans = this.extractBansList(result);
+      if (!bans.length) {
+        return false;
+      }
+      return bans.some((entry) => this.isMuteActive(entry));
+    },
+    extractServerIpFromUserData(result) {
+      if (result?.server?.server_ip && result?.server?.server_port) {
+        return `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
+      }
+      return null;
+    },
+    extractLastConnect(result) {
+      const raw = result?.cybershoke?.global?.lastconnect;
+      if (raw == null || raw === "") {
+        return null;
+      }
+      const seconds = Number(raw);
+      return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+    },
+    normalizeCountryCode(raw) {
+      if (raw == null || raw === "") {
+        return null;
+      }
+      const value = String(raw).trim().toLowerCase();
+      return /^[a-z]{2}$/.test(value) ? value : null;
+    },
+    extractCountry(result) {
+      return this.normalizeCountryCode(result?.basic?.country);
+    },
+    extractPlaytime(result) {
+      const raw = result?.cybershoke?.global?.playtime;
+      if (raw == null || raw === "") {
+        return null;
+      }
+      const seconds = Number(raw);
+      return Number.isFinite(seconds) ? seconds : null;
+    },
+    extractVipName(result) {
+      return this.normalizeVipName(result?.basic?.vip_name);
+    },
+    extractVerification(result) {
+      return result?.basic?.verification ?? result?.personal_data?.verification ?? result?.verification ?? null;
+    },
+    extractProfileVerified(result) {
+      return Boolean(this.extractVerification(result)?.profile);
+    },
+    extractIsModerator(result) {
+      return Boolean(this.extractVerification(result)?.moderation);
+    },
+    parseUserDataResult(result) {
+      return {
+        serverIp: this.extractServerIpFromUserData(result),
+        lastconnect: this.extractLastConnect(result),
+        serverLabel: this.extractServerLabel(result),
+        isBanned: this.extractActiveBan(result),
+        isMuted: this.extractActiveMute(result),
+        vipName: this.extractVipName(result),
+        profileVerified: this.extractProfileVerified(result),
+        isModerator: this.extractIsModerator(result),
+        country: this.extractCountry(result),
+        playtime: this.extractPlaytime(result)
+      };
     }
   };
 
@@ -6350,8 +6940,8 @@ ${nextMessage}` : nextMessage;
   var normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   function closeReasonEvidenceMinutes(value) {
     if (value === "" || value === null || value === void 0) return 3;
-    const number = Number(value);
-    return Number.isFinite(number) ? Math.min(120, Math.max(0, number)) : 3;
+    const number2 = Number(value);
+    return Number.isFinite(number2) ? Math.min(120, Math.max(0, number2)) : 3;
   }
   function parseCloseReasonTimer(value) {
     const match = String(value || "").trim().match(/^(\d+):([0-5]\d):([0-5]\d)$/);
@@ -6396,18 +6986,20 @@ ${nextMessage}` : nextMessage;
         card = card.parentElement;
       }
       if (!title || !card || card === this.document.body) return null;
-      const ticketId = title.textContent.match(/#(\d+)/)?.[1];
-      const steamId2 = this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope));
+      const ticket = this.nativeData && this.getNativeTicket(scope);
+      const ticketId = this.nativeData ? ticket && String(ticket.id) : title.textContent.match(/#(\d+)/)?.[1];
+      const steamId3 = this.nativeData ? ticket?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope));
       const category = this.getTicketComplaintCategory(scope);
-      if (!ticketId || !steamId2 || !CATEGORIES.has(normalize(category))) return null;
+      if (!ticketId || !steamId3 || !CATEGORIES.has(normalize(category))) return null;
       this._closeReasonScopes.set(textarea, scope);
       const buttons = Array.from(card.querySelectorAll("button")).filter((button) => Object.values(LABELS).includes(button.textContent.trim()) && !isIohNode(button));
-      return { textarea, scope, card, title, ticketId, steamId: steamId2, category, buttons };
+      return { textarea, scope, card, title, ticketId, steamId: steamId3, category, buttons };
     },
     isCloseReasonContextEditable(context) {
       return Boolean(context && !context.textarea.readOnly && !context.textarea.disabled && this.isCloseReasonContextInProgress(context) && context.buttons.some((button) => !button.disabled));
     },
     isCloseReasonContextInProgress(context) {
+      if (this.nativeData) return Boolean(context && this.scopeHasInProgressStatus(context.scope, { includeActivePanel: false }));
       const header = context?.title?.parentElement;
       if (header?.querySelectorAll) {
         return Array.from(header.querySelectorAll("span")).some((span) => span.textContent.trim() === "\u0412 \u0440\u0430\u0431\u043E\u0442\u0435");
@@ -6507,7 +7099,7 @@ ${nextMessage}` : nextMessage;
             pending.observer.observe(context.card, {
               childList: true,
               subtree: true,
-              characterData: true,
+              characterData: !this.nativeData,
               attributes: true,
               attributeFilter: ["disabled", "readonly"]
             });
@@ -6533,7 +7125,7 @@ ${nextMessage}` : nextMessage;
           session.observer.observe(session.card, {
             childList: true,
             subtree: true,
-            characterData: true,
+            characterData: !this.nativeData,
             attributes: true,
             attributeFilter: ["disabled", "readonly"]
           });
@@ -6560,16 +7152,19 @@ ${nextMessage}` : nextMessage;
       }
       session.buttons = context.buttons;
       if (!this.isCloseReasonContextEditable(context)) return;
-      const interval = Number(this.settings.trackOffenderIntervalWhileReviewing);
-      const cacheTtl = Math.max(5e3, (Number.isFinite(interval) ? interval : 30) * 1e3 + 5e3);
-      const cached = this.getCachedUserData?.(session.steamId, cacheTtl);
+      const cached = this.getCachedUserData?.(session.steamId);
       const state = session.complaintState;
       if (cached && (!state.punishmentData || cached.fetchedAt > state.punishmentData.fetchedAt)) {
         state.punishmentData = mergeCloseReasonData(state.punishmentData, cached);
       }
       if (state.manual || !this.isCloseReasonTextareaVisible(session.textarea, session.scope)) return;
-      const clock = context.title.parentElement?.querySelector('use[href="#lc-clock"]');
-      const elapsed = parseCloseReasonTimer(clock?.closest("svg")?.parentElement?.textContent);
+      const ticket = this.nativeData && this.getNativeTicket(session.scope);
+      const elapsed = this.nativeData ? ticket?.startedAt ? Math.max(0, (Date.now() - ticket.startedAt) / 1e3) : null : parseCloseReasonTimer(context.title.parentElement?.querySelector('use[href="#lc-clock"]')?.closest("svg")?.parentElement?.textContent);
+      if (this.nativeData) {
+        clearTimeout(session.thresholdTimer);
+        const remaining = ticket?.startedAt + closeReasonEvidenceMinutes(this.settings.closeReasonEvidenceMinutes) * 6e4 - Date.now();
+        if (ticket?.startedAt && remaining > 0) session.thresholdTimer = setTimeout(() => this.refreshCloseReasonSession(session), remaining + 10);
+      }
       const data = state.punishmentData || {};
       const matchingType = CATEGORIES.get(normalize(session.category));
       const desired = Array.from(state.intents.values()).includes(matchingType) ? LABELS.punished : chooseCloseReason(session.category, elapsed, this.settings.closeReasonEvidenceMinutes, data);
@@ -6586,10 +7181,10 @@ ${nextMessage}` : nextMessage;
         session.applying = false;
       }
     },
-    onCloseReasonPunishmentData(steamId2, data) {
-      if (!this.settings?.features?.autoSelectCloseReason || !steamId2 || !data) return;
+    onCloseReasonPunishmentData(steamId3, data) {
+      if (!this.settings?.features?.autoSelectCloseReason || !steamId3 || !data) return;
       for (const session of this._closeReasonSessions?.values() || []) {
-        if (session.steamId !== steamId2) continue;
+        if (session.steamId !== steamId3) continue;
         if (data.scope !== void 0 && data.scope !== session.scope) continue;
         if (data.ticketId !== void 0 && String(data.ticketId) !== session.ticketId) continue;
         const state = session.complaintState;
@@ -6603,20 +7198,22 @@ ${nextMessage}` : nextMessage;
         this.refreshCloseReasonSession(session);
       }
     },
-    onCloseReasonPunishmentIntent({ type, scope, steamId: steamId2, ticketId, attemptToken } = {}) {
-      if (!this.settings?.features?.autoSelectCloseReason || !attemptToken || typeof attemptToken !== "object" || !scope || !steamId2 || !ticketId) return false;
+    onCloseReasonPunishmentIntent({ type, scope, steamId: steamId3, ticketId, attemptToken } = {}) {
+      if (!this.settings?.features?.autoSelectCloseReason || !attemptToken || typeof attemptToken !== "object" || !scope || !steamId3 || !ticketId) return false;
       this.syncCloseReasonSelection();
       const session = this._closeReasonSessions?.get(scope);
-      if (!session || session.steamId !== steamId2 || session.ticketId !== String(ticketId) || CATEGORIES.get(normalize(session.category)) !== type) return false;
+      if (!session || session.steamId !== steamId3 || session.ticketId !== String(ticketId) || CATEGORIES.get(normalize(session.category)) !== type) return false;
       const context = this.getCloseReasonContext(session.textarea);
-      if (!context || context.scope !== scope || context.steamId !== steamId2 || context.ticketId !== String(ticketId) || !this.isCloseReasonContextEditable(context)) return false;
+      if (!context || context.scope !== scope || context.steamId !== steamId3 || context.ticketId !== String(ticketId) || !this.isCloseReasonContextEditable(context)) return false;
       session.complaintState.intents.set(attemptToken, type);
+      this.rememberNativePunishmentIntent?.({ type, scope, steamId: steamId3, ticketId, attemptToken });
       this._closeReasonIntentStates ||= /* @__PURE__ */ new WeakMap();
       this._closeReasonIntentStates.set(attemptToken, session.complaintState);
       this.refreshCloseReasonSession(session);
       return true;
     },
     cancelCloseReasonPunishmentIntent(attemptToken) {
+      this._nativePunishmentAttempts?.delete(attemptToken);
       const state = this._closeReasonIntentStates?.get(attemptToken);
       if (!state) return;
       state.intents.delete(attemptToken);
@@ -6630,6 +7227,7 @@ ${nextMessage}` : nextMessage;
       state.intents.clear();
     },
     releaseCloseReasonSession(session) {
+      clearTimeout(session.thresholdTimer);
       session.observer?.disconnect();
       session.card.removeEventListener("click", session.onClick, true);
       if (this._closeReasonSessions?.get(session.scope) === session) this._closeReasonSessions.delete(session.scope);
@@ -6657,15 +7255,16 @@ ${nextMessage}` : nextMessage;
       while (card && card !== scope.parentElement) {
         const title = Array.from(card.querySelectorAll("h3")).find((header) => /^Результат рассмотрения (?:тикета|репорта) #\d+\b/i.test(header.textContent.trim()));
         if (title) {
-          const ticketId = title.textContent.match(/#(\d+)/)?.[1];
-          const steamId2 = this.getOffenderSteamIdForScope(scope);
-          return ticketId && steamId2 ? {
+          const ticket = this.nativeData && this.getNativeTicket(scope);
+          const ticketId = this.nativeData ? ticket && String(ticket.id) : title.textContent.match(/#(\d+)/)?.[1];
+          const steamId3 = this.getOffenderSteamIdForScope(scope);
+          return ticketId && steamId3 ? {
             scope,
             textarea,
             title,
             card,
             ticketId,
-            steamId: steamId2,
+            steamId: steamId3,
             category: this.getTicketComplaintCategory(scope),
             buttons: Array.from(card.querySelectorAll("button")).filter((button) => !isIohNode(button))
           } : null;
@@ -6704,12 +7303,14 @@ ${nextMessage}` : nextMessage;
         session.observer.observe(session.scope, { childList: true, subtree: true });
       }
       session.intents.set(intent.attemptToken, intent.type);
+      this.rememberNativePunishmentIntent?.(intent);
       this._punishmentFeedbackTokens ||= /* @__PURE__ */ new WeakMap();
       this._punishmentFeedbackTokens.set(intent.attemptToken, session);
       this.refreshTicketPunishmentFeedback(session);
       return true;
     },
     cancelTicketPunishmentFeedbackIntent(token) {
+      this._nativePunishmentAttempts?.delete(token);
       const session = this._punishmentFeedbackTokens?.get(token);
       if (!session) return;
       session.intents.delete(token);
@@ -6734,6 +7335,7 @@ ${nextMessage}` : nextMessage;
         session.observer.observe(session.scope, { childList: true, subtree: true });
       }
       for (const history of [blocks.ban, blocks.mute]) {
+        if (history?.nativeHistory) continue;
         if (!history || history === session.scope || history === this.document.body || history === this.document.documentElement || session.histories.has(history)) continue;
         session.histories.add(history);
         session.observer.observe(history, {
@@ -6753,6 +7355,11 @@ ${nextMessage}` : nextMessage;
         }
       }
       const types = Array.from(session.intents.values());
+      if (session.nativeConfirmed) {
+        const player2 = this.nativePlayer(session.steamId), key = session.nativeConfirmed.type === "ban" ? "isBanned" : "isMuted";
+        if (player2?.[key] === false && (player2.stamps[key] > session.nativeConfirmed.startedAt || player2.stamps[key] === session.nativeConfirmed.startedAt && player2.orders[key] > session.nativeConfirmed.sequence)) session.nativeConfirmed = null;
+        else types.push(session.nativeConfirmed.type);
+      }
       const type = ban || types.includes("ban") ? "ban" : mute || types.includes("mute") ? "mute" : null;
       if (!type) {
         const hadBadge = session.lastHtml !== null;
@@ -6777,10 +7384,17 @@ ${nextMessage}` : nextMessage;
       }
       if (!this.isCloseReasonTextareaVisible(session.textarea, session.scope)) return true;
       const icons = this.getAnalysisIcons();
+      this.syncActivePunishmentPreview?.(
+        session.textarea,
+        type === "ban" ? ban : mute,
+        icons[type] || icons.chatError || "",
+        type === "ban" ? " \u0417\u0410\u0411\u0410\u041D\u0415\u041D" : " \u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422"
+      );
       const html = this.buildActivePunishmentBadge(
         icons[type] || icons.chatError || "",
         type === "ban" ? " \u0417\u0410\u0411\u0410\u041D\u0415\u041D" : " \u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422",
-        type === "ban" ? ban : mute
+        type === "ban" ? ban : mute,
+        session.textarea
       );
       const badge = this.document.getElementById("helper-suggest-badge");
       if (session.lastHtml !== html || !badge || badge.parentNode !== session.textarea.parentNode) {
@@ -6802,13 +7416,308 @@ ${nextMessage}` : nextMessage;
       }
     },
     stopTicketPunishmentFeedback() {
+      this.stopActivePunishmentPreviews?.();
       for (const session of this._punishmentFeedbackSessions?.values() || []) this.releaseTicketPunishmentFeedback(session);
+    }
+  };
+
+  // modules/ticket/NativeData.js
+  var NativeTicketMethods = {
+    getNativeTicket(scope = null) {
+      if (!this.nativeData) return null;
+      scope ||= this.getAutoConnectScope?.() || this.document.body;
+      const headings = [...scope?.querySelectorAll?.("h3") || []];
+      const matches = headings.map((h) => (h.textContent || "").match(/Результат рассмотрения (тикета|репорта) #(\d+)/i)).filter(Boolean);
+      if (matches.length !== 1) return null;
+      const match = matches[0];
+      const ticket = this.nativeData.tickets.get(`${match[1].toLowerCase() === "\u0442\u0438\u043A\u0435\u0442\u0430" ? "ticket" : "report"}:${match[2]}`);
+      if (!ticket) return null;
+      const field = this.findInfoFieldScoped("\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", scope);
+      const link = field?.querySelector(PLAYER_PROFILE_LINK_SELECTOR);
+      if (link && steamIdFromPlayerProfileUrl(link.href) !== ticket.suspectId) return null;
+      return ticket;
+    },
+    getNativeRowTicket(row) {
+      if (!this.nativeData || !row?.querySelectorAll) return null;
+      const links = [...row.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)];
+      const ids = links.map((x) => steamIdFromPlayerProfileUrl(x.href)).filter(Boolean);
+      if (ids.length < 2) return null;
+      const fiberKey = Object.keys(row).find((k) => k.startsWith("__reactFiber$"));
+      let fiber = fiberKey ? row[fiberKey] : null;
+      for (let i = 0; fiber && i < 4; i++, fiber = fiber.return) {
+        if (!/^\d{1,12}$/.test(String(fiber.key || ""))) continue;
+        const found = this.nativeData.queueTickets().filter((t) => t.id === Number(fiber.key) && t.senderId === ids[0] && t.suspectId === ids[1]);
+        if (found.length === 1) return found[0];
+      }
+      const link = row.querySelector('a[href^="steam://connect/"]');
+      const original = link?.dataset.iohOriginalServerIp || link?.href?.replace(/^steam:\/\/connect\//i, "").toLowerCase();
+      const candidates = this.nativeData.queueTickets().filter((t) => t.senderId === ids[0] && t.suspectId === ids[1] && (!original || t.complaintServer === original));
+      const saved = candidates.find((t) => t.key === row.dataset.iohNativeTicket);
+      if (saved) return saved;
+      candidates.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      const ticket = candidates.length === 1 ? candidates[0] : null;
+      if (ticket) row.dataset.iohNativeTicket = ticket.key;
+      return ticket || null;
+    },
+    nativePlayer(id) {
+      const p = this.nativeData?.player(id);
+      if (!p) return null;
+      const result = { ...p, fetchedAt: p.updatedAt };
+      const newer = (a, b) => p.stamps[a] > p.stamps[b] || p.stamps[a] === p.stamps[b] && (p.orders[a] || 0) >= (p.orders[b] || 0);
+      if (p.bans && newer("bans", "isBanned")) result.isBanned = p.bans.some((x) => punishmentActive(x));
+      if (p.mutes && newer("mutes", "isMuted")) result.isMuted = p.mutes.some((x) => punishmentActive(x));
+      if (p.serverIp) result.serverLabel ||= this.nativeData.servers.get(p.serverIp);
+      return result;
+    },
+    nativeAutoConnectDecision({ analysisFallback = false } = {}) {
+      const scope = this.getAutoConnectScope(), t = this.getNativeTicket(scope);
+      if (!this.settings.features?.autoConnectServer || !t || !this.scopeHasInProgressStatus(scope)) return { allowed: false, reason: "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E\u0439 \u0441\u043E\u0431\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u0439 \u0436\u0430\u043B\u043E\u0431\u044B" };
+      const p = this.nativePlayer(t.suspectId);
+      if (!p?.serverIp) return { allowed: false, reason: "\u0422\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D \u0441\u0430\u0439\u0442\u043E\u043C" };
+      if (!this.canAutoConnectAfterAnalysis(scope)) return { allowed: false, reason: "\u041E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u044E\u0449\u0435\u0433\u043E \u0430\u043D\u0430\u043B\u0438\u0437\u0430" };
+      const reasonAllowed = (this.settings.autoConnectReasons || ["\u0427\u0438\u0442\u0435\u0440\u0441\u0442\u0432\u043E", "\u0411\u0430\u0433\u043E\u044E\u0437"]).some((r) => t.reason?.toLowerCase().includes(r.toLowerCase()));
+      const allowed = analysisFallback || reasonAllowed || this.complaintTextMatchesAutoconnectTrigger(t.message);
+      return { allowed, reason: allowed ? "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0441\u0430\u0439\u0442\u0430" : "\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F \u043D\u0435 \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0435\u0442 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435" };
+    },
+    nativeHistory(scope, resource) {
+      const ticket = this.getNativeTicket(scope);
+      const history = ticket && this.nativeData.history(ticket.suspectId, resource);
+      const player2 = ticket && this.nativePlayer(ticket.suspectId);
+      const items = history?.items || player2?.[resource];
+      const knownActive = player2?.[resource === "bans" ? "isBanned" : "isMuted"] === true;
+      return {
+        nativeHistory: true,
+        resource,
+        items: items || [],
+        ready: Boolean(items),
+        steamId: ticket?.suspectId,
+        revision: history?.revision || 0,
+        active: ticket ? this.nativeData.active(ticket.suspectId, resource) || (knownActive ? { nativeStatus: true, kind: resource } : null) : null
+      };
+    },
+    nativeHistoryBlocks(scope) {
+      const t = this.getNativeTicket(scope);
+      return {
+        ban: this.nativeHistory(scope, "bans"),
+        mute: this.nativeHistory(scope, "mutes"),
+        warning: { nativeHistory: true, items: t?.warnings || [], ready: Boolean(t && Object.hasOwn(t, "warnings")) },
+        chat: this.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope),
+        offenderSteamId: t?.suspectId || "unknown"
+      };
+    },
+    nativeAnalysisReady(scope) {
+      const t = this.getNativeTicket(scope);
+      if (!t) return false;
+      const p = this.nativePlayer(t.suspectId);
+      if (p?.isBanned || p?.isMuted) return true;
+      return Boolean(this.nativeData.history(t.suspectId, "chats") && this.nativeData.history(t.suspectId, "mutes") && this.nativeData.history(t.suspectId, "bans") && Object.hasOwn(t, "warnings") && typeof p?.isBanned === "boolean" && typeof p?.isMuted === "boolean");
+    },
+    nativeMessages(scope) {
+      const t = this.getNativeTicket(scope);
+      const messages = t && this.nativeData.history(t.suspectId, "chats")?.items;
+      if (!messages) return [];
+      const now = Date.now(), anchor = t.chatAnchor || (t.endedAt && t.endedAt <= now ? t.endedAt : now);
+      return messages.filter((m) => m.timeMs >= anchor - 864e5 && m.timeMs <= anchor && m.timeMs >= now - 864e5 && m.timeMs <= now);
+    },
+    nativeAnalysisSignature(scope) {
+      const t = this.getNativeTicket(scope);
+      if (!t) return "pending";
+      const p = this.nativePlayer(t.suspectId);
+      return JSON.stringify([
+        t.key,
+        t.chatAnchor,
+        t.endedAt,
+        t.warnings,
+        this.nativeMessages(scope),
+        p?.isBanned,
+        p?.isMuted,
+        (this.nativeData.history(t.suspectId, "mutes")?.items || p?.mutes)?.filter((m) => m.created >= Date.now() - 30 * 864e5)
+      ]);
+    },
+    bindNativeMessageRows(scope) {
+      const t = this.getNativeTicket(scope);
+      const messages = t && this.nativeData.history(t.suspectId, "chats")?.items;
+      const block = this.getBlockByHeaderScoped("\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430", scope);
+      const bindings = /* @__PURE__ */ new Map();
+      if (!messages || !block) return bindings;
+      const used = /* @__PURE__ */ new Set();
+      for (const row of block.querySelectorAll("tbody tr")) {
+        const cells = row.querySelectorAll("td");
+        if (cells.length < 2) continue;
+        const stamp = row.querySelector("[data-2gnyztty]")?.getAttribute("data-2gnyztty");
+        const timeText = cells[0]?.innerText || cells[0]?.textContent || "";
+        const text = this.utils.extractMessageText(cells[cells.length - 1]);
+        const message = messages.find((m) => !used.has(m.id) && (stamp === m.id || stamp === String(m.timeMs / 1e3) || m.text === text && Math.abs((this.utils.parseTimeToMs(timeText) || 0) - m.timeMs) < 1e3));
+        if (message) {
+          bindings.set(message.id, row);
+          used.add(message.id);
+        }
+      }
+      return bindings;
+    },
+    setNativeModerators(moderators) {
+      this.nativeModerators = new Set(["Tier", "Movement", "Hns", "Jail"].flatMap((k) => Object.keys(flattenModeratorGroup(moderators?.[k]))));
+    },
+    renderNativeParticipant(link, id) {
+      if (!link || !id) return false;
+      const moderator = Boolean(this.nativeModerators?.has(id) || this.nativeData.player(id)?.isModerator);
+      this.applyOffenderModeratorHighlight(null, link, moderator);
+      return moderator;
+    },
+    renderNativeQueue() {
+      if (!this.nativeData) return;
+      for (const table of this.findComplaintQueueTables()) for (const row of table.querySelectorAll("tbody tr")) {
+        const t = this.getNativeRowTicket(row);
+        if (!t) continue;
+        const links = [...row.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)];
+        const sender = links.find((l) => steamIdFromPlayerProfileUrl(l.href) === t.senderId);
+        const suspect = links.find((l) => steamIdFromPlayerProfileUrl(l.href) === t.suspectId && l !== sender) || links[1];
+        const p = this.nativePlayer(t.suspectId) || {};
+        const senderMod = this.renderNativeParticipant(sender, t.senderId);
+        const suspectMod = this.renderNativeParticipant(suspect, t.suspectId);
+        const ageAllowed = !t.createdAt || Date.now() - t.createdAt >= Math.max(0, Number(this.settings.ticketAgeLimit) || 0) * 1e3;
+        if (this.settings.features?.trackOffenderServer && ageAllowed) {
+          const link = row.querySelector('a[href^="steam://connect/"]');
+          if (link && Object.hasOwn(p, "serverIp")) {
+            link.dataset.iohOriginalServerIp = t.complaintServer || "";
+            this.applyOffenderServerStatus(link, t.suspectId, t.complaintServer, p);
+          }
+          this.applyOffenderPunishmentHighlight(row, p);
+          this.applyOffenderPunishmentActionLabel(row, p);
+          this.applyOffenderVipBadge(suspect, p.vipName);
+          this.applyOffenderProfileVerification(suspect, p.profileVerified, null);
+        }
+        row.classList.toggle("ioh-highlighted-moderator", senderMod || suspectMod || Boolean(this.settings.features?.trackOffenderServer && p.profileVerified));
+      }
+    },
+    syncNativeTicketViews() {
+      if (!this.nativeData) return;
+      for (const textarea of this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]')) {
+        const scope = this.getTicketScopeRoot(textarea), t = this.getNativeTicket(scope);
+        if (!t) continue;
+        for (const [label, id] of [["\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u0435\u043B\u044C", t.senderId], ["\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", t.suspectId]]) {
+          const field = this.findInfoFieldScoped(label, scope);
+          const link = [...field?.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR) || []].find((l) => steamIdFromPlayerProfileUrl(l.href) === id);
+          this.renderNativeParticipant(link, id);
+        }
+        this.renderNativeContext(scope, t);
+      }
+      this.renderNativeQueue();
+      this.syncOpenTicketOffenderTracking();
+    },
+    renderNativeContext(scope, ticket) {
+      scope.querySelector("#ioh-native-context")?.remove();
+      const bypass = this.nativeData.bypasses.get(ticket.suspectId);
+      const field = this.findInfoFieldScoped("\u041E\u0431\u0445\u043E\u0434 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438", scope) || this.findInfoFieldScoped("\u041E\u0431\u0445\u043E\u0434 \u0431\u0430\u043D\u0430", scope) || this.findInfoFieldScoped("\u041E\u0431\u0445\u043E\u0434 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438:", scope);
+      const previous = scope.querySelector(".ioh-bypass-count");
+      if (!field || bypass?.checked !== true || !Number.isFinite(bypass.bannedAccounts)) {
+        previous?.remove();
+        return;
+      }
+      const host = field.querySelector(":scope > div") || field;
+      let node = previous;
+      if (!node || !field.contains(node)) {
+        node?.remove();
+        node = this.document.createElement("span");
+        markIoh(node);
+        node.className = "ioh-bypass-count";
+        host.append(node);
+      }
+      const text = String(bypass.bannedAccounts);
+      if (node.textContent !== text) node.textContent = text;
+      node.title = `\u0417\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0445 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u043E\u0432: ${bypass.bannedAccounts}`;
+      node.setAttribute("aria-label", node.title);
+    },
+    consumeNativeEvent(event) {
+      if (!this.nativeData) return;
+      const closeReasonPlayers = new Set([...this._closeReasonSessions?.values() || []].map((s) => s.steamId));
+      for (const id of closeReasonPlayers) {
+        const p = this.nativePlayer(id);
+        if (p) this.onCloseReasonPunishmentData(id, p);
+      }
+      if (event.kind === "account") {
+        this.syncNativePermissions();
+      }
+      if (event.kind === "action") {
+        const attempt = [...this._nativePunishmentAttempts?.values() || []].filter((a) => a.steamId === event.payload.steamId && (a.type === "ban" ? "bans" : "mutes") === event.payload.resource && a.at <= event.startedAt).sort((a, b) => b.at - a.at)[0];
+        if (attempt) {
+          this._nativePunishmentAttempts.delete(attempt.attemptToken);
+          const t = this.getNativeTicket(attempt.scope);
+          if (t && t.id === Number(attempt.ticketId) && t.suspectId === attempt.steamId && this.document.contains(attempt.scope)) {
+            if (event.payload.success) {
+              const key = attempt.type === "ban" ? "isBanned" : "isMuted";
+              this.nativeData.mergePlayer(attempt.steamId, { [key]: true }, event);
+              const current = this.nativePlayer(attempt.steamId);
+              this.onCloseReasonPunishmentData(attempt.steamId, { ...current, scope: attempt.scope, ticketId: attempt.ticketId });
+              const session = this._punishmentFeedbackSessions?.get(attempt.scope);
+              if (current?.[key] && session) session.nativeConfirmed = { type: attempt.type, startedAt: event.startedAt, sequence: event.sequence };
+              if (!current?.[key]) {
+                this.cancelTicketPunishmentFeedbackIntent(attempt.attemptToken);
+                this.cancelCloseReasonPunishmentIntent(attempt.attemptToken);
+              }
+            } else {
+              this.cancelTicketPunishmentFeedbackIntent(attempt.attemptToken);
+              this.cancelCloseReasonPunishmentIntent(attempt.attemptToken);
+            }
+          }
+        }
+      }
+      const presenceIds = /* @__PURE__ */ new Set();
+      if (event.source !== "tracker" && event.kind === "player" && Object.hasOwn(event.payload, "serverIp")) presenceIds.add(event.payload.steamId);
+      if (event.kind === "ticket" && event.payload.presence) presenceIds.add(event.payload.suspectId);
+      if (event.kind === "serverPlayers" && event.payload.endpoint) event.payload.players.forEach((p) => presenceIds.add(p.steamId));
+      this.syncOpenTicketOffenderTracking();
+      for (const session of this._openTicketTrackingSessions.values()) {
+        if (!presenceIds.has(session.steamId)) continue;
+        const p = this.nativePlayer(session.steamId);
+        if (!p || !Object.hasOwn(p, "serverIp")) continue;
+        const old = session.lastServer;
+        session.lastServer = p.serverIp;
+        if (p.serverIp === null) {
+          session.waitingForReturn = true;
+          session.pendingServer = null;
+          this.markOffenderOffline(session.steamId);
+        } else {
+          const t = this.getNativeTicket(session.scope);
+          this.clearOffenderOffline(session.steamId);
+          if (p.serverIp !== t?.complaintServer) this.markOffenderRelocated(session.steamId, p.serverIp);
+          else this.clearOffenderRelocated(session.steamId);
+          if (session.waitingForReturn || old && old !== p.serverIp || old === void 0 && p.serverIp !== t?.complaintServer) session.pendingServer = p.serverIp;
+          if (session.pendingServer === p.serverIp) {
+            const already = this.isAlreadyOnRequestedServer(p.serverIp);
+            const connected = !already && this.connectToTrackedOffenderServer(session, p.serverIp);
+            if (already || connected) {
+              session.pendingServer = null;
+              this.announceOffenderTrackerResult?.(session, connected);
+            }
+          }
+          session.waitingForReturn = false;
+        }
+      }
+      this.syncNativeTicketViews();
+      this.syncCloseReasonSelection();
+      this.syncTicketPunishmentFeedback();
+      this.syncOffenderTrackerStatus?.();
+    },
+    rememberNativePunishmentIntent(intent) {
+      if (!this.nativeData || !intent.attemptToken || this._nativePunishmentAttempts?.has(intent.attemptToken)) return;
+      this._nativePunishmentAttempts ||= /* @__PURE__ */ new Map();
+      this._nativePunishmentAttempts.set(intent.attemptToken, { ...intent, at: Date.now() });
+      while (this._nativePunishmentAttempts.size > 40) this._nativePunishmentAttempts.delete(this._nativePunishmentAttempts.keys().next().value);
+    },
+    syncNativePermissions() {
+      const account = this.nativeData?.account;
+      const has = (name) => account?.groups.some((g) => g.split(":")[0] === name);
+      this.canIssueBan = Boolean(account && (/z/.test(account.flags) || has("web.users.bans.set")));
+      this.canIssueMute = Boolean(account && (/z/.test(account.flags) || has("web.users.comms.set")));
+      this._permissionsHydrated = Boolean(account);
     }
   };
 
   // modules/TicketService.js
   var TicketService = class {
-    constructor({ document: document2, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome: chrome2 = null }) {
+    constructor({ document: document2, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome: chrome2 = null, nativeData = null }) {
+      this.nativeData = nativeData;
       this.document = document2;
       this.utils = utils;
       this.badgeService = badgeService;
@@ -6927,6 +7836,7 @@ ${nextMessage}` : nextMessage;
       const pathname = window.location.pathname;
       const activeBanRow = this.findActivePunishmentRow(banHistoryBlock);
       if (activeBanRow) {
+        this.syncActivePunishmentPreview(textarea, activeBanRow, banIcon, " \u0417\u0410\u0411\u0410\u041D\u0415\u041D");
         const signature2 = `${pathname}|ban:${this.getPunishmentRowFingerprint(activeBanRow)}`;
         if (this.chatSignatureByKey.get(cacheKey) === signature2) {
           return { kind: "unchanged" };
@@ -6937,7 +7847,7 @@ ${nextMessage}` : nextMessage;
           this.badgeService.updateInfoBadge(
             "helper-suggest-badge",
             "accent",
-            this.buildActivePunishmentBadge(banIcon, " \u0417\u0410\u0411\u0410\u041D\u0415\u041D", activeBanRow),
+            this.buildActivePunishmentBadge(banIcon, " \u0417\u0410\u0411\u0410\u041D\u0415\u041D", activeBanRow, textarea),
             textarea
           );
         }
@@ -6945,6 +7855,7 @@ ${nextMessage}` : nextMessage;
       }
       const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
       if (activeMuteRow) {
+        this.syncActivePunishmentPreview(textarea, activeMuteRow, muteIcon, " \u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422");
         const signature2 = `${pathname}|mute:${this.getPunishmentRowFingerprint(activeMuteRow)}`;
         if (this.chatSignatureByKey.get(cacheKey) === signature2) {
           return { kind: "unchanged" };
@@ -6955,18 +7866,19 @@ ${nextMessage}` : nextMessage;
           this.badgeService.updateInfoBadge(
             "helper-suggest-badge",
             "warning",
-            this.buildActivePunishmentBadge(muteIcon, " \u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422", activeMuteRow),
+            this.buildActivePunishmentBadge(muteIcon, " \u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422", activeMuteRow, textarea),
             textarea
           );
         }
         return { kind: "skip" };
       }
       this.activePunishmentBadgeByKey.delete(cacheKey);
-      const rows = Array.from(chatHistoryBlock?.querySelectorAll("tbody tr, tr") || []).filter((row) => row.querySelector("td"));
+      this.releaseActivePunishmentPreview(textarea);
+      const rows = this.nativeData ? this.nativeMessages(scope) : Array.from(chatHistoryBlock?.querySelectorAll("tbody tr, tr") || []).filter((row) => row.querySelector("td"));
       const lastRow = rows[rows.length - 1];
-      const chatEmpty = this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
+      const chatEmpty = this.nativeData ? rows.length === 0 : this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
       const warnPart = this.getWarningHistorySignaturePart(warningHistoryBlock);
-      const signature = chatEmpty ? `${pathname}|empty|${warnPart}` : `${pathname}|${rows.length}|${(lastRow.innerText || "").trim().slice(0, 220)}|${warnPart}`;
+      const signature = this.nativeData ? this.nativeAnalysisSignature(scope) : chatEmpty ? `${pathname}|empty|${warnPart}` : `${pathname}|${rows.length}|${(lastRow.innerText || "").trim().slice(0, 220)}|${warnPart}`;
       if (this.chatSignatureByKey.get(cacheKey) === signature) {
         return { kind: "unchanged" };
       }
@@ -6986,11 +7898,13 @@ ${nextMessage}` : nextMessage;
       let { allViolations, ruleCounters } = analysis;
       const coveringWarning = this.getCoveringWarningWithoutNewTriggers(warningHistoryBlock, allViolations);
       if (coveringWarning) {
+        const warningRecord = { nativePunishment: true, kind: "warnings", id: String(coveringWarning.date.getTime()), created: coveringWarning.date.getTime(), reason: coveringWarning.text };
+        if (this.nativeData) this.syncActivePunishmentPreview(textarea, warningRecord, warningIcon, " \u0418\u0433\u0440\u043E\u043A\u0443 \u0443\u0436\u0435 \u0432\u044B\u0434\u0430\u043D\u043E \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435!");
         this.clearSuggestedMuteReason();
         this.badgeService.updateInfoBadge(
           "helper-suggest-badge",
           "warning",
-          `<div class="ioh-badge-row ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title=""><span class="ioh-icon-box">${warningIcon}</span><span><b> \u0418\u0433\u0440\u043E\u043A\u0443 \u0443\u0436\u0435 \u0432\u044B\u0434\u0430\u043D\u043E \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435!</b></span></div>`,
+          this.nativeData ? this.buildActivePunishmentBadge(warningIcon, " \u0418\u0433\u0440\u043E\u043A\u0443 \u0443\u0436\u0435 \u0432\u044B\u0434\u0430\u043D\u043E \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435!", warningRecord, textarea) : `<div class="ioh-badge-row ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title=""><span class="ioh-icon-box">${warningIcon}</span><span><b> \u0418\u0433\u0440\u043E\u043A\u0443 \u0443\u0436\u0435 \u0432\u044B\u0434\u0430\u043D\u043E \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435!</b></span></div>`,
           textarea
         );
         return { kind: "skip" };
@@ -7084,6 +7998,10 @@ ${nextMessage}` : nextMessage;
       return { kind: isWarning ? "warning" : "mute" };
     }
     findLastMuteWithin24h(muteHistoryBlock) {
+      if (muteHistoryBlock?.nativeHistory) {
+        const newest = muteHistoryBlock.items.filter((p) => p.created >= Date.now() - 864e5).sort((a, b) => b.created - a.created)[0];
+        return newest ? new Date(newest.created) : null;
+      }
       if (!muteHistoryBlock) {
         return null;
       }
@@ -7116,14 +8034,14 @@ ${nextMessage}` : nextMessage;
       const matcher = this._ruleMatcher;
       const getSeverity = (rule) => this.getRuleSeverity(rule);
       for (const row of rows) {
-        const chatRow = this.getChatRowData(row);
+        const chatRow = this.nativeData ? { messageText: row.text, authorText: row.channel === "team" ? "\u041A\u043E\u043C\u0430\u043D\u0434\u0430" : "\u0412\u0441\u0435", timeText: "", timeMs: row.timeMs } : this.getChatRowData(row);
         if (!chatRow || !chatRow.messageText) {
           continue;
         }
-        if (!this.utils.isMessageWithin24Hours(chatRow.timeText)) {
+        if (!this.nativeData && !this.utils.isMessageWithin24Hours(chatRow.timeText)) {
           continue;
         }
-        const msgTimeMs = this.utils.parseTimeToMs(chatRow.timeText);
+        const msgTimeMs = this.nativeData ? chatRow.timeMs : this.utils.parseTimeToMs(chatRow.timeText);
         if (lastMuteDate && msgTimeMs && msgTimeMs <= lastMuteDate.getTime()) {
           continue;
         }
@@ -7195,7 +8113,8 @@ ${nextMessage}` : nextMessage;
     OffenderProfileMethods,
     OffenderTrackingMethods,
     CloseReasonMethods,
-    PunishmentFeedbackMethods
+    PunishmentFeedbackMethods,
+    NativeTicketMethods
   );
 
   // modules/PunishmentService.js
@@ -7287,24 +8206,24 @@ ${nextMessage}` : nextMessage;
       const binding = this.punishmentBindings.get(dialog);
       if (binding) this.applyPunishmentIntentEvent(binding, event);
     }
-    getPunishmentConfirmationOrigin(scope, steamId2, { requireEditable = true } = {}) {
+    getPunishmentConfirmationOrigin(scope, steamId3, { requireEditable = true } = {}) {
       const ticket = this.ticketService;
-      if (!scope || !steamId2 || !this.document.contains(scope) || !ticket.isOpenComplaintScope(scope) || ticket.getOffenderSteamIdForScope(scope) !== steamId2) return null;
+      if (!scope || !steamId3 || !this.document.contains(scope) || !ticket.isOpenComplaintScope(scope) || ticket.getOffenderSteamIdForScope(scope) !== steamId3) return null;
       const ticketId = ticket.extractTicketIdFromComplaintScope(scope);
       if (!ticketId) return null;
-      if (!requireEditable) return { scope, steamId: steamId2, ticketId };
+      if (!requireEditable) return { scope, steamId: steamId3, ticketId };
       const textarea = scope.querySelector?.('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]');
       if (!textarea || textarea.readOnly || textarea.disabled) return null;
       if (ticket.getTicketPunishmentFeedbackContext && ticket.isTicketPunishmentFeedbackContextEditable) {
         const context = ticket.getTicketPunishmentFeedbackContext(textarea, scope);
-        if (!context || context.ticketId !== ticketId || context.steamId !== steamId2 || !ticket.isTicketPunishmentFeedbackContextEditable(context)) return null;
+        if (!context || context.ticketId !== ticketId || context.steamId !== steamId3 || !ticket.isTicketPunishmentFeedbackContextEditable(context)) return null;
       } else if (ticket.getCloseReasonContext && ticket.isCloseReasonContextEditable) {
         const context = ticket.getCloseReasonContext(textarea);
-        if (!context || context.scope !== scope || context.steamId !== steamId2 || context.ticketId !== ticketId || !ticket.isCloseReasonContextEditable(context)) return null;
+        if (!context || context.scope !== scope || context.steamId !== steamId3 || context.ticketId !== ticketId || !ticket.isCloseReasonContextEditable(context)) return null;
       } else if (!ticket.scopeHasInProgressStatus(scope, { includeActivePanel: false })) {
         return null;
       }
-      return { scope, steamId: steamId2, ticketId };
+      return { scope, steamId: steamId3, ticketId };
     }
     bindPunishmentConfirmation(dialog) {
       if (!this.isPunishmentConfirmationEnabled() || this.punishmentBindings.has(dialog) || dialog.getAttribute?.("data-state") === "closed") return;
@@ -7371,12 +8290,12 @@ ${nextMessage}` : nextMessage;
       }
       this.recoverPunishmentBindingOrigin(binding);
       if (event.defaultPrevented || !binding.initialOrigin) return;
-      const steamId2 = binding.input.value.trim();
-      if (!/^\d{17,18}$/.test(steamId2) || binding.input.disabled || binding.form.checkValidity && !binding.form.checkValidity() || binding.dialog.querySelector('[aria-invalid="true"]')) {
+      const steamId3 = binding.input.value.trim();
+      if (!/^\d{17,18}$/.test(steamId3) || binding.input.disabled || binding.form.checkValidity && !binding.form.checkValidity() || binding.dialog.querySelector('[aria-invalid="true"]')) {
         this.cancelPunishmentIntent(binding);
         return;
       }
-      const origin = this.getPunishmentConfirmationOrigin(binding.initialOrigin.scope, steamId2);
+      const origin = this.getPunishmentConfirmationOrigin(binding.initialOrigin.scope, steamId3);
       if (!origin || origin.steamId !== binding.initialOrigin.steamId || origin.ticketId !== binding.initialOrigin.ticketId) return;
       if (binding.attemptToken) return;
       const attemptToken = {};
@@ -7451,9 +8370,9 @@ ${nextMessage}` : nextMessage;
         if (this.isSiteRecidivismAction(event.target, dialog)) manualReason = true;
       };
       const onSteamIdChange = () => {
-        const steamId2 = steamInput.value.trim();
-        if (steamId2 === lastSteamId) return;
-        lastSteamId = steamId2;
+        const steamId3 = steamInput.value.trim();
+        if (steamId3 === lastSteamId) return;
+        lastSteamId = steamId3;
         manualReason = false;
         applyReason();
       };
@@ -7479,14 +8398,14 @@ ${nextMessage}` : nextMessage;
       const element = target?.nodeType === 1 ? target : target?.parentElement;
       const button = element?.closest?.('button[type="button"]');
       if (!button || !dialog.contains(button) || isIohNode(button)) return false;
-      const list = button.closest("li")?.parentElement;
-      if (list?.tagName !== "UL" || !dialog.contains(list.parentElement)) return false;
-      const heading = list.parentElement.querySelector(":scope > span");
+      const list2 = button.closest("li")?.parentElement;
+      if (list2?.tagName !== "UL" || !dialog.contains(list2.parentElement)) return false;
+      const heading = list2.parentElement.querySelector(":scope > span");
       return String(heading?.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "\u0440\u0435\u0446\u0438\u0434\u0438\u0432 \u043F\u043E \u0434\u0440\u0443\u0433\u043E\u0439 \u043F\u0440\u0438\u0447\u0438\u043D\u0435";
     }
     applySuggestedMuteReason(reasonSelect, dialog) {
-      const steamId2 = this.resolveMuteFormSteamId(dialog);
-      const label = this.ticketService?.getSuggestedMuteReason(steamId2);
+      const steamId3 = this.resolveMuteFormSteamId(dialog);
+      const label = this.ticketService?.getSuggestedMuteReason(steamId3);
       if (label && this.setReasonByLabel(reasonSelect, label)) return true;
       return this.setReasonByLabel(reasonSelect, "\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C");
     }
@@ -7501,11 +8420,11 @@ ${nextMessage}` : nextMessage;
       }
       return ticketService.getOffenderSteamIdForScope(ticketService.getActivePunishmentScope()) || "";
     }
-    setReasonByLabel(reasonSelect, reasonLabel) {
-      if (!reasonSelect || !reasonLabel) {
+    setReasonByLabel(reasonSelect, reasonLabel2) {
+      if (!reasonSelect || !reasonLabel2) {
         return false;
       }
-      const normalized = this.normalizePunishmentReason(reasonLabel);
+      const normalized = this.normalizePunishmentReason(reasonLabel2);
       if (!normalized) {
         return false;
       }
@@ -7542,9 +8461,6 @@ ${nextMessage}` : nextMessage;
     }
   };
 
-  // modules/shared/playerProfile.js
-  var PLAYER_PROFILE_LINK_SELECTOR = 'a[href*="cybershoke.net/"], a[href*="cybershoke.ru/"]';
-
   // modules/DOMCoordinator.js
   var DOMCoordinator = class {
     constructor(app) {
@@ -7563,9 +8479,9 @@ ${nextMessage}` : nextMessage;
       this.observedTicketPanelRoots = /* @__PURE__ */ new WeakSet();
     }
     on(event, handler) {
-      const list = this.listeners.get(event) || [];
-      list.push(handler);
-      this.listeners.set(event, list);
+      const list2 = this.listeners.get(event) || [];
+      list2.push(handler);
+      this.listeners.set(event, list2);
       return () => {
         this.listeners.set(
           event,
@@ -7664,6 +8580,10 @@ ${nextMessage}` : nextMessage;
       }
       if (newRows.size) {
         newRows.forEach((row) => this.app._applyRowHighlights(row));
+        if (this.app.onComplaintQueueRowsAdded) {
+          const complaintRows = [...newRows].filter((row) => row.isConnected && this.isComplaintQueueRow(row));
+          if (complaintRows.length) this.app.onComplaintQueueRowsAdded(complaintRows);
+        }
       }
       if (updatedRows.size) {
         this.scheduleRowHighlights(updatedRows);
@@ -7673,13 +8593,13 @@ ${nextMessage}` : nextMessage;
       }
     }
     observeComplaintQueueTable(table) {
-      if (this.complaintQueueTableObservers.has(table)) {
-        return;
-      }
       const tbody = table.querySelector("tbody");
       if (!tbody) {
         return;
       }
+      const previous = this.complaintQueueTableObservers.get(table);
+      if (previous?.iohTbody === tbody) return;
+      previous?.disconnect();
       const observer = new MutationObserver((mutations) => {
         this.handleComplaintQueueTableMutations(mutations);
       });
@@ -7688,7 +8608,10 @@ ${nextMessage}` : nextMessage;
         subtree: true,
         characterData: true
       });
+      observer.iohTbody = tbody;
       this.complaintQueueTableObservers.set(table, observer);
+      const rows = [...tbody.querySelectorAll("tr")].filter((row) => row.isConnected && !isIohNode(row) && this.isComplaintQueueRow(row));
+      if (rows.length) this.app.onComplaintQueueRowsAdded?.(rows);
       console.log("[Helper] DOMCoordinator: complaintQueueTableObserver init");
     }
     refreshComplaintQueueTableObservers() {
@@ -7807,6 +8730,7 @@ ${nextMessage}` : nextMessage;
       });
     }
     inspectAddedNode(node, rowsToUpdate) {
+      if (node.matches?.("tbody") && this.app.ticketService.isComplaintQueueTable(node.closest("table"))) this.emit("tableAdded");
       if (node.matches?.("main, aside, h3, section") || node.querySelector?.("main, h3")) this.emit("pageTools");
       if (this.isRelevantNotificationNode(node)) {
         this.emit("notification");
@@ -8009,19 +8933,19 @@ ${nextMessage}` : nextMessage;
       if (!root) return;
       const render = () => {
         if (!/^\/moderator\/profile\/(7656119\d{10})$/.test(location.pathname)) return;
-        const steamId2 = location.pathname.split("/").at(-1);
+        const steamId3 = location.pathname.split("/").at(-1);
         const native = [...root.querySelectorAll("button")].find((b) => b.textContent.trim() === "\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430" && !b.closest('[aria-hidden="true"]'));
         if (!native) return;
         const existing = native.parentElement.querySelector(".ioh-analytics-launch");
         if (existing) {
-          existing.dataset.steamId = steamId2;
+          existing.dataset.steamId = steamId3;
           return;
         }
         const button = markIoh(this.document.createElement("button"));
         const peer = [...native.parentElement.querySelectorAll(":scope > button")].find((item) => item !== native && !item.hasAttribute("data-ioh"));
         button.className = (peer?.className || native.className) + " ioh-analytics-launch";
         button.type = "button";
-        button.dataset.steamId = steamId2;
+        button.dataset.steamId = steamId3;
         button.setAttribute("aria-label", "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A\u0443 \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u0430 IoHelper \u0432 \u043D\u043E\u0432\u043E\u0439 \u0432\u043A\u043B\u0430\u0434\u043A\u0435");
         button.title = "\u041F\u043E\u0434\u0440\u043E\u0431\u043D\u0430\u044F \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430 \u0438 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u043E\u0432";
         button.innerHTML = '<span class="ioh-analytics-launch__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16M8 15v-4m5 4V7m5 8v-6"/></svg></span><span class="ioh-analytics-launch__label">\u0410\u043D\u0430\u043B\u0438\u0442\u0438\u043A\u0430 IoHelper</span><svg class="ioh-analytics-launch__arrow" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>';
@@ -8189,12 +9113,161 @@ ${nextMessage}` : nextMessage;
     }
   };
 
+  // modules/native/Store.js
+  var NativeDataStore = class {
+    constructor() {
+      this.resources = /* @__PURE__ */ new Map();
+      this.tickets = /* @__PURE__ */ new Map();
+      this.players = /* @__PURE__ */ new Map();
+      this.queues = /* @__PURE__ */ new Map();
+      this.histories = /* @__PURE__ */ new Map();
+      this.bypasses = /* @__PURE__ */ new Map();
+      this.servers = /* @__PURE__ */ new Map();
+      this.listeners = /* @__PURE__ */ new Set();
+      this.revision = 0;
+      this.account = null;
+      this.sizes = /* @__PURE__ */ new WeakMap();
+    }
+    retain(map, key, value, limit, byteLimit = 8 * 1024 * 1024) {
+      let budget = this.sizes.get(map);
+      if (!budget) {
+        budget = { total: 0, keys: /* @__PURE__ */ new Map() };
+        this.sizes.set(map, budget);
+      }
+      const bytes = JSON.stringify(value).length * 2;
+      budget.total -= budget.keys.get(key) || 0;
+      budget.keys.delete(key);
+      map.delete(key);
+      budget.keys.set(key, bytes);
+      budget.total += bytes;
+      map.set(key, value);
+      while (map.size > limit || budget.total > byteLimit) {
+        const oldest = map.keys().next().value;
+        budget.total -= budget.keys.get(oldest) || 0;
+        budget.keys.delete(oldest);
+        map.delete(oldest);
+      }
+    }
+    subscribe(listener) {
+      this.listeners.add(listener);
+      return () => this.listeners.delete(listener);
+    }
+    mergePlayer(id, patch, event) {
+      if (!id) return;
+      const p = this.players.get(id) || { steamId: id, stamps: {}, orders: {} };
+      for (const [key, value] of Object.entries(patch)) {
+        if (key === "steamId" || value === void 0) continue;
+        if ((p.stamps[key] ?? -1) > event.startedAt || p.stamps[key] === event.startedAt && p.orders[key] > event.sequence) continue;
+        p[key] = value;
+        p.stamps[key] = event.startedAt;
+        p.orders[key] = event.sequence;
+        if (key === "serverIp") p.presenceAt = event.receivedAt;
+      }
+      p.updatedAt = event.receivedAt;
+      this.retain(this.players, id, p, 1500);
+    }
+    mergeTicket(p, event) {
+      const previous = this.tickets.get(p.key);
+      const t = previous || { key: p.key, stamps: {}, orders: {} };
+      for (const [key, value] of Object.entries(p)) {
+        if (value === void 0 || (t.stamps[key] ?? -1) > event.startedAt || t.stamps[key] === event.startedAt && t.orders[key] > event.sequence) continue;
+        t[key] = value;
+        t.stamps[key] = event.startedAt;
+        t.orders[key] = event.sequence;
+      }
+      t.updatedAt = Math.max(t.updatedAt || 0, event.receivedAt);
+      this.retain(this.tickets, p.key, t, 500, 4 * 1024 * 1024);
+      const profile = {};
+      if (Object.hasOwn(p, "playtime")) profile.playtime = p.playtime;
+      if (p.suspectCountry) profile.country = p.suspectCountry;
+      this.mergePlayer(p.suspectId, profile, event);
+      if (p.senderCountry) this.mergePlayer(p.senderId, { country: p.senderCountry }, event);
+      if (p.presence) this.mergePlayer(p.suspectId, p.presence, event);
+    }
+    apply(event) {
+      if (event?.version !== 1 || !Number.isFinite(event.startedAt) || !Number.isFinite(event.receivedAt) || !Number.isSafeInteger(event.sequence) || event.sequence < 0 || typeof event.key !== "string") return false;
+      const p = event.payload;
+      const retained = event.kind === "history" ? this.history(p?.steamId, p?.resource) : event.kind === "queue" ? this.queues.get(event.key) : event.kind === "bypass" ? this.bypasses.get(p?.steamId) : event.kind === "account" ? this.accountStamp : event.kind === "servers" ? this.serverStamp : null;
+      const previous = this.resources.get(event.key) || retained;
+      if (previous && (previous.startedAt > event.startedAt || previous.startedAt === event.startedAt && previous.sequence >= event.sequence)) return false;
+      if (!p || !["queue", "ticket", "player", "history", "account", "bypass", "servers", "serverPlayers", "action", "resourceError"].includes(event.kind)) return false;
+      if (JSON.stringify(event).length > 1024 * 1024) return false;
+      this.retain(this.resources, event.key, event, 160);
+      if (event.kind === "queue") {
+        this.queues.set(event.key, { entity: p.entity, keys: p.items.map((x) => x.key), startedAt: event.startedAt, sequence: event.sequence });
+        while (this.queues.size > 32) this.queues.delete(this.queues.keys().next().value);
+        p.items.forEach((t) => this.mergeTicket(t, event));
+      } else if (event.kind === "ticket") this.mergeTicket(p, event);
+      else if (event.kind === "player") this.mergePlayer(p.steamId, p, event);
+      else if (event.kind === "history") {
+        const key = p.steamId + ":" + p.resource;
+        this.retain(this.histories, key, { ...p, revision: this.revision + 1, startedAt: event.startedAt, sequence: event.sequence, receivedAt: event.receivedAt }, 240);
+        if (p.resource === "bans" || p.resource === "mutes") this.mergePlayer(p.steamId, { [p.resource]: p.items, [p.resource === "bans" ? "isBanned" : "isMuted"]: p.items.some((x) => punishmentActive(x)) }, event);
+      } else if (event.kind === "account") {
+        this.account = p;
+        this.accountStamp = { startedAt: event.startedAt, sequence: event.sequence };
+      } else if (event.kind === "bypass") {
+        this.bypasses.delete(p.steamId);
+        this.bypasses.set(p.steamId, { ...p, startedAt: event.startedAt, sequence: event.sequence });
+        while (this.bypasses.size > 500) this.bypasses.delete(this.bypasses.keys().next().value);
+      } else if (event.kind === "servers") {
+        this.servers = new Map(p.map((x) => [x.endpoint, x.label]));
+        this.serverStamp = { startedAt: event.startedAt, sequence: event.sequence };
+      } else if (event.kind === "serverPlayers") {
+        for (const x of p.players) {
+          const patch = {};
+          if (x.isModerator !== void 0) patch.isModerator = x.isModerator;
+          if (p.endpoint) patch.serverIp = p.endpoint;
+          this.mergePlayer(x.steamId, patch, event);
+        }
+      }
+      this.revision++;
+      for (const listener of this.listeners) {
+        try {
+          listener(event);
+        } catch (error) {
+          console.error("[IoHelper] Native data consumer failed", error?.message || "unknown");
+        }
+      }
+      return true;
+    }
+    player(id) {
+      return this.players.get(id) || null;
+    }
+    resourceState(key) {
+      const event = this.resources.get(key);
+      return !event ? "unknown" : event.kind === "resourceError" ? "error" : "ready";
+    }
+    history(id, kind) {
+      return this.histories.get(id + ":" + kind) || null;
+    }
+    active(id, kind) {
+      const p = this.player(id), rows = p?.[kind];
+      const key = kind === "bans" ? "isBanned" : "isMuted";
+      if (p && (p.stamps[key] > p.stamps[kind] || p.stamps[key] === p.stamps[kind] && p.orders[key] > p.orders[kind])) return null;
+      return rows?.find((x) => punishmentActive(x)) || null;
+    }
+    queueTickets() {
+      const keys = new Set([...this.queues.values()].flatMap((q) => q.keys));
+      return [...keys].map((k) => this.tickets.get(k)).filter(Boolean);
+    }
+    clear() {
+      for (const map of [this.resources, this.tickets, this.players, this.queues, this.histories, this.bypasses, this.servers]) map.clear();
+      this.account = null;
+      this.accountStamp = null;
+      this.serverStamp = null;
+      this.revision++;
+      this.sizes = /* @__PURE__ */ new WeakMap();
+    }
+  };
+
   // modules/App.js
   var App = class {
     constructor({ window: window2, document: document2, chrome: chrome2, config, settingsOverrides = {} }) {
       this.window = window2;
       this.document = document2;
       this.chrome = chrome2;
+      this.nativeData = window2.__iohNativeData?.store || new NativeDataStore();
       this.rules = config.muteRules || [];
       this.spamRules = config.spamRules || {};
       this.muteExceptions = config.muteExceptions || {};
@@ -8240,8 +9313,11 @@ ${nextMessage}` : nextMessage;
         rules: this.rules,
         spamRules: this.spamRules,
         muteExceptions: this.muteExceptions,
+        nativeData: this.nativeData,
         chrome: chrome2
       });
+      this.ticketService.setNativeModerators(config.moderators);
+      this.ticketService.syncNativePermissions();
       this.serverConnectionMemory = new ServerConnectionMemory({ document: document2, chrome: chrome2 });
       this.ticketService.serverConnectionMemory = this.serverConnectionMemory;
       this.moderatorService = {
@@ -8306,6 +9382,7 @@ ${nextMessage}` : nextMessage;
             chrome: this.chrome,
             isEnabled: () => Boolean(this.features.scanSchedulePage)
           });
+          this._moderatorService.participantService = this.ticketService;
           this.moderatorService = this._moderatorService;
           return this._moderatorService;
         });
@@ -8318,9 +9395,32 @@ ${nextMessage}` : nextMessage;
     }
     async start() {
       let pageClosed = false;
+      this._nativeUnsubscribe = this.nativeData.subscribe((event) => {
+        this.ticketService.consumeNativeEvent(event);
+        this.maybeAutoConnectOnTicketMount();
+        this.ticketService.refreshComplaintPunishmentButtons();
+        if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
+        if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({ force: true });
+        this._reapplyTicketRowHighlights();
+        this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]').forEach((textarea) => {
+          if (this.features.processTicketRules && this.ticketService.isVisibleTicketTextarea(textarea)) this.ensureTicketChatHistoryObserver(textarea);
+        });
+        if (this.features.translateText) this.messageService.processChatMessages();
+      });
       this.window.addEventListener("pagehide", (event) => {
         if (event.persisted) return;
         pageClosed = true;
+        this._trackingStopped = true;
+        this.ticketService._pageClosed = true;
+        this.ticketService._offenderTrackingArrivals?.clear();
+        this.ticketService._offenderTicketChecks?.clear();
+        this._nativeUnsubscribe?.();
+        this.ticketService.stopOpenTicketOffenderTracking();
+        this.ticketService.cancelTriggerNavigation();
+        this._offenderTrackingGeneration++;
+        clearTimeout(this.ipTrackTimeoutId);
+        this.ipTrackTimeoutId = null;
+        this.teardownTicketChatHistoryObservers();
         this.serverConnectionMemory.stop();
         this.ticketService.stopCloseReasonSelection();
         this.ticketService.stopTicketPunishmentFeedback();
@@ -8427,6 +9527,7 @@ ${nextMessage}` : nextMessage;
       const intervalChanged = prevInterval !== void 0 && prevInterval !== currentInterval;
       const reviewIntervalChanged = prevReviewInterval !== void 0 && prevReviewInterval !== currentReviewInterval;
       if (!isEnabled || intervalChanged || reviewIntervalChanged) {
+        if (!isEnabled) this.ticketService._offenderTrackingArrivals?.clear();
         this.restartOffenderTracking();
         return;
       }
@@ -8450,6 +9551,15 @@ ${nextMessage}` : nextMessage;
         this.scheduleNextOffenderInterval();
       }
     }
+    onComplaintQueueRowsAdded(rows = []) {
+      if (this._trackingStopped || !this.features.trackOffenderServer) return;
+      this.ticketService.renderNativeQueue();
+      this.ticketService.queueOffenderTrackingRows(rows);
+      if (this._offenderTrackingPassPromise) {
+        return;
+      }
+      this.restartOffenderTracking({ immediate: true });
+    }
     isComplaintQueuePage() {
       const path = this.window.location.pathname || "";
       return /\/support\/(tickets|reports)\b/i.test(path);
@@ -8465,7 +9575,9 @@ ${nextMessage}` : nextMessage;
       return this.isComplaintDetailPage();
     }
     getOffenderTrackIntervalSec() {
-      return this.isComplaintDetailPage() ? this.settings.trackOffenderIntervalWhileReviewing || 30 : this.settings.trackOffenderInterval || 5;
+      const reviewing = this.isComplaintDetailPage();
+      const n = Number(reviewing ? this.settings.trackOffenderIntervalWhileReviewing : this.settings.trackOffenderInterval);
+      return Number.isFinite(n) && n > 0 ? Math.max(1, n) : reviewing ? 30 : 5;
     }
     syncOffenderTrackingForPage() {
       this.ticketService.syncOpenTicketOffenderTracking();
@@ -8478,9 +9590,10 @@ ${nextMessage}` : nextMessage;
       this._wasOnComplaintDetail = next;
       this._offenderTrackingHref = href;
       this._offenderTrackingTextarea = textarea;
-      this.restartOffenderTracking({ immediate: !next });
+      this.restartOffenderTracking({ immediate: true });
     }
     runOffenderTrackingPass() {
+      if (this._trackingStopped) return Promise.resolve();
       if (this._offenderTrackingPassPromise) {
         return this._offenderTrackingPassPromise;
       }
@@ -8501,7 +9614,12 @@ ${nextMessage}` : nextMessage;
         }
         const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1e3;
         if (this.isComplaintDetailPage()) {
-          await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, { isCurrent });
+          const ticket = this.ticketService.getNativeTicket?.(this.ticketService.getAutoConnectScope?.());
+          if (ticket && !this.ticketService.getCachedUserData(ticket.suspectId, cacheIntervalMs)) {
+            await this.ticketService.fetchParsedUserData(ticket.suspectId).catch(() => {
+            });
+          }
+          if (isCurrent()) await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, { isCurrent });
         }
         if (isCurrent()) {
           await this.ticketService.checkOffendersServers(cacheIntervalMs, { isCurrent });
@@ -8512,7 +9630,7 @@ ${nextMessage}` : nextMessage;
         this._offenderTrackingPassPromise = null;
         const restart = this._offenderTrackingRestartRequested;
         this._offenderTrackingRestartRequested = false;
-        if (restart && this.features.trackOffenderServer) {
+        if ((restart || this.ticketService.hasPendingOffenderTrackingRows?.()) && this.features.trackOffenderServer) {
           void this.runOffenderTrackingPass();
         } else {
           this.scheduleNextOffenderInterval();
@@ -8522,6 +9640,7 @@ ${nextMessage}` : nextMessage;
       return pass;
     }
     scheduleNextOffenderInterval() {
+      if (this._trackingStopped) return;
       if (!this.features.trackOffenderServer || this._offenderTrackingPassPromise || this.ipTrackTimeoutId != null) {
         return;
       }
@@ -8574,6 +9693,7 @@ ${nextMessage}` : nextMessage;
       }
     }
     runDOMUpdates() {
+      this.ticketService.syncNativeTicketViews();
       this.initPageSpecificFeatures();
       this.initTicketSectionFeatures();
       this.initTableFeatures();
@@ -8627,6 +9747,11 @@ ${nextMessage}` : nextMessage;
       if (!this.features.autoConnectServer) {
         return;
       }
+      if (this.nativeData) {
+        const ticket = this.ticketService.getNativeTicket(this.ticketService.getAutoConnectScope());
+        if (!ticket || !this.ticketService.nativePlayer(ticket.suspectId)?.serverIp) return;
+        if (!this.ticketService.scopeHasInProgressStatus(this.ticketService.getAutoConnectScope())) return;
+      }
       const key = this.ticketService.getAutoConnectTicketKey();
       if (!key) {
         return;
@@ -8634,9 +9759,17 @@ ${nextMessage}` : nextMessage;
       if (this._lastAutoConnectTicketKey === key) {
         return;
       }
-      this._lastAutoConnectTicketKey = key;
+      if (this.nativeData) {
+        const ticket = this.ticketService.getNativeTicket(this.ticketService.getAutoConnectScope());
+        const endpoint2 = this.ticketService.nativePlayer(ticket.suspectId).serverIp;
+        if (this.ticketService.isAlreadyOnRequestedServer(endpoint2)) {
+          this._lastAutoConnectTicketKey = key;
+          return;
+        }
+      }
       console.log("[Helper] \u0410\u0432\u0442\u043E-\u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435: mount \u0442\u0438\u043A\u0435\u0442\u0430", key);
-      this.ticketService.connectToCurrentServer();
+      const connected = this.ticketService.connectToCurrentServer();
+      if (!this.nativeData || connected) this._lastAutoConnectTicketKey = key;
     }
     initVisibilityCatchUpListener() {
       if (this.visibilityCatchUpInstalled) {
@@ -8893,147 +10026,10 @@ ${nextMessage}` : nextMessage;
       this.ticketChatHistoryObservers.clear();
       this.ticketService.resetChatAnalysisCache(null, { preserveCompleted: true });
     }
-    _findChatHistoryBlockScoped(scopeEl) {
-      return this._findHistoryBlockScoped(scopeEl, ["\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u0427\u0430\u0442\u0430"]);
-    }
-    _findWarningHistoryBlockScoped(scopeEl) {
-      return this._findHistoryBlockScoped(scopeEl, ["\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u043F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0439", "\u0418\u0441\u0442\u043E\u0440\u0438\u044F \u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0439"]);
-    }
-    _findHistoryBlockScoped(scopeEl, headerTexts) {
-      const containers = [];
-      if (scopeEl) {
-        containers.push(scopeEl);
-        const closestSection = scopeEl.closest?.('section, article, main, [role="main"]');
-        if (closestSection && !containers.includes(closestSection)) {
-          containers.push(closestSection);
-        }
-      }
-      containers.push(this.document.body);
-      for (const container of containers) {
-        for (const headerText of headerTexts) {
-          const block = this.ticketService.getBlockByHeaderScoped(headerText, container);
-          if (block) {
-            return block;
-          }
-          const card = this.ticketService.getHistorySectionCard(headerText, container);
-          if (card) {
-            return card;
-          }
-        }
-      }
-      return null;
-    }
     ensureTicketChatHistoryObserver(textarea) {
-      if (this.ticketChatHistoryObservers.has(textarea)) return;
-      if (!this.document.contains(textarea)) return;
-      if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
-      console.log("[Helper] ticketChatHistoryObserver: mount");
-      const scopeEl = textarea.closest('section, article, main, [role="main"]') || textarea.parentElement || this.document.body;
-      const entry = {
-        observer: null,
-        waitObserver: null,
-        debounceTimerId: null,
-        idleId: null,
-        chatAttached: false,
-        warningAttached: false
-      };
-      const observer = new MutationObserver((mutations) => {
-        if (mutations.every((mutation) => isIohNode(mutation.target))) {
-          return;
-        }
-        if (!this.features.processTicketRules) return;
-        if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
-        this.domCoordinator.notify("chatChanged");
-        this._debouncedProcessTicketRules(textarea);
-      });
-      entry.observer = observer;
-      const tryAttachBlocks = () => {
-        const blocks = this.ticketService.getHistoryBlocks(scopeEl);
-        const chatHistoryBlock = blocks.chat || this._findChatHistoryBlockScoped(scopeEl);
-        const warningHistoryBlock = blocks.warning || this._findWarningHistoryBlockScoped(scopeEl);
-        if (chatHistoryBlock && !entry.chatAttached) {
-          observer.observe(chatHistoryBlock, { childList: true, subtree: true });
-          entry.chatAttached = true;
-          console.log("[Helper] ticketChatHistoryObserver: attached chat history");
-        }
-        if (warningHistoryBlock && !entry.warningAttached) {
-          observer.observe(warningHistoryBlock, { childList: true, subtree: true });
-          entry.warningAttached = true;
-          console.log("[Helper] ticketChatHistoryObserver: attached warning history");
-        }
-        return entry.chatAttached;
-      };
-      const finishWaitObserver = (reason = "done") => {
-        if (entry.waitObserver) {
-          entry.waitObserver.disconnect();
-          entry.waitObserver = null;
-          console.log(`[Helper] ticketChatHistoryObserver: wait finish (${reason})`);
-        }
-      };
-      if (tryAttachBlocks()) {
-        this.ticketChatHistoryObservers.set(textarea, entry);
-        this._runTicketChatAnalysis(textarea);
-        if (!entry.warningAttached) {
-          console.log("[Helper] ticketChatHistoryObserver: wait start (warning)");
-          const waitObserver2 = new MutationObserver((mutations) => {
-            if (mutations.every((mutation) => isIohNode(mutation.target))) {
-              return;
-            }
-            if (!this.document.contains(textarea)) {
-              finishWaitObserver("textarea gone");
-              return;
-            }
-            tryAttachBlocks();
-            if (entry.warningAttached) {
-              finishWaitObserver("warning attached");
-            }
-          });
-          entry.waitObserver = waitObserver2;
-          waitObserver2.observe(this.document.body, { childList: true, subtree: true });
-        }
-        return;
-      }
-      console.log("[Helper] ticketChatHistoryObserver: wait start (chat)");
-      const waitObserver = new MutationObserver((mutations) => {
-        if (mutations.every((mutation) => isIohNode(mutation.target))) {
-          return;
-        }
-        if (!this.document.contains(textarea)) {
-          finishWaitObserver("textarea gone");
-          return;
-        }
-        if (!tryAttachBlocks()) return;
-        finishWaitObserver("chat attached");
-        if (!this.ticketChatHistoryObservers.has(textarea)) {
-          this.ticketChatHistoryObservers.set(textarea, entry);
-        }
-        this._runTicketChatAnalysis(textarea);
-        if (!entry.warningAttached) {
-          console.log("[Helper] ticketChatHistoryObserver: wait start (warning)");
-          const warningWaitObserver = new MutationObserver((mutations2) => {
-            if (mutations2.every((mutation) => isIohNode(mutation.target))) {
-              return;
-            }
-            if (!this.document.contains(textarea)) {
-              warningWaitObserver.disconnect();
-              entry.waitObserver = null;
-              console.log("[Helper] ticketChatHistoryObserver: wait finish (textarea gone)");
-              return;
-            }
-            tryAttachBlocks();
-            if (entry.warningAttached) {
-              warningWaitObserver.disconnect();
-              entry.waitObserver = null;
-              console.log("[Helper] ticketChatHistoryObserver: wait finish (warning attached)");
-            }
-          });
-          entry.waitObserver = warningWaitObserver;
-          warningWaitObserver.observe(this.document.body, { childList: true, subtree: true });
-        }
-      });
-      entry.waitObserver = waitObserver;
-      this.ticketChatHistoryObservers.set(textarea, entry);
-      waitObserver.observe(this.document.body, { childList: true, subtree: true });
+      if (!this.document.contains(textarea) || !this.ticketService.isVisibleTicketTextarea(textarea)) return;
+      if (!this.ticketChatHistoryObservers.has(textarea)) this.ticketChatHistoryObservers.set(textarea, {});
+      void this._runTicketChatAnalysis(textarea);
     }
     _debouncedProcessTicketRules(textarea, delayMs = 100) {
       const entry = this.ticketChatHistoryObservers.get(textarea);

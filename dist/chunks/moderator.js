@@ -118,8 +118,8 @@ var ModeratorService = class _ModeratorService {
   }
   resolveModeratorType(steamId2, moderators) {
     const normalized = this.normalizeModerators(moderators);
-    if (normalized.verification[steamId2]) return "verification";
-    return _ModeratorService.MODERATOR_CATEGORIES.some((category) => normalized[category][steamId2]) ? "admin" : null;
+    if (_ModeratorService.MODERATOR_CATEGORIES.some((category) => normalized[category][steamId2])) return "admin";
+    return normalized.verification[steamId2] ? "verification" : null;
   }
   insertModeratorBadge(link, badgeType) {
     const iconKey = badgeType === "verification" ? "verification" : "admin";
@@ -198,6 +198,8 @@ var ModeratorService = class _ModeratorService {
       return;
     }
     if (generation !== this._highlightGeneration) return;
+    this.participantService?.setNativeModerators(moderators);
+    this.participantService?.syncNativeTicketViews();
     for (const section of this._findCurrentServerSections()) {
       for (const link of section.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)) {
         const steamId2 = steamIdFromPlayerProfileUrl(link.href);

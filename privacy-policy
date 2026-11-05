@@ -56,17 +56,17 @@ This data remains in the browser profile unless the user clears extension data o
 
 The extension may make requests to:
 
-- the official CYBERSHOKE moderation website (`https://io.cybershoke.net`, `https://io.cybershoke.ru`), including the user-data API used by offender tracking;
+- the official CYBERSHOKE moderation website (`https://io.cybershoke.net`, `https://io.cybershoke.ru`) for moderator statistics and schedule features, and CYBERSHOKE's public user-data API for periodic offender tracking and player context. The same responses supply server status, playtime and Faceit; Faceit has no separate external lookup;
 - Steam avatar CDN (`*.steamstatic.com`), to display the public avatar URL returned by the moderator profile;
 - this project’s GitHub repository, to download the latest `config.json`;
-- FastMM (`mobile.fastmm.win`), to look up public Steam profile metadata (account creation date and Faceit ELO) when those features are enabled;
+- FastMM (`mobile.fastmm.win`), to look up the Steam account creation date when that feature is enabled;
 - Google Translate (`translate.googleapis.com`) and MyMemory (`api.mymemory.translated.net`), when the chat translation feature is enabled.
 
 These requests exist only to support the features above. The extension does not send browsing history or unrelated personal data to these endpoints.
 
 ## Third-party services
 
-If translation is enabled, message text is sent to the selected translation provider to obtain a translation. FastMM is queried only with the Steam identifier already present on the moderation page, when Steam/Faceit profile features are enabled.
+If translation is enabled, message text is sent to the selected translation provider to obtain a translation. FastMM is queried only with the Steam identifier already present on the moderation page, when the Steam account creation date feature is enabled. Faceit ELO and level come from the site's own player response. Normalized native ticket/player data stay in bounded page memory; authentication headers and raw responses are not persisted.
 
 IO HELPER does not sell, rent, or otherwise share user data with third parties for advertising or analytics.
 
