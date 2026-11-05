@@ -37,7 +37,7 @@ export function clientExports(source) {
     });
 }
 
-export async function findNativeClient({document, origin, fetchText, importModule, signal}) {
+export async function findNativeClient({document, origin, fetchText, importModule, signal, onModule}) {
     const entries=[...document.querySelectorAll('script[type="module"][src]')].map(s=>s.src).filter(src=>{
         try {const url=new URL(src);return url.origin===origin&&/\.js$/.test(url.pathname);}catch{return false;}
     });
@@ -56,6 +56,7 @@ export async function findNativeClient({document, origin, fetchText, importModul
             }));
             for(const candidate of batch)if(candidate.exports.length) {
                 const module=await importModule(candidate.url);
+                onModule?.(module);
                 for(const key of candidate.exports) {
                     const client=module[key];
                     if(typeof client?.post!=='function'||!client?.interceptors)continue;

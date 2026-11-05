@@ -1,5 +1,6 @@
 import {collectNativeProfile,collectNativeRoster,findNativeClient} from './NativeApi.js';
 import {parseSteamId,validateRange} from './model.js';
+import {installNativeObserver} from '../native/Observer.js';
 
 export function installNativeReadBridge({window,document,fetchText,importModule}) {
     if(window.__iohNativeReadBridgeV2)return;
@@ -59,10 +60,12 @@ export function installNativeReadBridge({window,document,fetchText,importModule}
 
 if(typeof window!=='undefined'&&['io.cybershoke.net','io.cybershoke.ru'].includes(window.location.hostname)) {
     const nativeFetch=window.fetch.bind(window);
-    installNativeReadBridge({window,document,
+    const dependencies = {window,document,
         fetchText:async(url,signal)=>{
             const response=await nativeFetch(url,{signal,cache:'force-cache'});
             if(!response.ok)throw new Error('Не удалось прочитать клиент сайта');
             return response.text();
-        },importModule:url=>import(/* @vite-ignore */ url)});
+        },importModule:url=>import(/* @vite-ignore */ url)};
+    installNativeObserver(dependencies);
+    installNativeReadBridge(dependencies);
 }
