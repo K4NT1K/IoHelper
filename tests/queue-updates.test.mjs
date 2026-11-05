@@ -5,6 +5,21 @@ import {DOMCoordinator} from '../modules/DOMCoordinator.js';
 import {App} from '../modules/App.js';
 import {clock, deferred} from './clock.mjs';
 
+test('Native HS excludes HSDM in category, mode or server label; missing/zero stats clear old decoration',()=>{
+    let highlighted=true;
+    const span={textContent:'HS: 100%',classList:{contains:()=>highlighted,toggle:(_name,value)=>{highlighted=value;}}};
+    let data,serverText='DM';const server={get textContent(){return serverText;}};
+    const row={querySelector:()=>({closest:()=>server}),querySelectorAll:s=>s==='span'?[span]:[]};
+    const service=new MessageService({document:{},utils:{},badgeService:{},settings:{headshotPercentage:95}});
+    service.ticketService={nativeData:{},getNativeRowTicket:()=>data};
+    for(const record of [{mode:'PISTOLDM',category:'HSDM',kills:10,headshots:10},
+        {mode:'hsdm',kills:10,headshots:10},{mode:'DM',kills:0,headshots:0},null]) {
+        data=record;highlighted=true;service.highlightHighHs(row);assert.equal(highlighted,false);
+    }
+    data={mode:'DM',kills:10,headshots:10};service.highlightHighHs(row);assert.equal(highlighted,true);
+    serverText='PISTOLDM (HSDM)';service.highlightHighHs(row);assert.equal(highlighted,false);
+});
+
 test('A batch of newly mounted complaint rows wakes tracking once; own/detached nodes do not',()=>{
     const table={},row={nodeType:1,isConnected:true,matches:s=>s==='tr',closest:s=>s==='table'?table:null};
     const own={...row,closest:s=>s==='[data-ioh]'?{}:table},detached={...row,isConnected:false};

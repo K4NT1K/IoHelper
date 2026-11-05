@@ -25,3 +25,36 @@ test('Translation: late response after cell reuse cannot overwrite the new messa
     s.node.nodeValue='replacement';s.service.decorateMessageCell(s.cell);resolve({translated:'old translation'});await pending;
     assert.equal(s.node.nodeValue,'replacement');
 });
+
+function nativeFixture() {
+    const s = fixture(), scope = {}, ticket = {key:'ticket:1', suspectId:'76561198000000001'};
+    const message = {id:'message1', text:'hello'};
+    s.service.ticketService = {getNativeTicket:()=>ticket, nativeData:{history:()=>({items:[message]})}};
+    return {...s, scope, ticket, message};
+}
+
+test('Native translation changes the original text node and creates no overlay, restoring it on leave', async()=>{
+    const s=nativeFixture(), native=()=>{};s.cell.addEventListener('click',native);
+    s.service.decorateNativeMessageCell(s.cell,s.message,s.scope);
+    await s.handlers.get('mouseenter')();
+    assert.equal(s.node.nodeValue,'ru:hello');
+    const binding=s.service.translationBindings.get(s.cell);
+    assert.equal(binding.node,s.node);assert.equal(binding.overlay,undefined);
+    s.service.decorateNativeMessageCell(s.cell,s.message,s.scope);
+    assert.equal(s.service.translationBindings.get(s.cell),binding);
+    s.handlers.get('mouseleave')();assert.equal(s.node.nodeValue,'hello');
+    s.service.releaseTranslation(s.cell,binding);assert.equal(s.handlers.get('click'),native);
+});
+
+test('Native translation ignores a late result for another offender or changed message', async()=>{
+    for(const change of ['offender','message']) {
+        const s=nativeFixture();let resolve;
+        s.service.badgeService.translateText=()=>new Promise(r=>{resolve=r;});
+        s.service.decorateNativeMessageCell(s.cell,s.message,s.scope);
+        const pending=s.handlers.get('mouseenter')();
+        if(change==='offender')s.ticket.suspectId='76561198000000002';else s.message.text='new message';
+        s.node.nodeValue='new message';resolve({translated:'old translation'});await pending;
+        assert.equal(s.node.nodeValue,'new message');
+        s.service.clearTranslationDecorations();assert.equal(s.node.nodeValue,'new message');
+    }
+});

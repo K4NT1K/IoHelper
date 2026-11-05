@@ -15,25 +15,43 @@ export class MessageService {
         this.translationBindings = new Map();
     }
 
-    decorateMessageCell(messageCell) {
-        const textNode = this.utils.extractMainTextNode(messageCell);
-        if (!textNode) return;
+    decorateMessageCell(messageCell, originalText = null, nativeContext = null) {
+        if (this.ticketService?.nativeData && originalText == null) return;
         const previous = this.translationBindings.get(messageCell);
-        if (previous?.node === textNode && (
+        const sourceMatches = !nativeContext || previous?.nativeId === nativeContext.id
+            && previous.source === originalText && previous.scope === nativeContext.scope && previous.ticketKey === nativeContext.ticketKey && previous.steamId === nativeContext.steamId;
+        const reuseTranslated = sourceMatches && previous?.applied && previous.node?.nodeValue === previous.translated && messageCell.contains(previous.node);
+        let textNode = reuseTranslated ? previous.node : this.utils.extractMainTextNode(messageCell);
+        if (nativeContext && !reuseTranslated && textNode?.nodeValue.trim() !== originalText.trim()) textNode = null;
+        if (nativeContext && !textNode) {
+            const walker = this.document.createTreeWalker?.(messageCell, 4);
+            while (walker) {
+                const candidate = walker.nextNode(); if (!candidate) break;
+                if (candidate.nodeValue.trim() === originalText.trim()) {textNode = candidate; break;}
+            }
+        }
+        if (!textNode) {if (previous) this.releaseTranslation(messageCell, previous); return;}
+        if (sourceMatches && previous?.node === textNode && (
             textNode.nodeValue === previous.original || (previous.applied && textNode.nodeValue === previous.translated)
         )) return;
         if (previous) this.releaseTranslation(messageCell, previous);
-        if (this.utils.detectLanguage(textNode.nodeValue) || !/\p{L}/u.test(textNode.nodeValue)) return;
-        const binding = {node: textNode, original: textNode.nodeValue, translated: null, applied: false, pending: false};
+        const source = originalText ?? textNode.nodeValue;
+        if (this.utils.detectLanguage(source) || !/\p{L}/u.test(source)) return;
+        const binding = {node: textNode, original: textNode.nodeValue, source, translated: null, applied: false, pending: false,
+            nativeId: nativeContext?.id, scope: nativeContext?.scope, ticketKey: nativeContext?.ticketKey, steamId: nativeContext?.steamId};
         this.translationBindings.set(messageCell, binding);
         messageCell.dataset.mhlprHoverReady = 'true';
         messageCell.dataset.mhlprOriginalText = binding.original;
         messageCell.classList.add('ioh-chat-message');
+        const identityCurrent = () => !nativeContext || this.ticketService.getNativeTicket(nativeContext.scope)?.key === nativeContext.ticketKey
+            && this.ticketService.getNativeTicket(nativeContext.scope)?.suspectId === nativeContext.steamId
+            && this.ticketService.nativeData.history(nativeContext.steamId, 'chats')?.items.some(m => m.id === nativeContext.id && m.text === source);
         const current = () => this.translationBindings.get(messageCell) === binding
             && messageCell.isConnected && messageCell.contains(textNode)
-            && this.settings.features?.translateText !== false;
+            && this.settings.features?.translateText !== false && identityCurrent();
         binding.enter = async () => {
             if (textNode.nodeValue !== binding.original && !(binding.applied && textNode.nodeValue === binding.translated)) {
+                if (nativeContext) {this.releaseTranslation(messageCell, binding); return;}
                 this.decorateMessageCell(messageCell);
                 return this.translationBindings.get(messageCell)?.enter();
             }
@@ -42,7 +60,7 @@ export class MessageService {
                 if (!binding.translated) {
                     binding.pending = true;
                     messageCell.classList.add('ioh-loading');
-                    const result = await this.badgeService.translateText(binding.original, 'RU');
+                    const result = await this.badgeService.translateText(binding.source, 'RU');
                     if (!current() || textNode.nodeValue !== binding.original) return;
                     binding.translated = result?.translated || null;
                 }
@@ -59,7 +77,7 @@ export class MessageService {
             }
         };
         binding.leave = () => {
-            if (binding.applied && textNode.nodeValue === binding.translated) textNode.nodeValue = binding.original;
+            if (binding.applied && textNode.nodeValue === binding.translated && identityCurrent()) textNode.nodeValue = binding.original;
             binding.applied = false;
             messageCell.classList.remove('ioh-translated');
         };
@@ -107,6 +125,18 @@ export class MessageService {
         for (const [cell, binding] of this.translationBindings) {
             if (!cell.isConnected) this.releaseTranslation(cell, binding);
         }
+        if (this.ticketService?.nativeData) {
+            for (const textarea of this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]')) {
+                const scope = this.ticketService.getTicketScopeRoot(textarea);
+                const t = this.ticketService.getNativeTicket(scope); if (!t) continue;
+                const messages = this.ticketService.nativeData.history(t.suspectId, 'chats')?.items || [];
+                for (const [id, row] of this.ticketService.bindNativeMessageRows(scope)) {
+                    const message = messages.find(m => m.id === id), cell = row.querySelector('td:last-child');
+                    if (cell && message) this.decorateNativeMessageCell(cell, message, scope);
+                }
+            }
+            return;
+        }
         const scope = this.document.body;
         const chatHistoryBlock = this.ticketService?.getBlockByHeaderScoped('История Чата', scope)
             || this.ticketService?.getHistorySectionCard('История Чата', scope)
@@ -119,7 +149,33 @@ export class MessageService {
         });
     }
 
+    decorateNativeMessageCell(cell, message, scope) {
+        const ticket = this.ticketService.getNativeTicket(scope);
+        if (!ticket) return;
+        this.decorateMessageCell(cell, message.text, {id: message.id, scope, ticketKey: ticket.key, steamId: ticket.suspectId});
+    }
+
     highlightComplaintTriggers(targetRow) {
+        if (this.ticketService?.nativeData) {
+            for (const row of targetRow ? [targetRow] : this._getComplaintQueueRows()) {
+                const t = this.ticketService.getNativeRowTicket(row); if (!t || t.message == null) continue;
+                const cell = row.querySelectorAll('td')[5];
+                const node = [...(cell?.querySelectorAll('span') || [])].find(n => n.textContent === t.message);
+                if (!node || node.dataset.iohNativeMessage === t.message) continue;
+                node.dataset.iohNativeMessage = t.message;
+                const triggers = (this.settings.reasonTriggers || []).filter(Boolean).map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                if (!triggers.length) continue;
+                const regex = new RegExp(triggers.join('|'), 'gi');
+                const fragment = this.document.createDocumentFragment(); let pos = 0;
+                for (const match of t.message.matchAll(regex)) {
+                    fragment.append(this.document.createTextNode(t.message.slice(pos, match.index)));
+                    const span = this.document.createElement('span'); markIoh(span); span.className = 'ioh-complaint-trigger'; span.textContent = match[0]; fragment.append(span);
+                    pos = match.index + match[0].length;
+                }
+                fragment.append(this.document.createTextNode(t.message.slice(pos))); node.replaceChildren(fragment);
+            }
+            return;
+        }
         const rows = targetRow ? [targetRow] : this._getComplaintQueueRows();
 
         rows.forEach(row => {
@@ -161,6 +217,7 @@ export class MessageService {
     }
 
     clearComplaintTriggerHighlights() {
+        this.document.querySelectorAll('[data-ioh-native-message]').forEach(n => delete n.dataset.iohNativeMessage);
         this.document.querySelectorAll('.ioh-complaint-trigger').forEach(span => {
             span.replaceWith(this.document.createTextNode(span.textContent || ''));
         });
@@ -264,6 +321,15 @@ export class MessageService {
     }
 
     highlightNewAccounts(row) {
+        if (this.ticketService?.nativeData) {
+            const t = this.ticketService.getNativeRowTicket(row);
+            if (!t || t.playtime == null) return;
+            this.releaseHoursWatch(row);
+            const hours = Math.round(t.playtime / 3600);
+            if (hours > this.settings.newAccountHours) this._clearRowHoursHighlight(row);
+            else { this._setRowHoursState(row, hours); this._applyRowHoursHighlight(row); }
+            return;
+        }
         if (!row?.querySelector) {
             return;
         }
@@ -322,6 +388,20 @@ export class MessageService {
 
     highlightHighHs(row) {
         if (!row?.querySelectorAll) return;
+        if (this.ticketService?.nativeData) {
+            const t = this.ticketService.getNativeRowTicket(row);
+            const serverCell = row.querySelector('a[href^="steam://connect/"]')?.closest('td') || row.querySelectorAll('td')[1];
+            const isHeadshotsOnly = /HSDM/i.test([t?.mode, t?.category, serverCell?.textContent].filter(Boolean).join(' '));
+            const hs = t?.kills > 0 && t.headshots != null ? Math.round(t.headshots / t.kills * 100) : NaN;
+            const configured = this.settings.headshotPercentage;
+            const threshold = configured !== null && configured !== '' && Number.isFinite(Number(configured))
+                ? Math.min(100, Math.max(0, Number(configured))) : 95;
+            row.querySelectorAll('span').forEach(span => {
+                const highlight = /^\s*HS:/.test(span.textContent || '') && !isHeadshotsOnly && hs >= threshold && hs <= 100;
+                if (span.classList.contains('ioh-high-hs') !== highlight) span.classList.toggle('ioh-high-hs', highlight);
+            });
+            return;
+        }
 
         const serverCell = row.querySelector('a[href^="steam://connect/"]')?.closest('td')
             || row.querySelectorAll('td')[1];

@@ -1,4 +1,5 @@
 import { markIoh } from '../shared/dom.js';
+import {createFaceitLevelIcon} from '../shared/faceitIcons.js';
 
 export const OffenderProfileMethods = {
     clearSteamAccountCreationDate() {
@@ -215,7 +216,7 @@ export const OffenderProfileMethods = {
 
         const scope = this.getTicketScopeRoot(ticketTextarea);
         const offenderField = this.findInfoFieldScoped('Нарушитель', scope) || this.findInfoField('Нарушитель');
-        const offenderSteamId = this.extractSteamIdFromField(offenderField);
+        const offenderSteamId = this.nativeData ? this.getNativeTicket(scope)?.suspectId : this.extractSteamIdFromField(offenderField);
 
         if (!offenderField || !offenderSteamId) {
             return null;
@@ -261,74 +262,8 @@ export const OffenderProfileMethods = {
         }
     },
 
-    extractSkillLevelFromFastmm(faceitProfile, elo, faceitMissing = false) {
-        if (faceitMissing) {
-            return {skillLevel: null, rankIconUrl: null};
-        }
-
-        let skillLevel = null;
-        const level = Number(faceitProfile?.level);
-        if (Number.isFinite(level) && level >= 1 && level <= 10) {
-            skillLevel = String(level);
-        }
-
-        if (!skillLevel && elo) {
-            const fromElo = this.faceitEloToSkillLevel(Number(elo));
-            if (fromElo != null) {
-                skillLevel = String(fromElo);
-            }
-        }
-
-        const rankIconUrl = skillLevel
-            ? `https://mobile.fastmm.win/img/rank/faceit/level${skillLevel}.png`
-            : null;
-
-        return {skillLevel, rankIconUrl};
-    },
-
     extractOffenderProfileData(data, source = 'fastmm') {
-        const payload = data && typeof data === 'object' ? data : {};
-        const steamProfile = payload.steam?.profile || null;
-        const faceitPayload = payload.faceit || null;
-        const faceitProfile = faceitPayload?.profile || null;
-
-        const creationDate = this.formatSteamCreationDate(steamProfile?.timecreated);
-
-        const eloRaw = faceitProfile?.elo;
-        const elo = eloRaw != null && String(eloRaw).trim() !== ''
-            ? String(eloRaw).trim()
-            : null;
-
-        let faceitMissing = Boolean(faceitPayload?.error) || !faceitProfile || !elo;
-
-        const {skillLevel, rankIconUrl} = this.extractSkillLevelFromFastmm(
-            faceitProfile,
-            elo,
-            faceitMissing
-        );
-
-        return {
-            creationDate,
-            elo: faceitMissing ? null : elo,
-            skillLevel: faceitMissing ? null : skillLevel,
-            rankIconUrl: faceitMissing ? null : rankIconUrl,
-            faceitMissing,
-            source
-        };
-    },
-
-    faceitEloToSkillLevel(elo) {
-        if (!Number.isFinite(elo) || elo <= 0) return null;
-        if (elo < 801) return 1;
-        if (elo < 951) return 2;
-        if (elo < 1101) return 3;
-        if (elo < 1251) return 4;
-        if (elo < 1401) return 5;
-        if (elo < 1551) return 6;
-        if (elo < 1701) return 7;
-        if (elo < 1851) return 8;
-        if (elo < 2001) return 9;
-        return 10;
+        return {creationDate: this.formatSteamCreationDate(data?.steam?.profile?.timecreated), source};
     },
 
     fetchOffenderProfile(steamId, {force = false} = {}) {
@@ -395,6 +330,7 @@ export const OffenderProfileMethods = {
         containerNode.dataset.countryLabel = this.formatCountryTooltip(country);
 
         const img = this.document.createElement('img');
+        markIoh(img);
         img.className = 'ioh-offender-flag';
         img.alt = country;
         img.width = 16;
@@ -404,43 +340,17 @@ export const OffenderProfileMethods = {
         containerNode.appendChild(img);
     },
 
-    renderFaceitEloValue(valueNode, profileData) {
-        if (!valueNode) return false;
-
-        valueNode.textContent = '';
-        valueNode.classList.remove('ioh-account-value--error');
-
-        if (!profileData?.elo) {
-            return false;
-        }
-
-        if (profileData.rankIconUrl) {
-            const img = this.document.createElement('img');
-            img.className = 'ioh-faceit-rank';
-            img.src = profileData.rankIconUrl;
-            img.alt = profileData.skillLevel
-                ? `FaceIt level ${profileData.skillLevel} icon`
-                : 'FaceIt level icon';
-            img.width = 22;
-            img.height = 22;
-            valueNode.appendChild(img);
-        }
-
-        const eloText = this.document.createElement('span');
-        eloText.textContent = `${profileData.elo} Elo`;
-        valueNode.appendChild(eloText);
-        return true;
-    },
-
     renderProfileFieldError(valueNode, containerNode, steamId, reloadFn, cacheMap = this.offenderProfileCache) {
         valueNode.textContent = '';
         valueNode.classList.add('ioh-account-value--error');
 
         const errorSpan = this.document.createElement('span');
+        markIoh(errorSpan);
         errorSpan.className = 'ioh-account-error';
         errorSpan.textContent = 'Ошибка загрузки';
 
         const retryBtn = this.document.createElement('button');
+        markIoh(retryBtn);
         retryBtn.type = 'button';
         retryBtn.className = 'ioh-account-retry';
         retryBtn.title = 'Повторить';
@@ -470,11 +380,13 @@ export const OffenderProfileMethods = {
 
         try {
             const profileData = await this.fetchOffenderProfile(steamId, {force});
+            if (!containerNode.isConnected || containerNode.dataset.steamId !== steamId) return;
             valueNode.classList.remove('ioh-account-value--error');
             // Successful fetch: missing date means hidden/unavailable profile data, not a network error.
             valueNode.textContent = profileData.creationDate ? profileData.creationDate : 'Профиль скрыт';
             containerNode.dataset.loaded = 'true';
         } catch (error) {
+            if (!containerNode.isConnected || containerNode.dataset.steamId !== steamId) return;
             this.renderProfileFieldError(
                 valueNode,
                 containerNode,
@@ -483,10 +395,6 @@ export const OffenderProfileMethods = {
             );
             containerNode.dataset.loaded = 'true';
         }
-    },
-
-    async loadFaceitElo(_containerNode, _steamId, {force = false} = {}) {
-        await this.renderFaceitElo({force});
     },
 
     async renderSteamAccountCreationDate() {
@@ -501,55 +409,19 @@ export const OffenderProfileMethods = {
         await this.loadSteamAccountCreationDate(containerNode, context.offenderSteamId);
     },
 
-    async renderFaceitElo({force = false} = {}) {
+    async renderFaceitElo() {
         const context = this.getOffenderFieldContext();
-        if (!context) {
-            this.clearFaceitElo();
-            return;
-        }
-
-        const {offenderField, offenderSteamId} = context;
-        const existing = offenderField.parentNode.querySelector('.ioh-faceit-elo');
-        if (
-            !force
-            && existing
-            && existing.dataset.steamId === offenderSteamId
-            && existing.dataset.loaded === 'true'
-        ) {
-            return;
-        }
-
-        // Do not mount the Faceit row until we know the offender has Faceit.
-        if (!existing || force) {
-            this.clearFaceitElo();
-        }
-
-        try {
-            const profileData = await this.fetchOffenderProfile(offenderSteamId, {force});
-            if (!profileData?.elo) {
-                this.clearFaceitElo();
-                return;
-            }
-
-            const valueNode = this.ensureFaceitEloNode(offenderField);
-            const containerNode = valueNode.closest('.ioh-faceit-elo');
-            this.renderFaceitEloValue(valueNode, profileData);
-            containerNode.dataset.steamId = offenderSteamId;
-            containerNode.dataset.loaded = 'true';
-            containerNode.hidden = false;
-        } catch (error) {
-            const valueNode = this.ensureFaceitEloNode(offenderField);
-            const containerNode = valueNode.closest('.ioh-faceit-elo');
-            containerNode.dataset.steamId = offenderSteamId;
-            containerNode.hidden = false;
-            this.renderProfileFieldError(
-                valueNode,
-                containerNode,
-                offenderSteamId,
-                (opts) => this.renderFaceitElo(opts)
-            );
-            containerNode.dataset.loaded = 'true';
-        }
+        if (!context) { this.clearFaceitElo(); return; }
+        const faceit = this.nativeData?.player(context.offenderSteamId)?.faceit;
+        if (!faceit) { this.clearFaceitElo(); return; }
+        const value = this.ensureFaceitEloNode(context.offenderField);
+        const signature = `${context.offenderSteamId}:${faceit.elo}:${faceit.level}`;
+        if (value.dataset.iohFaceitValue === signature) return;
+        value.dataset.iohFaceitValue = signature;
+        value.replaceChildren();
+        const badge = createFaceitLevelIcon(this.document, faceit.level);
+        const label = this.document.createElement('span'); markIoh(label); label.textContent = faceit.elo == null ? 'Без рейтинга' : `${faceit.elo} Elo`;
+        value.append(badge, label);
     },
 
     async renderOffenderProjectInfo({force = false} = {}) {
@@ -574,6 +446,27 @@ export const OffenderProfileMethods = {
         }
 
         const {offenderField, offenderSteamId} = context;
+        if (this.nativeData) {
+            const data = this.nativePlayer(offenderSteamId);
+            this._nativeProfileLoads ||= new Map();
+            if (data?.playtime == null && !this._nativeProfileLoads.has(offenderSteamId)) {
+                this._nativeProfileLoads.set(offenderSteamId, 'pending');
+                void this.fetchParsedUserData(offenderSteamId).then(() => this._nativeProfileLoads.set(offenderSteamId, 'ready'),
+                    () => this._nativeProfileLoads.set(offenderSteamId, 'error')).finally(() => {
+                    if (!this._pageClosed && this.getOffenderFieldContext()?.offenderSteamId === offenderSteamId) void this.renderOffenderProjectInfo();
+                });
+            }
+            if (showPlaytime) {
+                const value = this.ensureCybershokePlaytimeNode(offenderField);
+                value.classList.remove('ioh-account-value--error');
+                value.textContent = typeof data?.playtime === 'number' && data.playtime >= 0 ? this.formatCybershokePlaytime(data.playtime)
+                    : this._nativeProfileLoads.get(offenderSteamId) === 'pending' ? 'Загрузка...' : 'Нет данных';
+                if (data?.playtime == null && this._nativeProfileLoads.get(offenderSteamId) === 'error') this.renderProfileFieldError(value,
+                    value.closest('.ioh-cybershoke-playtime'), offenderSteamId, () => this.renderOffenderProjectInfo(), this._nativeProfileLoads);
+            }
+            if (showCountry) this.renderOffenderCountryValue(this.ensureOffenderCountryNode(offenderField), data);
+            return;
+        }
         const playtimeValue = showPlaytime ? this.ensureCybershokePlaytimeNode(offenderField) : null;
         const playtimeContainer = playtimeValue?.closest('.ioh-cybershoke-playtime') || null;
         const countryContainer = showCountry ? this.ensureOffenderCountryNode(offenderField) : null;

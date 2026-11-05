@@ -44,7 +44,8 @@ async function fetchOffenderProfileJson(steamId) {
         throw new Error(data?.status ? `Статус ответа: ${data.status}` : 'Профиль не найден');
     }
 
-    return data;
+    // This provider is used solely for Steam account creation, never for Faceit.
+    return {steam: {profile: {timecreated: data?.steam?.profile?.timecreated ?? null}}};
 }
 
 const TRANSLATE_CACHE_KEY = 'iohTranslateCache';
