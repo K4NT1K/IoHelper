@@ -143,3 +143,4 @@ textarea[placeholder*="Опишите детали закрытия"] {
 textarea[placeholder*="Опишите детали закрытия"]:focus {
     color: var(--color-primary);
 }
+.ioh-bypass-count {display:inline-flex;margin-inline-start:6px;font-size:11px;line-height:1;opacity:.65;white-space:nowrap;font-variant-numeric:tabular-nums;cursor:help;}

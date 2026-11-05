@@ -1,130 +1,7 @@
 import { isIohNode, markIoh } from '../shared/dom.js';
+import {normalizeResponse, requestTime} from '../native/model.js';
 
 export const OffenderTrackingMethods = {
-    extractServerLabel(result) {
-        const server = result?.server;
-        if (!server) {
-            return null;
-        }
-
-        const parts = [];
-        if (server.mode) {
-            parts.push(String(server.mode));
-        }
-        if (server.category) {
-            parts.push(String(server.category));
-        }
-        if (server.num != null && server.num !== '') {
-            parts.push(`#${server.num}`);
-        }
-
-        return parts.length ? parts.join(' ') : null;
-    },
-
-    extractBansList(result) {
-        const candidates = [
-            result?.basic?.bans_list,
-            result?.bans_list,
-            result?.cybershoke?.bans_list
-        ];
-
-        for (const list of candidates) {
-            if (Array.isArray(list) && list.length) {
-                return list;
-            }
-        }
-
-        return [];
-    },
-
-    isPunishmentActive(entry, type) {
-        if (Number(entry?.type) !== type) {
-            return false;
-        }
-
-        const now = Math.floor(Date.now() / 1000);
-        const end = Number(entry?.end);
-        const created = Number(entry?.created);
-        const length = Number(entry?.length);
-
-        if (Number.isFinite(end) && end > now) {
-            return true;
-        }
-
-        if (Number.isFinite(created) && Number.isFinite(length) && length > 0 && created + length > now) {
-            return true;
-        }
-
-        return false;
-    },
-
-    isBanActive(ban) {
-        return this.isPunishmentActive(ban, 4);
-    },
-
-    isMuteActive(mute) {
-        return this.isPunishmentActive(mute, 3);
-    },
-
-    extractActiveBan(result) {
-        const bans = this.extractBansList(result);
-        if (!bans.length) {
-            return false;
-        }
-
-        return bans.some(ban => this.isBanActive(ban));
-    },
-
-    extractActiveMute(result) {
-        const bans = this.extractBansList(result);
-        if (!bans.length) {
-            return false;
-        }
-
-        return bans.some(entry => this.isMuteActive(entry));
-    },
-
-    extractServerIpFromUserData(result) {
-        if (result?.server?.server_ip && result?.server?.server_port) {
-            return `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
-        }
-
-        return null;
-    },
-
-    extractLastConnect(result) {
-        const raw = result?.cybershoke?.global?.lastconnect;
-        if (raw == null || raw === '') {
-            return null;
-        }
-
-        const seconds = Number(raw);
-        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
-    },
-
-    normalizeCountryCode(raw) {
-        if (raw == null || raw === '') {
-            return null;
-        }
-
-        const value = String(raw).trim().toLowerCase();
-        return /^[a-z]{2}$/.test(value) ? value : null;
-    },
-
-    extractCountry(result) {
-        return this.normalizeCountryCode(result?.basic?.country);
-    },
-
-    extractPlaytime(result) {
-        const raw = result?.cybershoke?.global?.playtime;
-        if (raw == null || raw === '') {
-            return null;
-        }
-
-        const seconds = Number(raw);
-        return Number.isFinite(seconds) ? seconds : null;
-    },
-
     normalizeVipName(raw) {
         if (raw == null) {
             return null;
@@ -138,52 +15,10 @@ export const OffenderTrackingMethods = {
         return value;
     },
 
-    extractVipName(result) {
-        return this.normalizeVipName(result?.basic?.vip_name);
-    },
-
-    extractVerification(result) {
-        return result?.basic?.verification
-            ?? result?.personal_data?.verification
-            ?? result?.verification
-            ?? null;
-    },
-
-    extractProfileVerified(result) {
-        return Boolean(this.extractVerification(result)?.profile);
-    },
-
-    extractIsModerator(result) {
-        return Boolean(this.extractVerification(result)?.moderation);
-    },
-
-    parseUserDataResult(result) {
-        return {
-            serverIp: this.extractServerIpFromUserData(result),
-            lastconnect: this.extractLastConnect(result),
-            serverLabel: this.extractServerLabel(result),
-            isBanned: this.extractActiveBan(result),
-            isMuted: this.extractActiveMute(result),
-            vipName: this.extractVipName(result),
-            profileVerified: this.extractProfileVerified(result),
-            isModerator: this.extractIsModerator(result),
-            country: this.extractCountry(result),
-            playtime: this.extractPlaytime(result)
-        };
-    },
-
-    getCachedUserData(steamId, ttlMs = 5000) {
-        const entry = this.userDataCache.get(steamId);
-        if (!entry) {
-            return null;
-        }
-
-        if (Date.now() - entry.fetchedAt >= ttlMs) {
-            this.userDataCache.delete(steamId);
-            return null;
-        }
-
-        return entry;
+    getCachedUserData(steamId, maxAge = Infinity) {
+        const p = this.nativeData ? this.nativePlayer(steamId) : this.userDataCache.get(steamId) || null;
+        if (Number.isFinite(maxAge) && (!p || !Object.hasOwn(p, 'serverIp') || Date.now() - (p.presenceAt ?? p.fetchedAt ?? 0) >= maxAge)) return null;
+        return p;
     },
 
     setOffenderProjectCache(steamId, data) {
@@ -224,19 +59,11 @@ export const OffenderTrackingMethods = {
     },
 
     setCachedUserData(steamId, data) {
-        this.userDataCache.set(steamId, {
-            serverIp: data.serverIp ?? null,
-            lastconnect: data.lastconnect ?? null,
-            serverLabel: data.serverLabel ?? null,
-            isBanned: Boolean(data.isBanned),
-            isMuted: Boolean(data.isMuted),
-            vipName: data.vipName ?? null,
-            profileVerified: Boolean(data.profileVerified),
-            isModerator: Boolean(data.isModerator),
-            fetchedAt: Date.now()
-        });
-        this.setOffenderProjectCache(steamId, data);
-        this.onCloseReasonPunishmentData?.(steamId, data);
+        const previous = this.userDataCache.get(steamId) || {};
+        const next = {...previous, ...data, fetchedAt: data.fetchedAt ?? Date.now()};
+        this.userDataCache.set(steamId, next);
+        this.setOffenderProjectCache(steamId, next);
+        this.onCloseReasonPunishmentData?.(steamId, next);
     },
 
     async fetchParsedUserData(steamId) {
@@ -245,7 +72,12 @@ export const OffenderTrackingMethods = {
         }
 
         const requestPromise = (async () => {
-            const response = await this.fetchUserData(steamId);
+            const startedAt = requestTime(typeof window === 'undefined' ? null : window), sequence = this._trackerResponseSequence = (this._trackerResponseSequence || 0) + 1;
+            const controller = new AbortController(); let timer;
+            try {
+            const response = await Promise.race([this.fetchUserData(steamId, {signal: controller.signal}), new Promise((_, reject) => {
+                timer = setTimeout(() => {controller.abort(); reject(new Error('Таймаут данных игрока'));}, 15000);
+            })]);
             if (response.status === 429) {
                 this.globalServerCooldown = Date.now() + 660;
                 throw new Error('429');
@@ -255,9 +87,17 @@ export const OffenderTrackingMethods = {
             }
 
             const result = await response.json();
+            if (this.nativeData) {
+                const event = normalizeResponse({kind: 'player', steamId, key: 'player:' + steamId}, result,
+                    {startedAt, receivedAt: Date.now(), sequence});
+                if (!event) throw new Error('Неизвестный формат данных игрока');
+                event.source = 'tracker'; this.nativeData.apply(event);
+                return this.nativePlayer(steamId);
+            }
             const userData = this.parseUserDataResult(result);
             this.setCachedUserData(steamId, userData);
             return userData;
+            } finally { clearTimeout(timer); }
         })().finally(() => {
             this.offenderProjectInflight.delete(steamId);
         });
@@ -267,71 +107,12 @@ export const OffenderTrackingMethods = {
     },
 
     async fetchOffenderTicketProjectData(steamId) {
-        if (this.offenderTicketProjectInflight.has(steamId)) {
-            return this.offenderTicketProjectInflight.get(steamId);
-        }
-
-        // Share an in-flight tracker fetch when available; queue cache may fill as a side effect.
-        if (this.offenderProjectInflight.has(steamId)) {
-            const shared = this.offenderProjectInflight.get(steamId).then((userData) => {
-                const fromQueue = this.offenderProjectCache.get(steamId);
-                if (fromQueue) {
-                    return fromQueue;
-                }
-                const project = {
-                    country: userData?.country ?? null,
-                    playtime: userData?.playtime ?? null
-                };
-                this.setOffenderTicketProjectCache(steamId, project);
-                return project;
-            });
-            this.offenderTicketProjectInflight.set(steamId, shared);
-            try {
-                return await shared;
-            } finally {
-                this.offenderTicketProjectInflight.delete(steamId);
-            }
-        }
-
-        const requestPromise = (async () => {
-            const response = await this.fetchUserData(steamId);
-            if (response.status === 429) {
-                this.globalServerCooldown = Date.now() + 660;
-                throw new Error('429');
-            }
-            if (!response.ok) {
-                throw new Error(`fetch failed ${response.status}`);
-            }
-
-            const result = await response.json();
-            const userData = this.parseUserDataResult(result);
-            const project = {
-                country: userData.country ?? null,
-                playtime: userData.playtime ?? null
-            };
-            this.setOffenderTicketProjectCache(steamId, project);
-            return project;
-        })().finally(() => {
-            this.offenderTicketProjectInflight.delete(steamId);
-        });
-
-        this.offenderTicketProjectInflight.set(steamId, requestPromise);
-        return requestPromise;
+        const p = this.nativePlayer?.(steamId) || this.offenderProjectCache.get(steamId);
+        if (p && typeof p.playtime === 'number') return p;
+        return this.fetchParsedUserData(steamId);
     },
 
-    async getOffenderProjectData(steamId, {force = false} = {}) {
-        if (force) {
-            this.offenderTicketProjectCache.delete(steamId);
-        }
-
-        if (!force && this.offenderProjectCache.has(steamId)) {
-            return this.offenderProjectCache.get(steamId);
-        }
-
-        if (!force && this.offenderTicketProjectCache.has(steamId)) {
-            return this.offenderTicketProjectCache.get(steamId);
-        }
-
+    async getOffenderProjectData(steamId) {
         return this.fetchOffenderTicketProjectData(steamId);
     },
 
@@ -371,9 +152,9 @@ export const OffenderTrackingMethods = {
 
         const setLabelText = (text) => {
             if (labelEl) {
-                labelEl.textContent = text;
+                if (labelEl.textContent !== text) labelEl.textContent = text;
             } else {
-                link.textContent = text;
+                if (link.textContent !== text) link.textContent = text;
             }
         };
 
@@ -408,6 +189,7 @@ export const OffenderTrackingMethods = {
             return '';
         }
 
+        if (this.nativeData) return this.getNativeRowTicket(row)?.reason || '';
         const cells = row.querySelectorAll('td');
         if (!cells.length) {
             return '';
@@ -531,6 +313,7 @@ export const OffenderTrackingMethods = {
     },
 
     rowActionIsInReview(row) {
+        if (this.nativeData) return this.getNativeRowTicket(row)?.status === 1;
         if (!row) {
             return false;
         }
@@ -862,7 +645,7 @@ export const OffenderTrackingMethods = {
             }
         }
 
-        const show = this.settings.features?.trackOffenderServer && Boolean(isModerator);
+        const show = Boolean(isModerator);
 
         if (row) {
             row.classList.toggle('ioh-highlighted-moderator', show);
@@ -1349,7 +1132,7 @@ export const OffenderTrackingMethods = {
         offenderLink.dataset.iohVipName = meta.label;
     },
 
-    async fetchUserData(steamId) {
+    async fetchUserData(steamId, {signal} = {}) {
         const response = await fetch('https://cybershoke.net/api/user/data', {
             method: 'POST',
             headers: {
@@ -1358,6 +1141,7 @@ export const OffenderTrackingMethods = {
                 'X-Requested-With': 'XMLHttpRequest'
             },
             credentials: 'include',
+            signal,
             body: new URLSearchParams({steamid64: steamId}).toString()
         });
 
@@ -1369,6 +1153,7 @@ export const OffenderTrackingMethods = {
             return;
         }
 
+        if (!Object.hasOwn(userData, 'serverIp')) return;
         const currentIp = userData.serverIp;
         const lastconnect = userData.lastconnect;
 
@@ -1401,6 +1186,11 @@ export const OffenderTrackingMethods = {
             || !this.settings?.features?.trackOffenderServer) {
             return null;
         }
+        if (this.nativeData) {
+            const scope = this.getAutoConnectScope(), ticket = this.getNativeTicket(scope);
+            return ticket && this.scopeHasInProgressStatus(scope, {includeActivePanel: false})
+                ? {scope, steamId: ticket.suspectId, href: window.location.href} : null;
+        }
         const href = window.location.href;
         const path = window.location.pathname || '';
         if (/\/support\/(tickets|reports)\b/i.test(path) || !/\/ticket\/|\/reports?\//i.test(path)) {
@@ -1432,6 +1222,45 @@ export const OffenderTrackingMethods = {
         return (Number.isFinite(seconds) && seconds > 0 ? Math.max(seconds, 1) : 5) * 1000;
     },
 
+    syncOffenderTrackerStatus() {
+        if (!this.document.createElement || !this.document.body?.append) return;
+        this._trackerResults ||= new Map();
+        const lines = new Map();
+        for (const session of this._openTicketTrackingSessions?.values() || []) {
+            if (!session.waitingForReturn && !session.pendingServer) continue;
+            const ticket = this.getNativeTicket?.(session.scope);
+            const label = ticket ? `#${ticket.id}` : 'открытая жалоба';
+            lines.set(session.steamId, session.pendingServer ? `Игрок ${label} найден · ожидаем завершения анализа` : `Трекер ${label} · ждём возвращения игрока`);
+        }
+        clearTimeout(this._trackerStatusTimer);
+        let next = Infinity;
+        for (const [id, result] of this._trackerResults) {
+            if (result.until <= Date.now()) {this._trackerResults.delete(id); continue;}
+            if (!lines.has(id)) lines.set(id, result.text);
+            next = Math.min(next, result.until - Date.now());
+        }
+        let host = this.document.getElementById('ioh-offender-tracker-status');
+        if (!lines.size) {host?.remove(); return;}
+        if (!host) {
+            host = this.document.createElement('div'); markIoh(host); host.id = 'ioh-offender-tracker-status';
+            host.className = 'ioh-tracker-status'; host.setAttribute('role', 'status'); host.setAttribute('aria-live', 'polite');
+            this.document.body.append(host);
+        }
+        const text = [...lines.values()].join('\n');
+        if (host.textContent !== text) host.textContent = text;
+        host.classList.toggle('ioh-tracker-status--waiting', [...(this._openTicketTrackingSessions?.values() || [])].some(s => s.waitingForReturn || s.pendingServer));
+        if (next < Infinity) this._trackerStatusTimer = setTimeout(() => this.syncOffenderTrackerStatus(), next + 10);
+    },
+
+    announceOffenderTrackerResult(session, connected) {
+        this._trackerResults ||= new Map();
+        const ticket = this.getNativeTicket?.(session.scope);
+        const label = ticket ? ` #${ticket.id}` : '';
+        this._trackerResults.set(session.steamId, {until: Date.now() + 5000,
+            text: connected ? `Игрок${label} найден · команда подключения отправлена` : `Игрок${label} найден · сервер уже выбран`});
+        this.syncOffenderTrackerStatus();
+    },
+
     isOpenTicketTrackingSessionCurrent(session) {
         if (!this.settings?.features?.autoConnectServer || !this.settings?.features?.trackOffenderServer
             || !session || this._openTicketTrackingSessions?.get(session.scope) !== session) {
@@ -1439,7 +1268,8 @@ export const OffenderTrackingMethods = {
         }
         return this.document.contains(session.scope) && this.isOpenComplaintScope(session.scope)
             && this.scopeHasInProgressStatus(session.scope, {includeActivePanel: false})
-            && this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', session.scope)) === session.steamId;
+            && (this.nativeData ? this.getNativeTicket(session.scope)?.suspectId
+                : this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', session.scope))) === session.steamId;
     },
 
     stopOpenTicketOffenderTracking(session = null) {
@@ -1448,7 +1278,9 @@ export const OffenderTrackingMethods = {
             if (entry.timer != null) clearTimeout(entry.timer);
             entry.observer?.disconnect();
             this._openTicketTrackingSessions.delete(entry.scope);
+            this._trackerResults?.delete(entry.steamId);
         }
+        this.syncOffenderTrackerStatus();
     },
 
     syncOpenTicketOffenderTracking() {
@@ -1473,6 +1305,7 @@ export const OffenderTrackingMethods = {
         for (const session of this._openTicketTrackingSessions.values()) {
             this.refreshOpenTicketTrackingSession(session);
         }
+        this.syncOffenderTrackerStatus();
         return context ? this._openTicketTrackingSessions.get(context.scope) : null;
     },
 
@@ -1497,7 +1330,7 @@ export const OffenderTrackingMethods = {
             }) : null;
             session.observer?.observe(serverField, {childList: true, subtree: true, characterData: true});
         }
-        if (session.waitingForReturn && session.timer == null && !session.pending) {
+        if ((session.waitingForReturn || session.pendingServer) && session.timer == null && !session.pending) {
             session.timer = setTimeout(() => {
                 session.timer = null;
                 if (!this.isOpenTicketTrackingSessionCurrent(session)) {
@@ -1513,7 +1346,7 @@ export const OffenderTrackingMethods = {
                     this.syncOpenTicketOffenderTracking();
                 });
             }, this.getOpenTicketOfflineIntervalMs());
-        } else if (!session.waitingForReturn && session.timer != null) {
+        } else if (!session.waitingForReturn && !session.pendingServer && session.timer != null) {
             clearTimeout(session.timer);
             session.timer = null;
         }
@@ -1526,7 +1359,7 @@ export const OffenderTrackingMethods = {
         const {scope, steamId: offenderSteamId} = session;
 
         const ticketConnectLink = this.findTicketServerConnectLink(scope);
-        const ticketServerIp = this.extractServerIpFromConnectLink(ticketConnectLink);
+        const ticketServerIp = this.nativeData ? this.getNativeTicket(scope)?.complaintServer : this.extractServerIpFromConnectLink(ticketConnectLink);
         const normalInterval = Math.max(
             Number(cacheIntervalMs) || ((this.settings.trackOffenderIntervalWhileReviewing || 30) * 1000),
             1000
@@ -1535,7 +1368,7 @@ export const OffenderTrackingMethods = {
             ? Math.min(normalInterval, this.getOpenTicketOfflineIntervalMs()) : normalInterval;
 
         const now = Date.now();
-        if (session.lastCheck && now - session.lastCheck < CACHE_INTERVAL) {
+        if (session.lastCheck && now - session.lastCheck < CACHE_INTERVAL && !session.pendingServer) {
             return;
         }
 
@@ -1563,7 +1396,8 @@ export const OffenderTrackingMethods = {
 
         session.lastCheck = Date.now();
 
-        const currentIp = userData?.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
+        if (!userData || !Object.hasOwn(userData, 'serverIp')) return;
+        const currentIp = userData.serverIp ? String(userData.serverIp).trim().toLowerCase() : null;
         if (!currentIp) {
             this.markOffenderOffline(offenderSteamId);
             this.clearOffenderRelocated(offenderSteamId);
@@ -1586,7 +1420,7 @@ export const OffenderTrackingMethods = {
         const previousRelocated = this.getOffenderRelocatedServer(offenderSteamId);
         this.markOffenderRelocated(offenderSteamId, currentIp);
 
-        if (!returned && (previousRelocated === currentIp || session.lastConnectedIp === currentIp)) {
+        if (!returned && !session.pendingServer && (previousRelocated === currentIp || session.lastConnectedIp === currentIp)) {
             return;
         }
 
@@ -1598,7 +1432,12 @@ export const OffenderTrackingMethods = {
         });
 
         if (this.settings?.features?.autoConnectServer) {
-            this.connectToTrackedOffenderServer(session, currentIp);
+            session.pendingServer = currentIp;
+            const connected = this.connectToTrackedOffenderServer(session, currentIp);
+            if (connected || this.isAlreadyOnRequestedServer(currentIp)) {
+                for (const tracked of this._openTicketTrackingSessions.values()) if (tracked.steamId === offenderSteamId) tracked.pendingServer = null;
+                this.announceOffenderTrackerResult(session, connected);
+            } else this.syncOffenderTrackerStatus();
         }
         if (currentIp === ticketServerIp) {
             this.clearOffenderRelocated(offenderSteamId);
@@ -1788,4 +1627,162 @@ export const OffenderTrackingMethods = {
             jobs.forEach(fn => fn());
         });
     },
+    extractServerLabel(result) {
+        const server = result?.server;
+        if (!server) {
+            return null;
+        }
+
+        const parts = [];
+        if (server.mode) {
+            parts.push(String(server.mode));
+        }
+        if (server.category) {
+            parts.push(String(server.category));
+        }
+        if (server.num != null && server.num !== '') {
+            parts.push(`#${server.num}`);
+        }
+
+        return parts.length ? parts.join(' ') : null;
+    },
+
+    extractBansList(result) {
+        const candidates = [
+            result?.basic?.bans_list,
+            result?.bans_list,
+            result?.cybershoke?.bans_list
+        ];
+
+        for (const list of candidates) {
+            if (Array.isArray(list) && list.length) {
+                return list;
+            }
+        }
+
+        return [];
+    },
+
+    isPunishmentActive(entry, type) {
+        if (Number(entry?.type) !== type) {
+            return false;
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+        const end = Number(entry?.end);
+        const created = Number(entry?.created);
+        const length = Number(entry?.length);
+
+        if (Number.isFinite(end) && end > now) {
+            return true;
+        }
+
+        if (Number.isFinite(created) && Number.isFinite(length) && length > 0 && created + length > now) {
+            return true;
+        }
+
+        return false;
+    },
+
+    isBanActive(ban) {
+        return this.isPunishmentActive(ban, 4);
+    },
+
+    isMuteActive(mute) {
+        return this.isPunishmentActive(mute, 3);
+    },
+
+    extractActiveBan(result) {
+        const bans = this.extractBansList(result);
+        if (!bans.length) {
+            return false;
+        }
+
+        return bans.some(ban => this.isBanActive(ban));
+    },
+
+    extractActiveMute(result) {
+        const bans = this.extractBansList(result);
+        if (!bans.length) {
+            return false;
+        }
+
+        return bans.some(entry => this.isMuteActive(entry));
+    },
+
+    extractServerIpFromUserData(result) {
+        if (result?.server?.server_ip && result?.server?.server_port) {
+            return `${result.server.server_ip}:${result.server.server_port}`.toLowerCase();
+        }
+
+        return null;
+    },
+
+    extractLastConnect(result) {
+        const raw = result?.cybershoke?.global?.lastconnect;
+        if (raw == null || raw === '') {
+            return null;
+        }
+
+        const seconds = Number(raw);
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+    },
+
+    normalizeCountryCode(raw) {
+        if (raw == null || raw === '') {
+            return null;
+        }
+
+        const value = String(raw).trim().toLowerCase();
+        return /^[a-z]{2}$/.test(value) ? value : null;
+    },
+
+    extractCountry(result) {
+        return this.normalizeCountryCode(result?.basic?.country);
+    },
+
+    extractPlaytime(result) {
+        const raw = result?.cybershoke?.global?.playtime;
+        if (raw == null || raw === '') {
+            return null;
+        }
+
+        const seconds = Number(raw);
+        return Number.isFinite(seconds) ? seconds : null;
+    },
+
+    extractVipName(result) {
+        return this.normalizeVipName(result?.basic?.vip_name);
+    },
+
+    extractVerification(result) {
+        return result?.basic?.verification
+            ?? result?.personal_data?.verification
+            ?? result?.verification
+            ?? null;
+    },
+
+    extractProfileVerified(result) {
+        return Boolean(this.extractVerification(result)?.profile);
+    },
+
+    extractIsModerator(result) {
+        return Boolean(this.extractVerification(result)?.moderation);
+    },
+
+    parseUserDataResult(result) {
+        return {
+            serverIp: this.extractServerIpFromUserData(result),
+            lastconnect: this.extractLastConnect(result),
+            serverLabel: this.extractServerLabel(result),
+            isBanned: this.extractActiveBan(result),
+            isMuted: this.extractActiveMute(result),
+            vipName: this.extractVipName(result),
+            profileVerified: this.extractProfileVerified(result),
+            isModerator: this.extractIsModerator(result),
+            country: this.extractCountry(result),
+            playtime: this.extractPlaytime(result)
+        };
+    },
+
 };

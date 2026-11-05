@@ -5,18 +5,20 @@ import { MessageService } from './MessageService.js';
 import { TicketService } from './TicketService.js';
 import { PunishmentService } from './PunishmentService.js';
 import { DOMCoordinator } from './DOMCoordinator.js';
-import { isIohNode, scheduleIdle } from './shared/dom.js';
+import { scheduleIdle } from './shared/dom.js';
 import { mergeSettings } from './shared/settings.js';
 import {ConfigService} from './ConfigService.js';
 import {ProfileLauncher} from './analytics/ProfileLauncher.js';
 import {AppearanceService} from './AppearanceService.js';
 import {ServerConnectionMemory} from './ServerConnectionMemory.js';
+import {NativeDataStore} from './native/Store.js';
 
 export class App {
     constructor({window, document, chrome, config, settingsOverrides = {}}) {
         this.window = window;
         this.document = document;
         this.chrome = chrome;
+        this.nativeData = window.__iohNativeData?.store || new NativeDataStore();
         this.rules = config.muteRules || [];
         this.spamRules = config.spamRules || {};
         this.muteExceptions = config.muteExceptions || {};
@@ -63,8 +65,11 @@ export class App {
             rules: this.rules,
             spamRules: this.spamRules,
             muteExceptions: this.muteExceptions,
+            nativeData: this.nativeData,
             chrome
         });
+        this.ticketService.setNativeModerators(config.moderators);
+        this.ticketService.syncNativePermissions();
         this.serverConnectionMemory = new ServerConnectionMemory({document, chrome});
         this.ticketService.serverConnectionMemory = this.serverConnectionMemory;
         this.moderatorService = {
@@ -132,6 +137,7 @@ export class App {
                         chrome: this.chrome,
                         isEnabled: () => Boolean(this.features.scanSchedulePage)
                     });
+                    this._moderatorService.participantService = this.ticketService;
                     this.moderatorService = this._moderatorService;
                     return this._moderatorService;
                 });
@@ -146,10 +152,30 @@ export class App {
 
     async start() {
         let pageClosed = false;
+        this._nativeUnsubscribe = this.nativeData.subscribe(event => {
+            this.ticketService.consumeNativeEvent(event);
+            this.maybeAutoConnectOnTicketMount();
+            this.ticketService.refreshComplaintPunishmentButtons();
+            if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
+            if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({force: true});
+            this._reapplyTicketRowHighlights();
+            this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]').forEach(textarea => {
+                if (this.features.processTicketRules && this.ticketService.isVisibleTicketTextarea(textarea)) this.ensureTicketChatHistoryObserver(textarea);
+            });
+            if (this.features.translateText) this.messageService.processChatMessages();
+        });
         this.window.addEventListener('pagehide', event => {
             // A BFCache page is frozen, retaining these listeners for its return.
             if (event.persisted) return;
             pageClosed = true;
+            this._trackingStopped = true;
+            this.ticketService._pageClosed = true;
+            this._nativeUnsubscribe?.();
+            this.ticketService.stopOpenTicketOffenderTracking();
+            this.ticketService.cancelTriggerNavigation();
+            this._offenderTrackingGeneration++;
+            clearTimeout(this.ipTrackTimeoutId); this.ipTrackTimeoutId = null;
+            this.teardownTicketChatHistoryObservers();
             this.serverConnectionMemory.stop();
             this.ticketService.stopCloseReasonSelection();
             this.ticketService.stopTicketPunishmentFeedback();
@@ -312,9 +338,9 @@ export class App {
     }
 
     getOffenderTrackIntervalSec() {
-        return this.isComplaintDetailPage()
-            ? (this.settings.trackOffenderIntervalWhileReviewing || 30)
-            : (this.settings.trackOffenderInterval || 5);
+        const reviewing = this.isComplaintDetailPage();
+        const n = Number(reviewing ? this.settings.trackOffenderIntervalWhileReviewing : this.settings.trackOffenderInterval);
+        return Number.isFinite(n) && n > 0 ? Math.max(1, n) : reviewing ? 30 : 5;
     }
 
     syncOffenderTrackingForPage() {
@@ -337,6 +363,7 @@ export class App {
     }
 
     runOffenderTrackingPass() {
+        if (this._trackingStopped) return Promise.resolve();
         if (this._offenderTrackingPassPromise) {
             return this._offenderTrackingPassPromise;
         }
@@ -361,7 +388,11 @@ export class App {
             }
             const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1000;
             if (this.isComplaintDetailPage()) {
-                await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, {isCurrent});
+                const ticket = this.ticketService.getNativeTicket?.(this.ticketService.getAutoConnectScope?.());
+                if (ticket && !this.ticketService.getCachedUserData(ticket.suspectId, cacheIntervalMs)) {
+                    await this.ticketService.fetchParsedUserData(ticket.suspectId).catch(() => {});
+                }
+                if (isCurrent()) await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, {isCurrent});
             }
             if (isCurrent()) {
                 await this.ticketService.checkOffendersServers(cacheIntervalMs, {isCurrent});
@@ -383,6 +414,7 @@ export class App {
     }
 
     scheduleNextOffenderInterval() {
+        if (this._trackingStopped) return;
         if (!this.features.trackOffenderServer || this._offenderTrackingPassPromise || this.ipTrackTimeoutId != null) {
             return;
         }
@@ -461,6 +493,7 @@ export class App {
     }
 
     runDOMUpdates() {
+        this.ticketService.syncNativeTicketViews();
         this.initPageSpecificFeatures();
         this.initTicketSectionFeatures();
         this.initTableFeatures();
@@ -524,6 +557,11 @@ export class App {
         if (!this.features.autoConnectServer) {
             return;
         }
+        if (this.nativeData) {
+            const ticket = this.ticketService.getNativeTicket(this.ticketService.getAutoConnectScope());
+            if (!ticket || !this.ticketService.nativePlayer(ticket.suspectId)?.serverIp) return;
+            if (!this.ticketService.scopeHasInProgressStatus(this.ticketService.getAutoConnectScope())) return;
+        }
 
         const key = this.ticketService.getAutoConnectTicketKey();
         if (!key) {
@@ -533,10 +571,18 @@ export class App {
         if (this._lastAutoConnectTicketKey === key) {
             return;
         }
+        if (this.nativeData) {
+            const ticket = this.ticketService.getNativeTicket(this.ticketService.getAutoConnectScope());
+            const endpoint = this.ticketService.nativePlayer(ticket.suspectId).serverIp;
+            if (this.ticketService.isAlreadyOnRequestedServer(endpoint)) {
+                this._lastAutoConnectTicketKey = key;
+                return;
+            }
+        }
 
-        this._lastAutoConnectTicketKey = key;
         console.log('[Helper] Авто-подключение: mount тикета', key);
-        this.ticketService.connectToCurrentServer();
+        const connected = this.ticketService.connectToCurrentServer();
+        if (!this.nativeData || connected) this._lastAutoConnectTicketKey = key;
     }
 
     initVisibilityCatchUpListener() {
@@ -845,172 +891,10 @@ export class App {
         this.ticketService.resetChatAnalysisCache(null, {preserveCompleted: true});
     }
 
-    _findChatHistoryBlockScoped(scopeEl) {
-        return this._findHistoryBlockScoped(scopeEl, ['История Чата']);
-    }
-
-    _findWarningHistoryBlockScoped(scopeEl) {
-        return this._findHistoryBlockScoped(scopeEl, ['История предупреждений', 'История Предупреждений']);
-    }
-
-    _findHistoryBlockScoped(scopeEl, headerTexts) {
-        const containers = [];
-        if (scopeEl) {
-            containers.push(scopeEl);
-            const closestSection = scopeEl.closest?.('section, article, main, [role="main"]');
-            if (closestSection && !containers.includes(closestSection)) {
-                containers.push(closestSection);
-            }
-        }
-        containers.push(this.document.body);
-
-        for (const container of containers) {
-            for (const headerText of headerTexts) {
-                const block = this.ticketService.getBlockByHeaderScoped(headerText, container);
-                if (block) {
-                    return block;
-                }
-
-                const card = this.ticketService.getHistorySectionCard(headerText, container);
-                if (card) {
-                    return card;
-                }
-            }
-        }
-
-        return null;
-    }
-
     ensureTicketChatHistoryObserver(textarea) {
-        if (this.ticketChatHistoryObservers.has(textarea)) return;
-        if (!this.document.contains(textarea)) return;
-        if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
-
-        console.log('[Helper] ticketChatHistoryObserver: mount');
-        const scopeEl = textarea.closest('section, article, main, [role="main"]')
-            || textarea.parentElement
-            || this.document.body;
-
-        const entry = {
-            observer: null,
-            waitObserver: null,
-            debounceTimerId: null,
-            idleId: null,
-            chatAttached: false,
-            warningAttached: false,
-        };
-
-        const observer = new MutationObserver((mutations) => {
-            if (mutations.every(mutation => isIohNode(mutation.target))) {
-                return;
-            }
-            if (!this.features.processTicketRules) return;
-            if (!this.ticketService.isVisibleTicketTextarea(textarea)) return;
-            this.domCoordinator.notify('chatChanged');
-            this._debouncedProcessTicketRules(textarea);
-        });
-        entry.observer = observer;
-
-        const tryAttachBlocks = () => {
-            const blocks = this.ticketService.getHistoryBlocks(scopeEl);
-            const chatHistoryBlock = blocks.chat || this._findChatHistoryBlockScoped(scopeEl);
-            const warningHistoryBlock = blocks.warning || this._findWarningHistoryBlockScoped(scopeEl);
-
-            if (chatHistoryBlock && !entry.chatAttached) {
-                observer.observe(chatHistoryBlock, {childList: true, subtree: true});
-                entry.chatAttached = true;
-                console.log('[Helper] ticketChatHistoryObserver: attached chat history');
-            }
-
-            if (warningHistoryBlock && !entry.warningAttached) {
-                observer.observe(warningHistoryBlock, {childList: true, subtree: true});
-                entry.warningAttached = true;
-                console.log('[Helper] ticketChatHistoryObserver: attached warning history');
-            }
-
-            return entry.chatAttached;
-        };
-
-        const finishWaitObserver = (reason = 'done') => {
-            if (entry.waitObserver) {
-                entry.waitObserver.disconnect();
-                entry.waitObserver = null;
-                console.log(`[Helper] ticketChatHistoryObserver: wait finish (${reason})`);
-            }
-        };
-
-        if (tryAttachBlocks()) {
-            this.ticketChatHistoryObservers.set(textarea, entry);
-            this._runTicketChatAnalysis(textarea);
-
-            if (!entry.warningAttached) {
-                console.log('[Helper] ticketChatHistoryObserver: wait start (warning)');
-                const waitObserver = new MutationObserver((mutations) => {
-                    if (mutations.every(mutation => isIohNode(mutation.target))) {
-                        return;
-                    }
-                    if (!this.document.contains(textarea)) {
-                        finishWaitObserver('textarea gone');
-                        return;
-                    }
-
-                    tryAttachBlocks();
-                    if (entry.warningAttached) {
-                        finishWaitObserver('warning attached');
-                    }
-                });
-                entry.waitObserver = waitObserver;
-                waitObserver.observe(this.document.body, {childList: true, subtree: true});
-            }
-            return;
-        }
-
-        // Wait until chat history appears (ticket DOM can be rendered in phases).
-        console.log('[Helper] ticketChatHistoryObserver: wait start (chat)');
-        const waitObserver = new MutationObserver((mutations) => {
-            if (mutations.every(mutation => isIohNode(mutation.target))) {
-                return;
-            }
-            if (!this.document.contains(textarea)) {
-                finishWaitObserver('textarea gone');
-                return;
-            }
-
-            if (!tryAttachBlocks()) return;
-
-            finishWaitObserver('chat attached');
-            if (!this.ticketChatHistoryObservers.has(textarea)) {
-                this.ticketChatHistoryObservers.set(textarea, entry);
-            }
-            this._runTicketChatAnalysis(textarea);
-
-            if (!entry.warningAttached) {
-                console.log('[Helper] ticketChatHistoryObserver: wait start (warning)');
-                const warningWaitObserver = new MutationObserver((mutations) => {
-                    if (mutations.every(mutation => isIohNode(mutation.target))) {
-                        return;
-                    }
-                    if (!this.document.contains(textarea)) {
-                        warningWaitObserver.disconnect();
-                        entry.waitObserver = null;
-                        console.log('[Helper] ticketChatHistoryObserver: wait finish (textarea gone)');
-                        return;
-                    }
-
-                    tryAttachBlocks();
-                    if (entry.warningAttached) {
-                        warningWaitObserver.disconnect();
-                        entry.waitObserver = null;
-                        console.log('[Helper] ticketChatHistoryObserver: wait finish (warning attached)');
-                    }
-                });
-                entry.waitObserver = warningWaitObserver;
-                warningWaitObserver.observe(this.document.body, {childList: true, subtree: true});
-            }
-        });
-        entry.waitObserver = waitObserver;
-        this.ticketChatHistoryObservers.set(textarea, entry);
-        waitObserver.observe(this.document.body, {childList: true, subtree: true});
+        if (!this.document.contains(textarea) || !this.ticketService.isVisibleTicketTextarea(textarea)) return;
+        if (!this.ticketChatHistoryObservers.has(textarea)) this.ticketChatHistoryObservers.set(textarea, {});
+        void this._runTicketChatAnalysis(textarea);
     }
 
     _debouncedProcessTicketRules(textarea, delayMs = 100) {

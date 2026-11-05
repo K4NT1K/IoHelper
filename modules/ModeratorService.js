@@ -55,8 +55,8 @@ export class ModeratorService {
 
     resolveModeratorType(steamId, moderators) {
         const normalized = this.normalizeModerators(moderators);
-        if (normalized.verification[steamId]) return 'verification';
-        return ModeratorService.MODERATOR_CATEGORIES.some(category => normalized[category][steamId]) ? 'admin' : null;
+        if (ModeratorService.MODERATOR_CATEGORIES.some(category => normalized[category][steamId])) return 'admin';
+        return normalized.verification[steamId] ? 'verification' : null;
     }
 
     insertModeratorBadge(link, badgeType) {
@@ -150,6 +150,8 @@ export class ModeratorService {
             return;
         }
         if (generation !== this._highlightGeneration) return;
+        this.participantService?.setNativeModerators(moderators);
+        this.participantService?.syncNativeTicketViews();
         // Resolve the current visible scopes after the asynchronous storage read.
         for (const section of this._findCurrentServerSections()) {
             for (const link of section.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)) {

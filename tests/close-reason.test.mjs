@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {clock as fakeClock} from './clock.mjs';
 import {CloseReasonMethods, chooseCloseReason, parseCloseReasonTimer, closeReasonEvidenceMinutes}
     from '../modules/ticket/CloseReason.js';
 
@@ -95,6 +96,19 @@ function fixture(t) {
     return {ctx,state,textarea,buttons,card,content,scope,header,observers,handlers};
 }
 
+test('Native start timestamp wakes once at the threshold and cancels when the timer disappears', async t => {
+    const time = fakeClock(t), {ctx, state, observers} = fixture(t);
+    const ticket = {id: Number(state.ticketId), suspectId: state.steamId, startedAt: Date.now() - 179000};
+    ctx.nativeData = {}; ctx.getNativeTicket = () => ticket;
+    ctx.syncCloseReasonSelection(); assert.deepEqual(state.clicks, [noCheats]);
+    assert.equal(observers[0].options.characterData, false); assert.equal(time.timers.size, 1);
+    await time.advance(999); assert.deepEqual(state.clicks, [noCheats]);
+    await time.advance(11); assert.deepEqual(state.clicks, [noCheats, insufficient]); assert.equal(time.timers.size, 0);
+    ticket.startedAt = Date.now(); ctx.syncCloseReasonSelection(); assert.equal(time.timers.size, 1);
+    ticket.startedAt = null; ctx.syncCloseReasonSelection(); assert.equal(time.timers.size, 0);
+    ctx.stopCloseReasonSelection(); assert.equal(time.timers.size, 0);
+});
+
 test('Native baseline, timer transition and punishment transition click once; close is never clicked', t => {
     const {ctx,state,observers,card} = fixture(t);
     ctx.syncCloseReasonSelection();
@@ -110,7 +124,7 @@ test('Native baseline, timer transition and punishment transition click once; cl
     ctx.onCloseReasonPunishmentData(state.steamId,{isBanned:true});
     state.timer='01:00:00'; observers[0].callback([{target:card}]);
     assert.deepEqual(state.clicks,[noCheats,insufficient,punished]);
-    assert.equal(state.ttl[0],35000);
+    assert.equal(state.ttl[0],undefined, "native-only cache does not use a polling interval");
 });
 
 test('Fresh tracker false restores baseline after both queue and form detection', t => {

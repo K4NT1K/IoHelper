@@ -30,7 +30,7 @@ export class ConfigService {
         for (const key of ['reasonTriggers', 'reasonTriggersAutoconnect', 'autoConnectReasons', 'offenderVipStatuses']) {
             if (config.settings[key] != null && (!Array.isArray(config.settings[key]) || config.settings[key].some(v => typeof v !== 'string'))) return false;
         }
-        for (const key of ['newAccountHours', 'headshotPercentage', 'trackOffenderInterval', 'trackOffenderIntervalWhileReviewing']) {
+        for (const key of ['newAccountHours', 'headshotPercentage', 'trackOffenderInterval', 'trackOffenderIntervalWhileReviewing', 'trackOpenTicketOfflineInterval']) {
             if (config.settings[key] != null && (typeof config.settings[key] !== 'number' || !Number.isFinite(config.settings[key]) || config.settings[key] < 0)) return false;
         }
         if (config.muteRules.some(rule => !record(rule) || typeof rule.name !== 'string'

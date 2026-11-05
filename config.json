@@ -21,9 +21,6 @@
     "newAccountHours": 10,
     "headshotPercentage": 90,
     "closeReasonEvidenceMinutes": 3,
-    "trackOffenderInterval": 5,
-    "trackOffenderIntervalWhileReviewing": 30,
-    "trackOpenTicketOfflineInterval": 7,
     "ticketAgeLimit": 0,
     "maxVisionTriggers": 30,
     "moreTriggers": 10,
@@ -101,7 +98,10 @@
       "talent",
       "pro",
       "legend"
-    ]
+    ],
+    "trackOffenderInterval": 5,
+    "trackOffenderIntervalWhileReviewing": 30,
+    "trackOpenTicketOfflineInterval": 5
   },
   "templates": {
     "ticket": [

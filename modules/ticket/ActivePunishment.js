@@ -1,9 +1,88 @@
+import {isIohNode} from '../shared/dom.js';
+
 export const ActivePunishmentMethods = {
+    getPunishmentPreviewBlock(record, scope) {
+        if (!(record?.nativePunishment || record?.nativeStatus) || !scope) return null;
+        const label = record.kind === 'bans' ? 'История Банов' : record.kind === 'warnings' ? 'История предупреждений' : 'История Мутов';
+        return this.getBlockByHeaderScoped(label, scope)
+            || record.kind === 'warnings' && this.getBlockByHeaderScoped('История Предупреждений', scope)
+            || this.getBlockByHeaderScoped(label.toLowerCase().replace('история', 'История'), scope);
+    },
+
+    findPunishmentPreviewRow(record, scope) {
+        const block = this.getPunishmentPreviewBlock(record, scope);
+        if (!block) return null;
+        const rows = [...block.querySelectorAll('tbody tr')].filter(r => !isIohNode(r));
+        const byId = rows.filter(r => [r.dataset?.bid, r.dataset?.id, r.getAttribute?.('data-punishment-id')].some(id => id && String(id) === record.id));
+        if (byId.length === 1) return byId[0];
+        const candidates = rows.filter(row => {
+            const cells = row.querySelectorAll('td');
+            const date = this.parseDateCell(cells[this.getColumnIndex(row, ['дата'], 1)]);
+            if (!date || !Number.isFinite(record.created) || Math.abs(date.getTime() - record.created) >= 60000) return false;
+            const text = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
+            const reasonCell = cells[this.getColumnIndex(row, ['причина', 'информация'], 2)];
+            const reason = reasonCell?.firstElementChild?.firstElementChild?.textContent || reasonCell?.textContent;
+            return record.kind === 'warnings' ? text.includes(record.reason.replace(/\s+/g, ' ').trim()) : this.normalizeReason(reason) === this.normalizeReason(record.reason);
+        });
+        if (candidates.length === 1) return candidates[0];
+        // The native active flag can arrive without the full history record, or
+        // with a differently formatted reason/date. DOM is only the preview here.
+        if (record.kind === 'warnings') return null;
+        const active = rows.filter(row => this.findActivePunishmentRow({querySelectorAll: () => [row]}) === row);
+        return active.length === 1 ? active[0] : null;
+    },
+
+    syncActivePunishmentPreview(textarea, record, icon, message) {
+        if (!this.nativeData || !(record?.nativePunishment || record?.nativeStatus)) return;
+        const scope = this.getTicketScopeRoot(textarea), ticket = this.getNativeTicket(scope);
+        if (!ticket) return;
+        this._activePreviewSessions ||= new Map();
+        const identity = `${ticket.key}:${ticket.suspectId}:${record.kind}:${record.id}:${record.created}`;
+        const previous = this._activePreviewSessions.get(textarea);
+        if (previous?.identity === identity) { previous.refresh(); return; }
+        this.releaseActivePunishmentPreview(textarea);
+        const session = {identity, textarea, scope, record, observer: null, html: null};
+        const refresh = () => {
+            const current = this.getNativeTicket(scope);
+            if (!this.document.contains(textarea) || this.getTicketScopeRoot(textarea) !== scope
+                || current?.key !== ticket.key || current?.suspectId !== ticket.suspectId) return this.releaseActivePunishmentPreview(textarea);
+            if (!this.isVisibleTicketTextarea(textarea)) return;
+            const badge = this.document.getElementById('helper-suggest-badge');
+            if (!badge || badge.parentNode !== textarea.parentNode || !badge.textContent.includes(message.trim())) return;
+            const html = this.buildActivePunishmentBadge(icon, message, record, textarea);
+            const table = this.getPunishmentPreviewBlock(record, scope)?.querySelector('table');
+            if (table && table !== session.table) {
+                session.table = table;
+                session.observer.observe(table, {childList: true, subtree: true, characterData: true,
+                    attributes: true, attributeFilter: ['class', 'style', 'data-punishment-id', 'data-id', 'data-bid']});
+            }
+            if (session.html === html) return;
+            session.html = html;
+            this.badgeService.updateInfoBadge('helper-suggest-badge', record.kind === 'bans' ? 'accent' : 'warning', html, textarea);
+        };
+        session.refresh = refresh;
+        session.observer = new MutationObserver(mutations => {
+            if (!mutations.every(m => isIohNode(m.target))) refresh();
+        });
+        session.observer.observe(scope, {childList: true, subtree: true});
+        this._activePreviewSessions.set(textarea, session);
+        refresh();
+    },
+
+    releaseActivePunishmentPreview(textarea) {
+        this._activePreviewSessions?.get(textarea)?.observer.disconnect();
+        this._activePreviewSessions?.delete(textarea);
+    },
+
+    stopActivePunishmentPreviews() {
+        for (const textarea of this._activePreviewSessions?.keys() || []) this.releaseActivePunishmentPreview(textarea);
+    },
     LIFTED_STATUS_RGB: '21, 141, 183',
     ACTIVE_STATUS_RGBS: ['234, 179, 8', '250, 204, 21', '255, 193, 7'],
     DURATION_TEXT_RE: /(\d+)\s*(день|дня|дней|д\.|час|часа|часов|ч\.|мин|минут|м\.)/i,
 
     findActivePunishmentRow(historyBlock) {
+        if (historyBlock?.nativeHistory) return historyBlock.active;
         if (!historyBlock) {
             return null;
         }
@@ -28,9 +107,9 @@ export const ActivePunishmentMethods = {
             const durationIndex = this.getColumnIndex(punishmentRow, ['длительность'], cells.length - 1);
             const dateCell = cells[dateIndex];
             const spans = dateCell?.querySelectorAll('span') || [];
-            const dateText = spans[0]?.innerText?.trim();
-            const timeText = spans[1]?.innerText?.trim();
-            const durationText = cells[durationIndex]?.innerText?.trim();
+            const dateText = spans[0]?.textContent?.trim() || spans[0]?.innerText?.trim();
+            const timeText = spans[1]?.textContent?.trim() || spans[1]?.innerText?.trim();
+            const durationText = cells[durationIndex]?.textContent?.trim() || cells[durationIndex]?.innerText?.trim();
 
             if (!this.isRealDurationText(durationText) || !dateText || !timeText) {
                 continue;
@@ -114,7 +193,10 @@ export const ActivePunishmentMethods = {
         return Boolean(this.findActivePunishmentRow(banHistoryBlock));
     },
 
-    buildPunishmentPreviewPanel(activeRow) {
+    buildPunishmentPreviewPanel(activeRow, scope = null) {
+        if (activeRow?.nativePunishment || activeRow?.nativeStatus) {
+            activeRow = this.findPunishmentPreviewRow(activeRow, scope);
+        }
         if (!activeRow) {
             return '';
         }
@@ -123,6 +205,8 @@ export const ActivePunishmentMethods = {
     },
 
     getPunishmentRowFingerprint(row) {
+        if (row?.nativeStatus) return JSON.stringify(row);
+        if (row?.nativePunishment) return JSON.stringify(row);
         return (row?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     },
 
@@ -137,11 +221,13 @@ export const ActivePunishmentMethods = {
         return false;
     },
 
-    buildActivePunishmentBadge(icon, message, activeRow) {
+    buildActivePunishmentBadge(icon, message, activeRow, textarea = null) {
         if (!activeRow) {
             return `<div class="ioh-badge-row"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
         }
-        const preview = this.buildPunishmentPreviewPanel(activeRow);
+        const preview = this.buildPunishmentPreviewPanel(activeRow, textarea && this.getTicketScopeRoot?.(textarea));
+        if (!preview && activeRow.kind === 'warnings') return `<div class="ioh-badge-row ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(activeRow.reason)}" title=""><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
+        if (!preview) return `<div class="ioh-badge-row"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span></div>`;
         return `<div class="ioh-badge-row ioh-punishment-preview-tooltip" tabindex="0"><span class="ioh-icon-box">${icon}</span><span><b>${message}</b></span>${preview}</div>`;
     },
 };

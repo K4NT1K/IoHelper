@@ -8,6 +8,7 @@ export const PunishmentPanelMethods = {
     },
 
     async loadModeratorPermissions() {
+        if (this.nativeData) { this.syncNativePermissions(); return; }
         let permissions = null;
 
         if (this.chrome?.storage?.local) {
@@ -586,6 +587,7 @@ export const PunishmentPanelMethods = {
     },
 
     extractTicketIdFromComplaintScope(scopeEl) {
+        if (this.nativeData) { const ticket = this.getNativeTicket(scopeEl); return ticket ? String(ticket.id) : null; }
         if (!scopeEl) {
             return null;
         }
@@ -1228,6 +1230,13 @@ export const PunishmentPanelMethods = {
     },
 
     async scanModeratorPunishmentPermissions() {
+        if (this.nativeData) {
+            this.syncNativePermissions();
+            const mute = this.findSiteIssueMuteButton(), ban = this.findSiteIssueBanButton();
+            if (mute) this._cacheIssueHandlerFromButton(mute, 'mute');
+            if (ban) this._cacheIssueHandlerFromButton(ban, 'ban');
+            return;
+        }
         if (this._isUpdatingPunishmentButtons || this._permissionScanSuppressed > 0) {
             return;
         }
@@ -1532,6 +1541,7 @@ export const PunishmentPanelMethods = {
     },
 
     getOffenderSteamIdForScope(scope) {
+        if (this.nativeData) return this.getNativeTicket(scope)?.suspectId || null;
         const offenderField = this.findInfoFieldScoped('Нарушитель', scope);
         return this.extractSteamIdFromField(offenderField);
     },

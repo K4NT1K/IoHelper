@@ -45,7 +45,7 @@ test('moderator highlights: full valid roster replaces config Tier, retaining ve
         helperScheduleModerators: snapshot()};
     const service = new ModeratorService({document: {}, chrome: {storage: {local: {get: async () => stored}}}});
     const current = await service.loadBaselineModerators();
-    assert.equal(service.resolveModeratorType(id, current), 'verification');
+    assert.equal(service.resolveModeratorType(id, current), 'admin');
     assert.equal(service.resolveModeratorType(former, current), null);
     assert.equal(service.resolveModeratorType(specialist, current), 'admin');
     stored.helperScheduleModerators.days.pop();

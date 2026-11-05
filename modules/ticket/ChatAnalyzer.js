@@ -4,7 +4,7 @@ export const ChatAnalyzerMethods = {
         const scope = this.getTicketScopeRoot(textarea);
         const key = this.getChatCacheKey(textarea);
         const previous = this._chatAnalysisByScope.get(scope);
-        const steamId = this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope)) || 'unknown';
+        const steamId = (this.nativeData ? this.getNativeTicket(scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope))) || 'unknown';
         const state = {scope, textarea, key, steamId, generation: this._chatAnalysisGeneration || 0, completed: false,
             kind: previous?.key === key ? previous.kind : null,
             signature: previous?.key === key ? previous.signature : null};
@@ -18,7 +18,7 @@ export const ChatAnalyzerMethods = {
             && this.document.contains(state.textarea)
             && this.isVisibleTicketTextarea(state.textarea)
             && this.getTicketScopeRoot(state.textarea) === state.scope
-            && (this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', state.scope)) || 'unknown') === state.steamId
+            && ((this.nativeData ? this.getNativeTicket(state.scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', state.scope))) || 'unknown') === state.steamId
             && this.getChatCacheKey(state.textarea) === state.key;
     },
 
@@ -30,6 +30,7 @@ export const ChatAnalyzerMethods = {
         state.completed = ['none', 'warning', 'mute', 'skip'].includes(kind);
         state.kind = state.completed ? kind : null;
         state.signature = signature;
+        if (this.nativeData) state.nativeSignature = this.nativeAnalysisSignature(state.scope);
         return state.completed ? {kind} : null;
     },
 
@@ -43,7 +44,8 @@ export const ChatAnalyzerMethods = {
         const state = this._chatAnalysisByScope?.get(scope);
         if (!state?.completed || !this.document.contains(state.textarea)
             || this.getTicketScopeRoot(state.textarea) !== scope) return null;
-        const steamId = this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope)) || 'unknown';
+        if (this.nativeData && state.nativeSignature !== this.nativeAnalysisSignature(scope)) return null;
+        const steamId = (this.nativeData ? this.getNativeTicket(scope)?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope))) || 'unknown';
         return state.steamId === steamId ? state : null;
     },
 
@@ -105,8 +107,8 @@ export const ChatAnalyzerMethods = {
 
     parseDateCell(dateCell) {
         const spans = dateCell?.querySelectorAll('span');
-        const dateText = spans && spans[0] ? spans[0].innerText?.trim() : null;
-        const timeText = spans && spans[1] ? spans[1].innerText?.trim() : '00:00';
+        const dateText = spans && spans[0] ? (spans[0].textContent || spans[0].innerText || '').trim() : null;
+        const timeText = spans && spans[1] ? (spans[1].textContent || spans[1].innerText || '').trim() : '00:00';
         if (!dateText) return null;
 
         const [d, m, y] = dateText.split('.').map(Number);

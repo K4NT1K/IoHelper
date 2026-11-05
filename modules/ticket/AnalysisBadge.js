@@ -75,7 +75,42 @@ export const AnalysisBadgeMethods = {
         button.remove();
     },
 
-    handleTriggerClick(e) {
+    cancelTriggerNavigation() {
+        this._triggerNavigationCancel?.(); this._triggerNavigationCancel = null;
+        clearTimeout(this._triggerHighlightTimer);
+        this._triggerHighlightedRows?.forEach(row => row.classList.remove('ioh-chat-highlight'));
+        this._triggerHighlightedRows = null;
+    },
+
+    waitForNativeMessageRows(scope, textarea, messages) {
+        const key = this.getNativeTicket(scope)?.key;
+        return new Promise(resolve => {
+            let observer, timer, finished = false;
+            const finish = rows => {
+                if (finished) return; finished = true;
+                observer?.disconnect(); clearTimeout(timer);
+                if (this._triggerNavigationCancel === cancel) this._triggerNavigationCancel = null;
+                resolve(rows);
+            };
+            const cancel = () => finish([]);
+            const check = () => {
+                if (!this.document.contains(textarea) || !this.isVisibleTicketTextarea(textarea)
+                    || this.getTicketScopeRoot(textarea) !== scope || this.getNativeTicket(scope)?.key !== key) return finish([]);
+                const bindings = this.bindNativeMessageRows(scope);
+                const rows = messages.map(m => bindings.get(m.id)).filter(Boolean);
+                if (rows.length) finish(rows);
+            };
+            this._triggerNavigationCancel = cancel;
+            observer = new MutationObserver(check);
+            observer.observe(this.getHistorySectionCard('История Чата', scope) || scope, {childList: true, subtree: true});
+            timer = setTimeout(() => finish([]), 2000);
+            const accordion = this.getHistoryAccordionButton('История Чата', scope);
+            if (accordion?.getAttribute('aria-expanded') === 'false') accordion.click();
+            check();
+        });
+    },
+
+    async handleTriggerClick(e) {
         const more = e.target.closest('.ioh-more-triggers');
         if (more) {
             this.revealMoreTriggers(more);
@@ -87,8 +122,18 @@ export const AnalysisBadgeMethods = {
 
         const target = this.triggerRows.get(trigger.dataset.triggerId);
         if (!target) return;
+        this.cancelTriggerNavigation();
 
-        const rows = Array.isArray(target) ? target : [target];
+        let rows = Array.isArray(target) ? target : [target];
+        if (this.nativeData) {
+            const textarea = this.findVisibleTicketResolutionTextarea();
+            const scope = textarea && this.getTicketScopeRoot(textarea);
+            const binding = scope && this.bindNativeMessageRows(scope);
+            const messages = rows;
+            rows = messages.map(message => binding?.get(message.id)).filter(Boolean);
+            if (!rows.length && scope) rows = await this.waitForNativeMessageRows(scope, textarea, messages);
+            if (!rows.length) return;
+        }
 
         rows[0].scrollIntoView({
             behavior: "smooth",
@@ -97,12 +142,16 @@ export const AnalysisBadgeMethods = {
 
         rows.forEach(row => row.classList.add("ioh-chat-highlight"));
 
-        setTimeout(() => {
+        this._triggerHighlightedRows = rows;
+        this._triggerHighlightTimer = setTimeout(() => {
             rows.forEach(row => row.classList.remove("ioh-chat-highlight"));
+            this._triggerHighlightedRows = null;
         }, 1000);
     },
 
     clearTicketRuleBadge() {
+        this.cancelTriggerNavigation();
+        this.stopActivePunishmentPreviews?.();
         this.document.getElementById('helper-suggest-badge')?.remove();
         this.activePunishmentBadgeByKey.clear();
         this._sortedTriggers = [];

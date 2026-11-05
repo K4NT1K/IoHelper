@@ -9,8 +9,8 @@ export const DEFAULT_FEATURES = Object.freeze({
 
 export function mergeSettings(base = {}, overrides = {}) {
     const result = {
-        newAccountHours: 7, headshotPercentage: 95, closeReasonEvidenceMinutes: 3, trackOffenderInterval: 5,
-        trackOffenderIntervalWhileReviewing: 30, trackOpenTicketOfflineInterval: 5,
+        newAccountHours: 7, headshotPercentage: 95, closeReasonEvidenceMinutes: 3,
+        trackOffenderInterval: 5, trackOffenderIntervalWhileReviewing: 30, trackOpenTicketOfflineInterval: 5,
         reasonTriggers: [], reasonTriggersAutoconnect: [], autoConnectReasons: [],
         offenderVipStatuses: [], ...base, ...overrides,
         features: {...DEFAULT_FEATURES, ...base.features, ...overrides.features}

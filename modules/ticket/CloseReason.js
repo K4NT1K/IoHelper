@@ -70,8 +70,9 @@ export const CloseReasonMethods = {
             card = card.parentElement;
         }
         if (!title || !card || card === this.document.body) return null;
-        const ticketId = title.textContent.match(/#(\d+)/)?.[1];
-        const steamId = this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope));
+        const ticket = this.nativeData && this.getNativeTicket(scope);
+        const ticketId = this.nativeData ? ticket && String(ticket.id) : title.textContent.match(/#(\d+)/)?.[1];
+        const steamId = this.nativeData ? ticket?.suspectId : this.extractSteamIdFromField(this.findInfoFieldScoped('Нарушитель', scope));
         const category = this.getTicketComplaintCategory(scope);
         if (!ticketId || !steamId || !CATEGORIES.has(normalize(category))) return null;
         this._closeReasonScopes.set(textarea, scope);
@@ -87,6 +88,7 @@ export const CloseReasonMethods = {
     },
 
     isCloseReasonContextInProgress(context) {
+        if (this.nativeData) return Boolean(context && this.scopeHasInProgressStatus(context.scope, {includeActivePanel: false}));
         const header = context?.title?.parentElement;
         if (header?.querySelectorAll) {
             return Array.from(header.querySelectorAll('span')).some(span => span.textContent.trim() === 'В работе');
@@ -206,7 +208,7 @@ export const CloseReasonMethods = {
                         if (mutations.every(mutation => isIohNode(mutation.target))) return;
                         this.syncCloseReasonSelection();
                     });
-                    pending.observer.observe(context.card, {childList: true, subtree: true, characterData: true,
+                    pending.observer.observe(context.card, {childList: true, subtree: true, characterData: !this.nativeData,
                         attributes: true, attributeFilter: ['disabled', 'readonly']});
                     this._closeReasonPendingCards.set(context.card, pending);
                 }
@@ -229,7 +231,7 @@ export const CloseReasonMethods = {
                     if (mutations.every(mutation => isIohNode(mutation.target))) return;
                     this.refreshCloseReasonSession(session);
                 });
-                session.observer.observe(session.card, {childList: true, subtree: true, characterData: true,
+                session.observer.observe(session.card, {childList: true, subtree: true, characterData: !this.nativeData,
                     attributes: true, attributeFilter: ['disabled', 'readonly']});
             }
             this.refreshCloseReasonSession(session);
@@ -262,16 +264,20 @@ export const CloseReasonMethods = {
         // Disabled controls can be a temporary React transition. Keep this scoped
         // observer so an attribute-only return to editable state can resume selection.
         if (!this.isCloseReasonContextEditable(context)) return;
-        const interval = Number(this.settings.trackOffenderIntervalWhileReviewing);
-        const cacheTtl = Math.max(5000, (Number.isFinite(interval) ? interval : 30) * 1000 + 5000);
-        const cached = this.getCachedUserData?.(session.steamId, cacheTtl);
+        const cached = this.getCachedUserData?.(session.steamId);
         const state = session.complaintState;
         if (cached && (!state.punishmentData || cached.fetchedAt > state.punishmentData.fetchedAt)) {
             state.punishmentData = mergeCloseReasonData(state.punishmentData, cached);
         }
         if (state.manual || !this.isCloseReasonTextareaVisible(session.textarea, session.scope)) return;
-        const clock = context.title.parentElement?.querySelector('use[href="#lc-clock"]');
-        const elapsed = parseCloseReasonTimer(clock?.closest('svg')?.parentElement?.textContent);
+        const ticket = this.nativeData && this.getNativeTicket(session.scope);
+        const elapsed = this.nativeData ? ticket?.startedAt ? Math.max(0, (Date.now() - ticket.startedAt) / 1000) : null
+            : parseCloseReasonTimer(context.title.parentElement?.querySelector('use[href="#lc-clock"]')?.closest('svg')?.parentElement?.textContent);
+        if (this.nativeData) {
+            clearTimeout(session.thresholdTimer);
+            const remaining = ticket?.startedAt + closeReasonEvidenceMinutes(this.settings.closeReasonEvidenceMinutes) * 60000 - Date.now();
+            if (ticket?.startedAt && remaining > 0) session.thresholdTimer = setTimeout(() => this.refreshCloseReasonSession(session), remaining + 10);
+        }
         const data = state.punishmentData || {};
         const matchingType = CATEGORIES.get(normalize(session.category));
         const desired = Array.from(state.intents.values()).includes(matchingType) ? LABELS.punished
@@ -320,6 +326,7 @@ export const CloseReasonMethods = {
         if (!context || context.scope !== scope || context.steamId !== steamId || context.ticketId !== String(ticketId)
             || !this.isCloseReasonContextEditable(context)) return false;
         session.complaintState.intents.set(attemptToken, type);
+        this.rememberNativePunishmentIntent?.({type, scope, steamId, ticketId, attemptToken});
         this._closeReasonIntentStates ||= new WeakMap();
         this._closeReasonIntentStates.set(attemptToken, session.complaintState);
         this.refreshCloseReasonSession(session);
@@ -327,6 +334,7 @@ export const CloseReasonMethods = {
     },
 
     cancelCloseReasonPunishmentIntent(attemptToken) {
+        this._nativePunishmentAttempts?.delete(attemptToken);
         const state = this._closeReasonIntentStates?.get(attemptToken);
         if (!state) return;
         state.intents.delete(attemptToken);
@@ -342,6 +350,7 @@ export const CloseReasonMethods = {
     },
 
     releaseCloseReasonSession(session) {
+        clearTimeout(session.thresholdTimer);
         session.observer?.disconnect();
         session.card.removeEventListener('click', session.onClick, true);
         if (this._closeReasonSessions?.get(session.scope) === session) this._closeReasonSessions.delete(session.scope);

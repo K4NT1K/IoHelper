@@ -12,9 +12,11 @@ import { OffenderProfileMethods } from './ticket/OffenderProfile.js';
 import { OffenderTrackingMethods } from './ticket/OffenderTracking.js';
 import { CloseReasonMethods } from './ticket/CloseReason.js';
 import { PunishmentFeedbackMethods } from './ticket/PunishmentFeedback.js';
+import {NativeTicketMethods} from './ticket/NativeData.js';
 
 export class TicketService {
-    constructor({document, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome = null}) {
+    constructor({document, utils, badgeService, settings, rules, spamRules = {}, muteExceptions = {}, chrome = null, nativeData = null}) {
+        this.nativeData = nativeData;
         this.document = document;
         this.utils = utils;
         this.badgeService = badgeService;
@@ -149,6 +151,7 @@ export class TicketService {
 
         const activeBanRow = this.findActivePunishmentRow(banHistoryBlock);
         if (activeBanRow) {
+            this.syncActivePunishmentPreview(textarea, activeBanRow, banIcon, ' ЗАБАНЕН');
             const signature = `${pathname}|ban:${this.getPunishmentRowFingerprint(activeBanRow)}`;
             if (this.chatSignatureByKey.get(cacheKey) === signature) {
                 return {kind: 'unchanged'};
@@ -159,7 +162,7 @@ export class TicketService {
                 this.badgeService.updateInfoBadge(
                     'helper-suggest-badge',
                     'accent',
-                    this.buildActivePunishmentBadge(banIcon, ' ЗАБАНЕН', activeBanRow),
+                    this.buildActivePunishmentBadge(banIcon, ' ЗАБАНЕН', activeBanRow, textarea),
                     textarea
                 );
             }
@@ -168,6 +171,7 @@ export class TicketService {
 
         const activeMuteRow = this.findActivePunishmentRow(muteHistoryBlock);
         if (activeMuteRow) {
+            this.syncActivePunishmentPreview(textarea, activeMuteRow, muteIcon, ' АКТИВНЫЙ МУТ');
             const signature = `${pathname}|mute:${this.getPunishmentRowFingerprint(activeMuteRow)}`;
             if (this.chatSignatureByKey.get(cacheKey) === signature) {
                 return {kind: 'unchanged'};
@@ -178,7 +182,7 @@ export class TicketService {
                 this.badgeService.updateInfoBadge(
                     'helper-suggest-badge',
                     'warning',
-                    this.buildActivePunishmentBadge(muteIcon, ' АКТИВНЫЙ МУТ', activeMuteRow),
+                    this.buildActivePunishmentBadge(muteIcon, ' АКТИВНЫЙ МУТ', activeMuteRow, textarea),
                     textarea
                 );
             }
@@ -186,13 +190,14 @@ export class TicketService {
         }
 
         this.activePunishmentBadgeByKey.delete(cacheKey);
+        this.releaseActivePunishmentPreview(textarea);
 
-        const rows = Array.from(chatHistoryBlock?.querySelectorAll('tbody tr, tr') || [])
+        const rows = this.nativeData ? this.nativeMessages(scope) : Array.from(chatHistoryBlock?.querySelectorAll('tbody tr, tr') || [])
             .filter(row => row.querySelector('td'));
         const lastRow = rows[rows.length - 1];
-        const chatEmpty = this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
+        const chatEmpty = this.nativeData ? rows.length === 0 : this.isChatHistoryEmptyScoped(scope) || rows.length === 0;
         const warnPart = this.getWarningHistorySignaturePart(warningHistoryBlock);
-        const signature = chatEmpty
+        const signature = this.nativeData ? this.nativeAnalysisSignature(scope) : chatEmpty
             ? `${pathname}|empty|${warnPart}`
             : `${pathname}|${rows.length}|${(lastRow.innerText || '').trim().slice(0, 220)}|${warnPart}`;
 
@@ -220,11 +225,14 @@ export class TicketService {
         // solo «завали» still matches «Не провоцируйте» in warning history.
         const coveringWarning = this.getCoveringWarningWithoutNewTriggers(warningHistoryBlock, allViolations);
         if (coveringWarning) {
+            const warningRecord = {nativePunishment: true, kind: 'warnings', id: String(coveringWarning.date.getTime()), created: coveringWarning.date.getTime(), reason: coveringWarning.text};
+            if (this.nativeData) this.syncActivePunishmentPreview(textarea, warningRecord, warningIcon, ' Игроку уже выдано предупреждение!');
             this.clearSuggestedMuteReason();
             this.badgeService.updateInfoBadge(
                 'helper-suggest-badge',
                 'warning',
-                `<div class="ioh-badge-row ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title=""><span class="ioh-icon-box">${warningIcon}</span><span><b> Игроку уже выдано предупреждение!</b></span></div>`,
+                this.nativeData ? this.buildActivePunishmentBadge(warningIcon, ' Игроку уже выдано предупреждение!', warningRecord, textarea)
+                    : `<div class="ioh-badge-row ioh-warning-text-tooltip" data-full-msg="${this.utils.escapeHtml(coveringWarning.text)}" title=""><span class="ioh-icon-box">${warningIcon}</span><span><b> Игроку уже выдано предупреждение!</b></span></div>`,
                 textarea
             );
             return {kind: 'skip'};
@@ -348,6 +356,10 @@ export class TicketService {
     }
 
     findLastMuteWithin24h(muteHistoryBlock) {
+        if (muteHistoryBlock?.nativeHistory) {
+            const newest = muteHistoryBlock.items.filter(p => p.created >= Date.now() - 86400000).sort((a, b) => b.created - a.created)[0];
+            return newest ? new Date(newest.created) : null;
+        }
         if (!muteHistoryBlock) {
             return null;
         }
@@ -383,15 +395,15 @@ export class TicketService {
         const getSeverity = rule => this.getRuleSeverity(rule);
 
         for (const row of rows) {
-            const chatRow = this.getChatRowData(row);
+            const chatRow = this.nativeData ? {messageText: row.text, authorText: row.channel === 'team' ? 'Команда' : 'Все', timeText: '', timeMs: row.timeMs} : this.getChatRowData(row);
             if (!chatRow || !chatRow.messageText) {
                 continue;
             }
-            if (!this.utils.isMessageWithin24Hours(chatRow.timeText)) {
+            if (!this.nativeData && !this.utils.isMessageWithin24Hours(chatRow.timeText)) {
                 continue;
             }
 
-            const msgTimeMs = this.utils.parseTimeToMs(chatRow.timeText);
+            const msgTimeMs = this.nativeData ? chatRow.timeMs : this.utils.parseTimeToMs(chatRow.timeText);
             if (lastMuteDate && msgTimeMs && msgTimeMs <= lastMuteDate.getTime()) {
                 continue;
             }
@@ -475,5 +487,6 @@ Object.assign(
     OffenderProfileMethods,
     OffenderTrackingMethods,
     CloseReasonMethods,
-    PunishmentFeedbackMethods
+    PunishmentFeedbackMethods,
+    NativeTicketMethods
 );

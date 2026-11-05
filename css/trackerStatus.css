@@ -1,0 +1,10 @@
+.ioh-tracker-status {
+    position: fixed; inset-inline-end: 20px; bottom: 20px; z-index: 2147483000;
+    max-width: min(440px, calc(100vw - 40px)); padding: 11px 15px;
+    border: 1px solid rgba(135,151,185,.25); border-radius: 12px;
+    background: rgba(25,30,42,.96); color: #e4e9f4;
+    box-shadow: 0 8px 30px #0004; font: 12px/1.65 system-ui, sans-serif;
+    white-space: pre-line; pointer-events: none;
+}
+.ioh-tracker-status::before {content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#71cb96;margin-inline-end:8px;vertical-align:1px;}
+.ioh-tracker-status--waiting::before {background:#f0b358;box-shadow:0 0 0 3px #f0b35815;}

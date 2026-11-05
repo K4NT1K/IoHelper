@@ -30,5 +30,5 @@ test('moderator service preserves disabled scan preference and understands neste
     await service.scanSchedulePage(); assert.equal(messages, 0);
     const id = '76561199163023778';
     assert.equal(service.resolveModeratorType(id, {Tier: {Tier1: {[id]: 'Moderator'}}}), 'admin');
-    assert.equal(service.resolveModeratorType(id, {verification: {[id]: 'Verified'}, Tier: {Tier1: {[id]: 'Moderator'}}}), 'verification');
+    assert.equal(service.resolveModeratorType(id, {verification: {[id]: 'Verified'}, Tier: {Tier1: {[id]: 'Moderator'}}}), 'admin');
 });

@@ -1,5 +1,11 @@
 export const VerdictMethods = {
     findRecentMuteForReasons(muteHistoryBlock, reasonNames) {
+        if (muteHistoryBlock?.nativeHistory) {
+            const names = reasonNames.map(n => this.normalizeReason(n));
+            const p = muteHistoryBlock.items.filter(p => p.created >= Date.now() - 30 * 86400000 && p.length > 0
+                && names.includes(this.normalizeReason(p.reason))).sort((a, b) => b.created - a.created)[0];
+            return p ? {date: new Date(p.created), duration: p.length / 60} : null;
+        }
         if (!muteHistoryBlock) return null;
 
         const acceptedReasons = reasonNames.map(reason => this.normalizeReason(reason)).filter(Boolean);
@@ -143,6 +149,7 @@ export const VerdictMethods = {
     },
 
     parseWarningHistoryRows(warningHistoryBlock) {
+        if (warningHistoryBlock?.nativeHistory) return warningHistoryBlock.items.map(w => ({date: new Date(w.timeMs), text: w.text}));
         if (!warningHistoryBlock) {
             return [];
         }
@@ -190,6 +197,7 @@ export const VerdictMethods = {
     },
 
     getWarningHistorySignaturePart(warningHistoryBlock) {
+        if (warningHistoryBlock?.nativeHistory) return JSON.stringify(warningHistoryBlock.items);
         if (!warningHistoryBlock) {
             return 'warn:0|';
         }

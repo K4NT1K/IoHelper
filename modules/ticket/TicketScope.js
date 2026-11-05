@@ -1,6 +1,7 @@
 export const TicketScopeMethods = {
     getChatCacheKey(textarea) {
         const scope = this.getTicketScopeRoot(textarea);
+        if (this.nativeData) return this.getNativeTicket(scope)?.key || 'native:pending';
         const blocks = this.getHistoryBlocks(scope);
         const offenderId = blocks.offenderSteamId || 'unknown';
         const scopeToken = scope?.getAttribute?.('aria-hidden') ?? scope?.className?.slice(0, 40) ?? '';
@@ -9,6 +10,7 @@ export const TicketScopeMethods = {
     },
 
     getHistoryBlocks(scope, {force = false} = {}) {
+        if (this.nativeData) return this.nativeHistoryBlocks(scope || this.getAutoConnectScope() || this.document.body);
         const root = scope || this.document.body;
         if (!this._scopeCache) {
             this._scopeCache = new WeakMap();
@@ -270,6 +272,7 @@ export const TicketScopeMethods = {
      * Missing table / zero rows without empty markers = still loading.
      */
     isChatHistorySettledScoped(scopeEl) {
+        if (this.nativeData) return this.nativeAnalysisReady(scopeEl);
         const accordion = this.getHistoryAccordionButton('История Чата', scopeEl);
         if (accordion) {
             const hasEmptyBadge = Array.from(accordion.querySelectorAll('span'))
@@ -303,6 +306,7 @@ export const TicketScopeMethods = {
     },
 
     async waitForSettledChatHistory(textarea, {timeoutMs = 3000, pollMs = 120} = {}) {
+        if (this.nativeData) return this.nativeAnalysisReady(this.getTicketScopeRoot(textarea));
         if (!textarea || !this.document.contains(textarea)) {
             return false;
         }

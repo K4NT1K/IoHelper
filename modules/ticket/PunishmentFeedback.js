@@ -12,7 +12,8 @@ export const PunishmentFeedbackMethods = {
             const title = Array.from(card.querySelectorAll('h3')).find(header =>
                 /^Результат рассмотрения (?:тикета|репорта) #\d+\b/i.test(header.textContent.trim()));
             if (title) {
-                const ticketId = title.textContent.match(/#(\d+)/)?.[1];
+                const ticket = this.nativeData && this.getNativeTicket(scope);
+                const ticketId = this.nativeData ? ticket && String(ticket.id) : title.textContent.match(/#(\d+)/)?.[1];
                 const steamId = this.getOffenderSteamIdForScope(scope);
                 return ticketId && steamId ? {scope, textarea, title, card, ticketId, steamId,
                     category: this.getTicketComplaintCategory(scope),
@@ -56,6 +57,7 @@ export const PunishmentFeedbackMethods = {
             session.observer.observe(session.scope, {childList: true, subtree: true});
         }
         session.intents.set(intent.attemptToken, intent.type);
+        this.rememberNativePunishmentIntent?.(intent);
         this._punishmentFeedbackTokens ||= new WeakMap();
         this._punishmentFeedbackTokens.set(intent.attemptToken, session);
         this.refreshTicketPunishmentFeedback(session);
@@ -63,6 +65,7 @@ export const PunishmentFeedbackMethods = {
     },
 
     cancelTicketPunishmentFeedbackIntent(token) {
+        this._nativePunishmentAttempts?.delete(token);
         const session = this._punishmentFeedbackTokens?.get(token);
         if (!session) return;
         session.intents.delete(token);
@@ -92,6 +95,7 @@ export const PunishmentFeedbackMethods = {
             session.observer.observe(session.scope, {childList: true, subtree: true});
         }
         for (const history of [blocks.ban, blocks.mute]) {
+            if (history?.nativeHistory) continue;
             if (!history || history === session.scope || history === this.document.body
                 || history === this.document.documentElement || session.histories.has(history)) continue;
             session.histories.add(history);
@@ -107,6 +111,12 @@ export const PunishmentFeedbackMethods = {
             }
         }
         const types = Array.from(session.intents.values());
+        if (session.nativeConfirmed) {
+            const player = this.nativePlayer(session.steamId), key = session.nativeConfirmed.type === 'ban' ? 'isBanned' : 'isMuted';
+            if (player?.[key] === false && (player.stamps[key] > session.nativeConfirmed.startedAt
+                || player.stamps[key] === session.nativeConfirmed.startedAt && player.orders[key] > session.nativeConfirmed.sequence)) session.nativeConfirmed = null;
+            else types.push(session.nativeConfirmed.type);
+        }
         const type = ban || types.includes('ban') ? 'ban' : mute || types.includes('mute') ? 'mute' : null;
         if (!type) {
             const hadBadge = session.lastHtml !== null;
@@ -127,8 +137,10 @@ export const PunishmentFeedbackMethods = {
         }
         if (!this.isCloseReasonTextareaVisible(session.textarea, session.scope)) return true;
         const icons = this.getAnalysisIcons();
+        this.syncActivePunishmentPreview?.(session.textarea, type === 'ban' ? ban : mute,
+            icons[type] || icons.chatError || '', type === 'ban' ? ' ЗАБАНЕН' : ' АКТИВНЫЙ МУТ');
         const html = this.buildActivePunishmentBadge(icons[type] || icons.chatError || '',
-            type === 'ban' ? ' ЗАБАНЕН' : ' АКТИВНЫЙ МУТ', type === 'ban' ? ban : mute);
+            type === 'ban' ? ' ЗАБАНЕН' : ' АКТИВНЫЙ МУТ', type === 'ban' ? ban : mute, session.textarea);
         const badge = this.document.getElementById('helper-suggest-badge');
         if (session.lastHtml !== html || !badge || badge.parentNode !== session.textarea.parentNode) {
             this.clearSuggestedMuteReason();
@@ -152,6 +164,7 @@ export const PunishmentFeedbackMethods = {
     },
 
     stopTicketPunishmentFeedback() {
+        this.stopActivePunishmentPreviews?.();
         for (const session of this._punishmentFeedbackSessions?.values() || []) this.releaseTicketPunishmentFeedback(session);
     }
 };

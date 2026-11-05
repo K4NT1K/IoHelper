@@ -14,6 +14,10 @@ export const AutoConnectMethods = {
         if (!scope || !this.isActiveComplaintScope(scope)) {
             return null;
         }
+        if (this.nativeData) {
+            const ticket = this.getNativeTicket(scope);
+            return ticket ? `${ticket.key}|${ticket.suspectId}` : null;
+        }
 
         const offenderId = this.extractSteamIdFromField(
             this.findInfoFieldScoped('Нарушитель', scope)
@@ -135,6 +139,7 @@ export const AutoConnectMethods = {
     },
 
     getTicketComplaintParts(scope = null) {
+        if (this.nativeData) { const t = this.getNativeTicket(scope); return {category: t?.reason || '', playerText: t?.message || ''}; }
         const categoryField = this.findInfoFieldByLabels(['Причина жалобы', 'Причина'], scope);
         const valueBlock = this.findFieldValueBlock(categoryField);
 
@@ -152,6 +157,7 @@ export const AutoConnectMethods = {
     },
 
     getTicketPlayerMessageText(scope = null) {
+        if (this.nativeData) return this.getNativeTicket(scope)?.message || '';
         const messageField = this.findInfoFieldByLabels(['Сообщение от пользователя'], scope);
         if (!messageField) {
             return '';
@@ -201,6 +207,10 @@ export const AutoConnectMethods = {
 
     canAutoConnectAfterAnalysis(scope) {
         if (!this.isVoiceFallbackCategory(this.getTicketComplaintCategory(scope))) return true;
+        if (this.nativeData) {
+            const t = this.getNativeTicket(scope), p = t && this.nativePlayer(t.suspectId);
+            if (typeof p?.isBanned !== 'boolean' || typeof p?.isMuted !== 'boolean') return false;
+        }
         if (this.complaintTextMatchesAutoconnectTrigger(this.getPlayerComplaintText(scope))) {
             return !this.hasActivePunishmentForVoiceFallback(null, scope);
         }
@@ -221,6 +231,10 @@ export const AutoConnectMethods = {
     },
 
     scopeHasInProgressStatus(scope, {includeActivePanel = true} = {}) {
+        if (this.nativeData) {
+            const t = this.getNativeTicket(scope);
+            return Boolean(t && t.status === 1 && !t.endedAt && t.adminId && t.adminId === this.nativeData.account?.steamId);
+        }
         if (!scope) {
             return false;
         }
@@ -257,6 +271,7 @@ export const AutoConnectMethods = {
     },
 
     shouldAutoConnectToServer({analysisFallback = false} = {}) {
+        if (this.nativeData) return this.nativeAutoConnectDecision({analysisFallback});
         const allowedPaths = [
             '/reports/4',
             '/reports/5',
@@ -447,6 +462,14 @@ export const AutoConnectMethods = {
     },
 
     connectToCurrentServer({forceRelocate = false, analysisFallback = false} = {}) {
+        if (this.nativeData) {
+            const t = this.getNativeTicket(this.getAutoConnectScope());
+            const p = t && this.nativePlayer(t.suspectId);
+            if (!p?.serverIp || !this.shouldAutoConnectToServer({analysisFallback}).allowed) return false;
+            if (this.hasRecentlyAutoConnected(p.serverIp)) return false;
+            this.markAutoConnected(p.serverIp);
+            return this.connectToSteamServer(p.serverIp);
+        }
         if (forceRelocate) {
             return this.connectToRelocatedServerForced();
         }
