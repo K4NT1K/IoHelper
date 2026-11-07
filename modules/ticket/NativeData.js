@@ -154,8 +154,7 @@ export const NativeTicketMethods = {
             const p = this.nativePlayer(t.suspectId) || {};
             const senderMod = this.renderNativeParticipant(sender, t.senderId);
             const suspectMod = this.renderNativeParticipant(suspect, t.suspectId);
-            const ageAllowed = !t.createdAt || Date.now() - t.createdAt >= Math.max(0, Number(this.settings.ticketAgeLimit) || 0) * 1000;
-            if (this.settings.features?.trackOffenderServer && ageAllowed) {
+            if (this.settings.features?.trackOffenderServer) {
                 const link = row.querySelector('a[href^="steam://connect/"]');
                 if (link && Object.hasOwn(p, 'serverIp')) {
                     link.dataset.iohOriginalServerIp = t.complaintServer || '';

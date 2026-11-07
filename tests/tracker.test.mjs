@@ -49,7 +49,7 @@ function tracker(t, count, fetchData = async () => ({}), playerCount = count) {
     const jobs = [];
     const rendered = [];
     const ctx = {
-        settings: {features: {trackOffenderServer: true}, ticketAgeLimit: 0},
+        settings: {features: {trackOffenderServer: true}},
         document: {hidden: false, querySelectorAll: () => rows},
         utils: {},
         isCheckingServer: false,
@@ -86,7 +86,7 @@ test('A newly woken queue waits out existing cooldown instead of dropping the pa
     await time.finish(run);assert.equal(s.calls.length,1);
 });
 
-test('Arrivals wait behind all older first checks, then overtake repeat checks in the running pass', async t => {
+test('Arrivals overtake both older first checks and repeat checks after the running request', async t => {
     const time = clock(t), pending = deferred();
     const s = tracker(t, 4, async () => s.calls.length === 1 ? pending.promise : {});
     // Reversed DOM order: old unchecked 3,2; already checked repeat 1.
@@ -97,7 +97,7 @@ test('Arrivals wait behind all older first checks, then overtake repeat checks i
     s.rows.unshift(fresh);
     OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [fresh]);
     pending.resolve({}); await time.finish(first);
-    assert.deepEqual(s.calls, [s.rows[3], s.rows[2], fresh, s.rows[1]].map(row => row.offenderLink.href.split('/').at(-1)));
+    assert.deepEqual(s.calls, [s.rows[3], fresh, s.rows[2], s.rows[1]].map(row => row.offenderLink.href.split('/').at(-1)));
     assert.equal(s.ctx._offenderTrackingArrivals.size, 0);
     assert.equal(new Set(s.calls).size, 4);
 });
@@ -115,6 +115,80 @@ test('When older complaints were checked, an arrival preempts remaining repeats 
     assert.equal(s.calls[0], running);
     assert.equal(s.calls[1], fresh.offenderLink.href.split('/').at(-1));
     assert.equal(s.calls.length, 4);
+});
+
+test('An arrival during throttle also precedes an older complaint awaiting its first check', async t => {
+    const time = clock(t), s = tracker(t, 2);
+    const fresh = s.rows.shift();
+    const run = s.run(); await time.advance(100);
+    s.rows.unshift(fresh); OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [fresh]);
+    await time.finish(run);
+    assert.equal(s.calls[0], fresh.offenderLink.href.split('/').at(-1));
+});
+
+test('Arrivals queued before the full snapshot precede older first checks in stable batch order', async t => {
+    const time = clock(t), s = tracker(t, 4);
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [s.rows[0], s.rows[1]]);
+    await time.finish(s.run());
+    assert.deepEqual(s.calls, [s.rows[0], s.rows[1], s.rows[3], s.rows[2]]
+        .map(row => row.offenderLink.href.split('/').at(-1)));
+});
+
+for (const arrivalsOnly of [false, true]) {
+    test(`The initially mounted unchecked queue is checked bottom to top (arrivalsOnly=${arrivalsOnly})`, async t => {
+        const time = clock(t), s = tracker(t, 4);
+        for (const row of s.rows) row.compareDocumentPosition = other => {
+            const difference = s.rows.indexOf(other) - s.rows.indexOf(row);
+            return difference > 0 ? 4 : difference < 0 ? 2 : 0;
+        };
+        // DOMCoordinator reports a populated tbody in the site's newest-first order.
+        OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, s.rows);
+        await time.finish(s.run({arrivalsOnly}));
+        assert.deepEqual(s.calls, [...s.rows].reverse().map(row => row.offenderLink.href.split('/').at(-1)));
+    });
+}
+
+test('New complaint batches interrupt the initial bottom-up pass, then resume its remaining position', async t => {
+    const time = clock(t), pending = deferred(), s = tracker(t, 5, () => s.calls.length === 1 ? pending.promise : {});
+    for (const row of s.rows) row.compareDocumentPosition = other => {
+        const difference = s.rows.indexOf(other) - s.rows.indexOf(row);
+        return difference > 0 ? 4 : difference < 0 ? 2 : 0;
+    };
+    const fresh = s.rows.splice(0, 2);
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, s.rows);
+    const run = s.run(); await time.advance(340);
+    s.rows.unshift(...fresh);
+    // Separate notifications before the in-flight request finishes still form one ordered batch.
+    for (const row of fresh) OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [row]);
+    pending.resolve({}); await time.finish(run);
+    assert.deepEqual(s.calls, [s.rows[4], fresh[1], fresh[0], s.rows[3], s.rows[2]]
+        .map(row => row.offenderLink.href.split('/').at(-1)));
+});
+
+test('Targeted arrivals check only new identities, without scanning or rechecking a remounted old table', async t => {
+    const time = clock(t), s = tracker(t, 2);
+    s.rows.forEach((row, i) => { row.dataset.iohNativeTicket = `ticket:${i}`; });
+    const fresh = s.rows.shift();
+    await time.finish(s.run());
+    await time.advance(6000);
+    const old = {...s.rows[0], dataset: {iohNativeTicket: 'ticket:1'}};
+    s.ctx.document.querySelectorAll = () => { throw new Error('Targeted pass scanned the whole table'); };
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, [old, fresh]);
+    await time.finish(s.run({arrivalsOnly: true}));
+    assert.equal(s.calls.length, 2);
+    assert.equal(s.calls.at(-1), fresh.offenderLink.href.split('/').at(-1));
+    assert(old.dataset.lastIpCheck);
+});
+
+test('A due full pass takes over the remaining targeted batch after the current request', async t => {
+    const time = clock(t), pending = deferred(), s = tracker(t, 3, () => pending.promise);
+    let accept = true;
+    OffenderTrackingMethods.queueOffenderTrackingRows.call(s.ctx, s.rows);
+    const run = s.run({arrivalsOnly: true, acceptArrivals: () => accept});
+    await time.advance(340); accept = false; pending.resolve({});
+    await time.finish(run);
+    assert.equal(s.calls.length, 1);
+    assert.deepEqual([...s.ctx._offenderTrackingArrivals], s.rows.slice(1));
 });
 
 test('A recycled row receives a first check for the new complaint even during the cache pause', async t => {
@@ -327,6 +401,71 @@ function scheduler(t, pathname = '/support/tickets') {
             async checkOffendersServers() {}, async trackOpenTicketOffenderServer() {}}
     });
     return ctx;
+}
+
+for (const pathname of ['/support/tickets', '/ticket/1/example']) {
+    test('Arrival batches preserve the full-pass deadline on ' + pathname, async t => {
+        const time = clock(t), app = scheduler(t, pathname), calls = [];
+        let openChecks = 0, pendingRows = false;
+        Object.assign(app.ticketService, {
+            renderNativeQueue() {}, queueOffenderTrackingRows() { pendingRows = true; },
+            hasPendingOffenderTrackingRows: () => pendingRows,
+            trackOpenTicketOffenderServer: async () => { openChecks++; },
+            checkOffendersServers: async (_ttl, options) => { pendingRows = false; calls.push(options.arrivalsOnly); }
+        });
+        await app.runOffenderTrackingPass();
+        const deadline = [...time.timers.values()][0].at;
+        await time.advance(1000); app.onComplaintQueueRowsAdded([{}]); await time.flush();
+        await time.advance(1000); app.onComplaintQueueRowsAdded([{}]); await time.flush();
+        assert.deepEqual(calls, [false, true, true]);
+        assert.equal(openChecks, pathname.includes('/ticket/') ? 1 : 0);
+        assert.equal([...time.timers.values()][0].at, deadline);
+        await time.advance(deadline - Date.now());
+        assert.deepEqual(calls, [false, true, true, false]);
+    });
+}
+
+test('A full deadline during targeted fetch waits for that request and runs exactly one full pass', async t => {
+    const time = clock(t), app = scheduler(t), pending = deferred(), calls = [];
+    let arrivals = false, accepts;
+    Object.assign(app.ticketService, {
+        renderNativeQueue() {}, queueOffenderTrackingRows() { arrivals = true; },
+        hasPendingOffenderTrackingRows: () => arrivals,
+        checkOffendersServers: (_ttl, options) => {
+            calls.push(options.arrivalsOnly); arrivals = false;
+            if (options.arrivalsOnly) { accepts = options.acceptArrivals; return pending.promise; }
+            return Promise.resolve();
+        }
+    });
+    await app.runOffenderTrackingPass(); await time.advance(1000);
+    app.onComplaintQueueRowsAdded([{}]); await time.flush();
+    await time.advance(4000);
+    assert.deepEqual(calls, [false, true]); assert.equal(accepts(), false);
+    app.onComplaintQueueRowsAdded([{}]);
+    pending.resolve(); await time.flush();
+    assert.deepEqual(calls, [false, true, false]);
+    assert.equal(time.timers.size, 1);
+    assert.equal([...time.timers.values()][0].at, Date.now() + 5000);
+});
+
+for (const change of ['hidden', 'disabled', 'navigation', 'pagehide']) {
+    test('Targeted arrival work cannot restart indefinitely after ' + change, async t => {
+        const time = clock(t), app = scheduler(t), pending = deferred(); let calls = 0, arrivals = false;
+        Object.assign(app.ticketService, {
+            renderNativeQueue() {}, queueOffenderTrackingRows() { arrivals = true; },
+            hasPendingOffenderTrackingRows: () => arrivals,
+            checkOffendersServers: () => { calls++; arrivals = false; return pending.promise; }
+        });
+        app.scheduleNextOffenderInterval(); app.onComplaintQueueRowsAdded([{}]); await time.flush();
+        app.onComplaintQueueRowsAdded([{}]);
+        if (change === 'hidden') app.document.hidden = true;
+        if (change === 'navigation') app.window.location.href += '/other';
+        if (change === 'disabled') { app.features.trackOffenderServer = false; app.restartOffenderTracking(); }
+        if (change === 'pagehide') { app._trackingStopped = true; app._offenderTrackingGeneration++; clearTimeout(app.ipTrackTimeoutId); app.ipTrackTimeoutId = null; }
+        pending.resolve(); await time.flush();
+        assert.equal(calls, 1);
+        assert.equal(time.timers.size, ['hidden', 'navigation'].includes(change) ? 1 : 0);
+    });
 }
 
 test('App admits an arrival during a running pass without cancelling it or starting a second full pass', async t => {

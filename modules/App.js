@@ -34,6 +34,7 @@ export class App {
         this._offenderTrackingPassPromise = null;
         this._offenderTrackingGeneration = 0;
         this._offenderTrackingRestartRequested = false;
+        this._offenderTrackingFullPassRequested = false;
         this.ticketChatHistoryObservers = new Map();
         this.visibilityCatchUpInstalled = false;
         this.visibilityCatchUpDebounceId = null;
@@ -176,6 +177,7 @@ export class App {
             this.ticketService.stopOpenTicketOffenderTracking();
             this.ticketService.cancelTriggerNavigation();
             this._offenderTrackingGeneration++;
+            this._offenderTrackingFullPassRequested = false;
             clearTimeout(this.ipTrackTimeoutId); this.ipTrackTimeoutId = null;
             this.teardownTicketChatHistoryObservers();
             this.serverConnectionMemory.stop();
@@ -308,6 +310,7 @@ export class App {
 
     restartOffenderTracking({immediate = true} = {}) {
         this._offenderTrackingGeneration++;
+        this._offenderTrackingFullPassRequested = false;
         if (this.ipTrackTimeoutId != null) {
             clearTimeout(this.ipTrackTimeoutId);
             this.ipTrackTimeoutId = null;
@@ -327,12 +330,12 @@ export class App {
         if (this._trackingStopped || !this.features.trackOffenderServer) return;
         this.ticketService.renderNativeQueue();
         this.ticketService.queueOffenderTrackingRows(rows);
-        // The running pass admits arrivals between checks, behind its first-check
-        // backlog and ahead of repeat checks. Never cancel its in-flight request.
+        // Admit arrivals after the running request, or check only arrivals while
+        // idle. The full-queue pause keeps its original deadline.
         if (this._offenderTrackingPassPromise) {
             return;
         }
-        this.restartOffenderTracking({immediate: true});
+        void this.runOffenderTrackingPass({arrivalsOnly: true});
     }
 
     isComplaintQueuePage() {
@@ -377,7 +380,7 @@ export class App {
         this.restartOffenderTracking({immediate: true});
     }
 
-    runOffenderTrackingPass() {
+    runOffenderTrackingPass({arrivalsOnly = false} = {}) {
         if (this._trackingStopped) return Promise.resolve();
         if (this._offenderTrackingPassPromise) {
             return this._offenderTrackingPassPromise;
@@ -385,11 +388,12 @@ export class App {
         if (!this.features.trackOffenderServer) {
             return Promise.resolve();
         }
-        if (this.ipTrackTimeoutId != null) {
+        if (!arrivalsOnly && this.ipTrackTimeoutId != null) {
             clearTimeout(this.ipTrackTimeoutId);
             this.ipTrackTimeoutId = null;
         }
         this._offenderTrackingRestartRequested = false;
+        if (!arrivalsOnly) this._offenderTrackingFullPassRequested = false;
         const generation = this._offenderTrackingGeneration;
         const href = this.window.location.href;
         const isCurrent = () => this.features.trackOffenderServer
@@ -402,7 +406,7 @@ export class App {
                 return;
             }
             const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1000;
-            if (this.isComplaintDetailPage()) {
+            if (!arrivalsOnly && this.isComplaintDetailPage()) {
                 const ticket = this.ticketService.getNativeTicket?.(this.ticketService.getAutoConnectScope?.());
                 if (ticket && !this.ticketService.getCachedUserData(ticket.suspectId, cacheIntervalMs)) {
                     await this.ticketService.fetchParsedUserData(ticket.suspectId).catch(() => {});
@@ -410,7 +414,10 @@ export class App {
                 if (isCurrent()) await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, {isCurrent});
             }
             if (isCurrent()) {
-                await this.ticketService.checkOffendersServers(cacheIntervalMs, {isCurrent});
+                await this.ticketService.checkOffendersServers(cacheIntervalMs, {
+                    isCurrent, arrivalsOnly,
+                    acceptArrivals: () => !arrivalsOnly || !this._offenderTrackingFullPassRequested
+                });
             }
         }).catch(err => {
             console.error(err);
@@ -418,10 +425,13 @@ export class App {
             this._offenderTrackingPassPromise = null;
             const restart = this._offenderTrackingRestartRequested;
             this._offenderTrackingRestartRequested = false;
-            if ((restart || this.ticketService.hasPendingOffenderTrackingRows?.()) && this.features.trackOffenderServer) {
+            if ((restart || this._offenderTrackingFullPassRequested) && this.features.trackOffenderServer) {
                 void this.runOffenderTrackingPass();
             } else {
                 this.scheduleNextOffenderInterval();
+                if (isCurrent() && this.ticketService.hasPendingOffenderTrackingRows?.()) {
+                    void this.runOffenderTrackingPass({arrivalsOnly: true});
+                }
             }
         });
         this._offenderTrackingPassPromise = pass;
@@ -438,6 +448,10 @@ export class App {
 
         this.ipTrackTimeoutId = setTimeout(async () => {
             this.ipTrackTimeoutId = null;
+            // A targeted arrival check may still be awaiting its response. The
+            // due full pass runs next, never concurrently and never postponed
+            // for another whole pause.
+            this._offenderTrackingFullPassRequested = true;
             await this.runOffenderTrackingPass();
         }, intervalMs);
     }

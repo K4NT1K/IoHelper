@@ -30,18 +30,20 @@ test('A batch of newly mounted complaint rows wakes tracking once; own/detached 
     assert.deepEqual(wakes,[[row]]);
 });
 
-test('New complaints interrupt the idle review pause and request just one follow-up to a running finite pass',async t=>{
+test('New complaints run targeted batches during the unchanged idle review pause',async t=>{
     const time=clock(t),pending=deferred();let passes=0,renders=0,arrivals=false;
     const app={...Object.fromEntries(['onComplaintQueueRowsAdded','restartOffenderTracking','runOffenderTrackingPass','scheduleNextOffenderInterval']
         .map(k=>[k,App.prototype[k]])),features:{trackOffenderServer:true},_offenderTrackingGeneration:0,
         window:{location:{href:'https://io.cybershoke.net/ticket/1'}},document:{hidden:false},isComplaintDetailPage:()=>false,getOffenderTrackIntervalSec:()=>30,
         ticketService:{renderNativeQueue:()=>renders++,queueOffenderTrackingRows:()=>{arrivals=true;},
-            hasPendingOffenderTrackingRows:()=>arrivals,checkOffendersServers:()=>{arrivals=false;return ++passes===1?pending.promise:Promise.resolve();}}};
+            hasPendingOffenderTrackingRows:()=>arrivals,checkOffendersServers:(_ttl,options)=>{assert.equal(options.arrivalsOnly,true);arrivals=false;return ++passes===1?pending.promise:Promise.resolve();}}};
     app.scheduleNextOffenderInterval();assert.equal(time.timers.size,1);
-    app.onComplaintQueueRowsAdded();await time.flush();assert.equal(passes,1);assert.equal(time.timers.size,0);
+    const deadline=[...time.timers.values()][0].at;
+    app.onComplaintQueueRowsAdded();await time.flush();assert.equal(passes,1);assert.equal(time.timers.size,1);
     const generation=app._offenderTrackingGeneration;
     app.onComplaintQueueRowsAdded();app.onComplaintQueueRowsAdded();assert.equal(app._offenderTrackingGeneration,generation);
     pending.resolve();await time.flush();assert.equal(passes,2);assert.equal(time.timers.size,1);assert.equal(renders,3);
+    assert.equal([...time.timers.values()][0].at,deadline);
     app.features.trackOffenderServer=false;app.onComplaintQueueRowsAdded();assert.equal(passes,2);
 });
 

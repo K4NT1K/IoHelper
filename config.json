@@ -21,7 +21,6 @@
     "newAccountHours": 10,
     "headshotPercentage": 90,
     "closeReasonEvidenceMinutes": 3,
-    "ticketAgeLimit": 0,
     "maxVisionTriggers": 30,
     "moreTriggers": 10,
     "autoConnectReasons": [

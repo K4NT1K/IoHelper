@@ -6589,11 +6589,16 @@ ${nextMessage}` : nextMessage;
     queueOffenderTrackingRows(rows) {
       this._offenderTrackingArrivals ||= /* @__PURE__ */ new Set();
       for (const row of rows) if (row.isConnected) this._offenderTrackingArrivals.add(row);
+      this._offenderTrackingArrivals = new Set([...this._offenderTrackingArrivals].sort((a, b) => {
+        const position = a.compareDocumentPosition?.(b) || 0;
+        if (position & 1) return 0;
+        return position & 2 ? -1 : position & 4 ? 1 : 0;
+      }));
     },
     hasPendingOffenderTrackingRows() {
       return Boolean(this._offenderTrackingArrivals?.size);
     },
-    async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false, isCurrent = () => true } = {}) {
+    async checkOffendersServers(cacheIntervalMs = null, { singleRowPerPass = false, arrivalsOnly = false, isCurrent = () => true, acceptArrivals = () => true } = {}) {
       const path = window.location.pathname || "";
       const href = window.location.href || "";
       const isQueuePage = href.includes("/support/reports") || href.includes("/support/tickets");
@@ -6608,7 +6613,6 @@ ${nextMessage}` : nextMessage;
         Number(cacheIntervalMs) || (this.settings.trackOffenderInterval || 5) * 1e3,
         1e3
       );
-      const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1e3;
       const passIsCurrent = () => this.settings.features.trackOffenderServer && !this.document.hidden && window.location.href === href && isCurrent();
       const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"], td:nth-child(4) a[href*="cybershoke.ru/"]';
       const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
@@ -6618,13 +6622,6 @@ ${nextMessage}` : nextMessage;
         this._offenderTicketChecks ||= /* @__PURE__ */ new Map();
         const toCandidate = (row) => {
           const now = Date.now();
-          const timeCell = row.querySelector(".ticket-time, td:nth-child(1), td:nth-child(2)");
-          if (timeCell) {
-            const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText) || new Date(timeCell.textContent.trim()).getTime();
-            if (ticketTimeMs && now - ticketTimeMs < TICKET_AGE_LIMIT) {
-              return null;
-            }
-          }
           const offenderLink = row.querySelector(offenderSelector);
           const serverLink = row.querySelector(serverSelector);
           const steamId3 = steamIdFromPlayerProfileUrl(offenderLink?.href);
@@ -6653,20 +6650,30 @@ ${nextMessage}` : nextMessage;
             Number.parseInt(row.dataset.lastIpCheck || "0", 10) || 0,
             Number.parseInt(row.dataset.lastIpAttempt || "0", 10) || 0
           );
+          if (arrivalsOnly && lastCheck) return null;
           if (now - lastCheck < CACHE_INTERVAL) {
             return null;
           }
           return { row, offenderLink, serverLink, steamId: steamId3, lastCheck, ip, identity, ticketKey };
         };
-        const candidates = Array.from(this.document.querySelectorAll("table tbody tr")).reverse().map(toCandidate).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
+        const initialRows = this._offenderTrackingArrivals;
+        this._offenderTrackingArrivals = /* @__PURE__ */ new Set();
+        const initial = [...initialRows || []].filter((row) => row.isConnected).map(toCandidate).filter(Boolean);
+        const regular = (arrivalsOnly ? [] : Array.from(this.document.querySelectorAll("table tbody tr")).reverse()).map(toCandidate).filter(Boolean).concat(initial.filter((candidate) => candidate.lastCheck)).sort((a, b) => a.lastCheck - b.lastCheck);
+        const candidates = initial.filter((candidate) => !candidate.lastCheck).concat(regular);
         const dataBySteamId = /* @__PURE__ */ new Map();
         while (true) {
-          const arrivals = this._offenderTrackingArrivals;
-          this._offenderTrackingArrivals = /* @__PURE__ */ new Set();
+          if (arrivalsOnly && !acceptArrivals()) {
+            this._offenderTrackingArrivals ||= /* @__PURE__ */ new Set();
+            for (const candidate2 of candidates) this._offenderTrackingArrivals.add(candidate2.row);
+            break;
+          }
+          const arrivals = acceptArrivals() ? this._offenderTrackingArrivals : null;
+          if (arrivals) this._offenderTrackingArrivals = /* @__PURE__ */ new Set();
           const added = [...arrivals || []].filter((row) => row.isConnected).map(toCandidate).filter(Boolean);
           if (added.length) {
-            candidates.push(...added);
-            candidates.sort((a, b) => a.lastCheck - b.lastCheck);
+            candidates.unshift(...added.filter((candidate2) => !candidate2.lastCheck));
+            candidates.push(...added.filter((candidate2) => candidate2.lastCheck));
           }
           const candidate = candidates.shift();
           if (!candidate) break;
@@ -6693,7 +6700,7 @@ ${nextMessage}` : nextMessage;
             continue;
           }
           let userData = dataBySteamId.has(targetSteamId) ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
-          let deferRepeat = false;
+          let deferCandidate = false;
           while (!userData && !dataBySteamId.has(targetSteamId)) {
             if (!passIsCurrent() || !rowIsCurrent()) {
               break;
@@ -6708,9 +6715,9 @@ ${nextMessage}` : nextMessage;
             if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
               continue;
             }
-            if (candidate.lastCheck && [...this._offenderTrackingArrivals || []].some((row) => row.isConnected && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ""}|`)))) {
+            if (arrivalsOnly && !acceptArrivals() || acceptArrivals() && [...this._offenderTrackingArrivals || []].some((row) => row.isConnected && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ""}|`)))) {
               candidates.unshift(candidate);
-              deferRepeat = true;
+              deferCandidate = true;
               break;
             }
             markCheck("lastIpAttempt");
@@ -6726,7 +6733,7 @@ ${nextMessage}` : nextMessage;
               break;
             }
           }
-          if (deferRepeat) continue;
+          if (deferCandidate) continue;
           if (userData) {
             dataBySteamId.set(targetSteamId, userData);
           }
@@ -7575,8 +7582,7 @@ ${nextMessage}` : nextMessage;
         const p = this.nativePlayer(t.suspectId) || {};
         const senderMod = this.renderNativeParticipant(sender, t.senderId);
         const suspectMod = this.renderNativeParticipant(suspect, t.suspectId);
-        const ageAllowed = !t.createdAt || Date.now() - t.createdAt >= Math.max(0, Number(this.settings.ticketAgeLimit) || 0) * 1e3;
-        if (this.settings.features?.trackOffenderServer && ageAllowed) {
+        if (this.settings.features?.trackOffenderServer) {
           const link = row.querySelector('a[href^="steam://connect/"]');
           if (link && Object.hasOwn(p, "serverIp")) {
             link.dataset.iohOriginalServerIp = t.complaintServer || "";
@@ -9283,6 +9289,7 @@ ${nextMessage}` : nextMessage;
       this._offenderTrackingPassPromise = null;
       this._offenderTrackingGeneration = 0;
       this._offenderTrackingRestartRequested = false;
+      this._offenderTrackingFullPassRequested = false;
       this.ticketChatHistoryObservers = /* @__PURE__ */ new Map();
       this.visibilityCatchUpInstalled = false;
       this.visibilityCatchUpDebounceId = null;
@@ -9418,6 +9425,7 @@ ${nextMessage}` : nextMessage;
         this.ticketService.stopOpenTicketOffenderTracking();
         this.ticketService.cancelTriggerNavigation();
         this._offenderTrackingGeneration++;
+        this._offenderTrackingFullPassRequested = false;
         clearTimeout(this.ipTrackTimeoutId);
         this.ipTrackTimeoutId = null;
         this.teardownTicketChatHistoryObservers();
@@ -9537,6 +9545,7 @@ ${nextMessage}` : nextMessage;
     }
     restartOffenderTracking({ immediate = true } = {}) {
       this._offenderTrackingGeneration++;
+      this._offenderTrackingFullPassRequested = false;
       if (this.ipTrackTimeoutId != null) {
         clearTimeout(this.ipTrackTimeoutId);
         this.ipTrackTimeoutId = null;
@@ -9558,7 +9567,7 @@ ${nextMessage}` : nextMessage;
       if (this._offenderTrackingPassPromise) {
         return;
       }
-      this.restartOffenderTracking({ immediate: true });
+      void this.runOffenderTrackingPass({ arrivalsOnly: true });
     }
     isComplaintQueuePage() {
       const path = this.window.location.pathname || "";
@@ -9592,7 +9601,7 @@ ${nextMessage}` : nextMessage;
       this._offenderTrackingTextarea = textarea;
       this.restartOffenderTracking({ immediate: true });
     }
-    runOffenderTrackingPass() {
+    runOffenderTrackingPass({ arrivalsOnly = false } = {}) {
       if (this._trackingStopped) return Promise.resolve();
       if (this._offenderTrackingPassPromise) {
         return this._offenderTrackingPassPromise;
@@ -9600,11 +9609,12 @@ ${nextMessage}` : nextMessage;
       if (!this.features.trackOffenderServer) {
         return Promise.resolve();
       }
-      if (this.ipTrackTimeoutId != null) {
+      if (!arrivalsOnly && this.ipTrackTimeoutId != null) {
         clearTimeout(this.ipTrackTimeoutId);
         this.ipTrackTimeoutId = null;
       }
       this._offenderTrackingRestartRequested = false;
+      if (!arrivalsOnly) this._offenderTrackingFullPassRequested = false;
       const generation = this._offenderTrackingGeneration;
       const href = this.window.location.href;
       const isCurrent = () => this.features.trackOffenderServer && !this.document.hidden && generation === this._offenderTrackingGeneration && this.window.location.href === href;
@@ -9613,7 +9623,7 @@ ${nextMessage}` : nextMessage;
           return;
         }
         const cacheIntervalMs = this.getOffenderTrackIntervalSec() * 1e3;
-        if (this.isComplaintDetailPage()) {
+        if (!arrivalsOnly && this.isComplaintDetailPage()) {
           const ticket = this.ticketService.getNativeTicket?.(this.ticketService.getAutoConnectScope?.());
           if (ticket && !this.ticketService.getCachedUserData(ticket.suspectId, cacheIntervalMs)) {
             await this.ticketService.fetchParsedUserData(ticket.suspectId).catch(() => {
@@ -9622,7 +9632,11 @@ ${nextMessage}` : nextMessage;
           if (isCurrent()) await this.ticketService.trackOpenTicketOffenderServer(cacheIntervalMs, { isCurrent });
         }
         if (isCurrent()) {
-          await this.ticketService.checkOffendersServers(cacheIntervalMs, { isCurrent });
+          await this.ticketService.checkOffendersServers(cacheIntervalMs, {
+            isCurrent,
+            arrivalsOnly,
+            acceptArrivals: () => !arrivalsOnly || !this._offenderTrackingFullPassRequested
+          });
         }
       }).catch((err) => {
         console.error(err);
@@ -9630,10 +9644,13 @@ ${nextMessage}` : nextMessage;
         this._offenderTrackingPassPromise = null;
         const restart = this._offenderTrackingRestartRequested;
         this._offenderTrackingRestartRequested = false;
-        if ((restart || this.ticketService.hasPendingOffenderTrackingRows?.()) && this.features.trackOffenderServer) {
+        if ((restart || this._offenderTrackingFullPassRequested) && this.features.trackOffenderServer) {
           void this.runOffenderTrackingPass();
         } else {
           this.scheduleNextOffenderInterval();
+          if (isCurrent() && this.ticketService.hasPendingOffenderTrackingRows?.()) {
+            void this.runOffenderTrackingPass({ arrivalsOnly: true });
+          }
         }
       });
       this._offenderTrackingPassPromise = pass;
@@ -9647,6 +9664,7 @@ ${nextMessage}` : nextMessage;
       const intervalMs = this.getOffenderTrackIntervalSec() * 1e3;
       this.ipTrackTimeoutId = setTimeout(async () => {
         this.ipTrackTimeoutId = null;
+        this._offenderTrackingFullPassRequested = true;
         await this.runOffenderTrackingPass();
       }, intervalMs);
     }

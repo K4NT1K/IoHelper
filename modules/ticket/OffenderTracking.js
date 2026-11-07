@@ -1448,13 +1448,20 @@ export const OffenderTrackingMethods = {
     queueOffenderTrackingRows(rows) {
         this._offenderTrackingArrivals ||= new Set();
         for (const row of rows) if (row.isConnected) this._offenderTrackingArrivals.add(row);
+        // Initial/replaced tbody notifications also contain the existing backlog.
+        // The site lists newest first: check each pending batch from bottom to top.
+        this._offenderTrackingArrivals = new Set([...this._offenderTrackingArrivals].sort((a, b) => {
+            const position = a.compareDocumentPosition?.(b) || 0;
+            if (position & 1) return 0; // Disconnected trees have no shared row order.
+            return position & 2 ? -1 : position & 4 ? 1 : 0;
+        }));
     },
 
     hasPendingOffenderTrackingRows() {
         return Boolean(this._offenderTrackingArrivals?.size);
     },
 
-    async checkOffendersServers(cacheIntervalMs = null, {singleRowPerPass = false, isCurrent = () => true} = {}) {
+    async checkOffendersServers(cacheIntervalMs = null, {singleRowPerPass = false, arrivalsOnly = false, isCurrent = () => true, acceptArrivals = () => true} = {}) {
         const path = window.location.pathname || '';
         const href = window.location.href || '';
         const isQueuePage = href.includes('/support/reports') || href.includes('/support/tickets');
@@ -1473,28 +1480,19 @@ export const OffenderTrackingMethods = {
             Number(cacheIntervalMs) || ((this.settings.trackOffenderInterval || 5) * 1000),
             1000
         );
-        const TICKET_AGE_LIMIT = (this.settings.ticketAgeLimit || 0) * 1000;
         const passIsCurrent = () => this.settings.features.trackOffenderServer
             && !this.document.hidden && window.location.href === href && isCurrent();
         const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"], td:nth-child(4) a[href*="cybershoke.ru/"]';
         const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
 
         try {
-            // Each complaint/row identity is admitted once per pass. New complaints join
-            // behind older first checks, but ahead of scheduled repeat checks.
+            // Each complaint/row identity is admitted once per pass. Arrivals interrupt
+            // pending checks; each arrival batch retains the oldest-first row order.
             const seen = new Map();
             this._offenderRowTrackingIdentity ||= new WeakMap();
             this._offenderTicketChecks ||= new Map();
             const toCandidate = row => {
                     const now = Date.now();
-                    const timeCell = row.querySelector('.ticket-time, td:nth-child(1), td:nth-child(2)');
-                    if (timeCell) {
-                        const ticketTimeMs = this.utils.parseTimeToMs(timeCell.innerText)
-                            || new Date(timeCell.textContent.trim()).getTime();
-                        if (ticketTimeMs && now - ticketTimeMs < TICKET_AGE_LIMIT) {
-                            return null;
-                        }
-                    }
                     const offenderLink = row.querySelector(offenderSelector);
                     const serverLink = row.querySelector(serverSelector);
                     const steamId = steamIdFromPlayerProfileUrl(offenderLink?.href);
@@ -1523,23 +1521,38 @@ export const OffenderTrackingMethods = {
                         Number.parseInt(row.dataset.lastIpCheck || '0', 10) || 0,
                         Number.parseInt(row.dataset.lastIpAttempt || '0', 10) || 0
                     );
+                    // A remounted table is not a batch of new complaints. Known
+                    // identities keep their next check in the scheduled pass.
+                    if (arrivalsOnly && lastCheck) return null;
                     if (now - lastCheck < CACHE_INTERVAL) {
                         return null;
                     }
                     return {row, offenderLink, serverLink, steamId, lastCheck, ip, identity, ticketKey};
                 };
-            const candidates = Array.from(this.document.querySelectorAll('table tbody tr')).reverse()
-                .map(toCandidate).filter(Boolean).sort((a, b) => a.lastCheck - b.lastCheck);
+            // Admit already queued arrivals before the full snapshot marks their
+            // rows as seen, retaining their priority over older first checks.
+            const initialRows = this._offenderTrackingArrivals;
+            this._offenderTrackingArrivals = new Set();
+            const initial = [...(initialRows || [])].filter(row => row.isConnected).map(toCandidate).filter(Boolean);
+            const regular = (arrivalsOnly ? [] : Array.from(this.document.querySelectorAll('table tbody tr')).reverse())
+                .map(toCandidate).filter(Boolean).concat(initial.filter(candidate => candidate.lastCheck))
+                .sort((a, b) => a.lastCheck - b.lastCheck);
+            const candidates = initial.filter(candidate => !candidate.lastCheck).concat(regular);
             const dataBySteamId = new Map();
 
             while (true) {
-                const arrivals = this._offenderTrackingArrivals;
-                this._offenderTrackingArrivals = new Set();
+                if (arrivalsOnly && !acceptArrivals()) {
+                    this._offenderTrackingArrivals ||= new Set();
+                    for (const candidate of candidates) this._offenderTrackingArrivals.add(candidate.row);
+                    break;
+                }
+                const arrivals = acceptArrivals() ? this._offenderTrackingArrivals : null;
+                if (arrivals) this._offenderTrackingArrivals = new Set();
                 const added = [...(arrivals || [])].filter(row => row.isConnected).map(toCandidate).filter(Boolean);
                 if (added.length) {
-                    // Stable sorting keeps earlier never-checked rows ahead of arrivals.
-                    candidates.push(...added);
-                    candidates.sort((a, b) => a.lastCheck - b.lastCheck);
+                    // New complaints precede every request that has not started.
+                    candidates.unshift(...added.filter(candidate => !candidate.lastCheck));
+                    candidates.push(...added.filter(candidate => candidate.lastCheck));
                 }
                 const candidate = candidates.shift();
                 if (!candidate) break;
@@ -1574,7 +1587,7 @@ export const OffenderTrackingMethods = {
 
                 let userData = dataBySteamId.has(targetSteamId)
                     ? dataBySteamId.get(targetSteamId) : this.getCachedUserData(targetSteamId, CACHE_INTERVAL);
-                let deferRepeat = false;
+                let deferCandidate = false;
                 while (!userData && !dataBySteamId.has(targetSteamId)) {
                     if (!passIsCurrent() || !rowIsCurrent()) {
                         break;
@@ -1589,12 +1602,13 @@ export const OffenderTrackingMethods = {
                     if (this.globalServerCooldown && Date.now() < this.globalServerCooldown) {
                         continue;
                     }
-                    if (candidate.lastCheck && [...(this._offenderTrackingArrivals || [])].some(row => row.isConnected
-                        && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ''}|`)))) {
+                    if ((arrivalsOnly && !acceptArrivals()) || (acceptArrivals() && [...(this._offenderTrackingArrivals || [])].some(row => row.isConnected
+                        && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ''}|`))))) {
                         // An arrival during the throttle delay takes priority before
-                        // we dispatch a repeat request that has not started yet.
+                        // any queued request that has not started yet. A due full
+                        // pass likewise takes over the remaining targeted rows.
                         candidates.unshift(candidate);
-                        deferRepeat = true;
+                        deferCandidate = true;
                         break;
                     }
 
@@ -1612,7 +1626,7 @@ export const OffenderTrackingMethods = {
                         break;
                     }
                 }
-                if (deferRepeat) continue;
+                if (deferCandidate) continue;
                 if (userData) {
                     dataBySteamId.set(targetSteamId, userData);
                 }
