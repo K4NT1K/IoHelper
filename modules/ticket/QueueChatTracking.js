@@ -3,6 +3,15 @@ import {analyzeQueueChatMessages} from './QueueChatAnalysis.js';
 import {steamIdFromPlayerProfileUrl} from '../shared/playerProfile.js';
 
 export const QueueChatTrackingMethods = {
+    pruneQueueChatCache() {
+        if (!this._queueChatCache?.size) return;
+        const now = Date.now();
+        const queued = new Set((this.nativeData?.queueTickets?.() || []).map(ticket => ticket.suspectId));
+        for (const [id, cached] of this._queueChatCache) {
+            if (!queued.has(id) && now - (cached.lastUsedAt ?? cached.fetchedAt) >= 10 * 60 * 1000) this._queueChatCache.delete(id);
+        }
+    },
+
     async fetchQueueChat(steamId) {
         this._queueChatInflight ||= new Map();
         if (this._queueChatInflight.has(steamId)) return this._queueChatInflight.get(steamId).promise;
@@ -12,7 +21,8 @@ export const QueueChatTrackingMethods = {
             if (controller.signal.aborted) return null;
             this._queueChatCache ||= new Map();
             this._queueChatCache.delete(steamId);
-            this._queueChatCache.set(steamId, {messages, fetchedAt: Date.now()});
+            this._queueChatCache.set(steamId, {messages, fetchedAt: Date.now(), lastUsedAt: Date.now()});
+            this.pruneQueueChatCache();
             if (this._queueChatCache.size > 256) this._queueChatCache.delete(this._queueChatCache.keys().next().value);
             return messages;
         }).catch(error => {
@@ -34,8 +44,12 @@ export const QueueChatTrackingMethods = {
         const cached = this._queueChatCache?.get(id);
         if (!cached) return null;
         const now = Date.now();
+        cached.lastUsedAt = now;
+        // Keep verdicts of current rows when a long session visits many players.
+        this._queueChatCache.delete(id); this._queueChatCache.set(id, cached);
         if (!cached.verdict || cached.rules !== this.rules || cached.exceptions !== this.muteExceptions
             || cached.spamRules !== this.spamRules || now >= cached.expiresAt) {
+            cached.messages = cached.messages.filter(message => message.timeMs >= now - 86400000 && message.timeMs <= now);
             cached.verdict = analyzeQueueChatMessages(this, cached.messages, {now});
             cached.rules = this.rules; cached.exceptions = this.muteExceptions; cached.spamRules = this.spamRules;
             const expirations = cached.messages.map(m => m.timeMs + 86400001).filter(time => time > now);
@@ -44,9 +58,11 @@ export const QueueChatTrackingMethods = {
         return cached.verdict;
     },
 
-    stopQueueChatTracking() {
+    stopQueueChatTracking({preserveCache = false} = {}) {
         for (const entry of this._queueChatInflight?.values() || []) entry.controller.abort();
         this._queueChatInflight?.clear();
+        // SPA navigation restarts requests, not the completed per-player verdicts.
+        if (preserveCache) return;
         this._queueChatCache?.clear();
         this._offenderRowSnapshots = new WeakMap();
         for (const row of this.document.querySelectorAll('tr.ioh-highlighted-chat-mute')) {

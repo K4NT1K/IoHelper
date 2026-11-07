@@ -1493,6 +1493,7 @@ export const OffenderTrackingMethods = {
         const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
 
         try {
+            this.pruneQueueChatCache?.();
             // Each complaint/row identity is admitted once per pass. Arrivals interrupt
             // pending checks; each arrival batch retains the oldest-first row order.
             const seen = new Map();
@@ -1707,7 +1708,7 @@ export const OffenderTrackingMethods = {
                         targetRow
                     );
                     this.applyOffenderMuteBanIcons(offenderLink, targetRow, userData);
-                    this.renderNativeQueue?.();
+                    this.renderNativeQueue?.({steamIds: new Set([targetSteamId])});
                 });
                 markCheck('lastIpCheck');
 

@@ -33,6 +33,7 @@ export class NativeDataStore {
         p.updatedAt = event.receivedAt; this.retain(this.players, id, p, 1500);
     }
     mergeTicket(p, event) {
+        this._queueTicketsCache = null;
         const previous = this.tickets.get(p.key);
         const t = previous || {key: p.key, stamps: {}, orders: {}};
         for (const [key, value] of Object.entries(p)) {
@@ -63,6 +64,7 @@ export class NativeDataStore {
         if (JSON.stringify(event).length > 1024 * 1024) return false;
         this.retain(this.resources, event.key, event, 160);
         if (event.kind === 'queue') {
+            this._queueTicketsCache = null;
             this.queues.set(event.key, {entity: p.entity, keys: p.items.map(x => x.key), startedAt: event.startedAt, sequence: event.sequence});
             while (this.queues.size > 32) this.queues.delete(this.queues.keys().next().value);
             p.items.forEach(t => this.mergeTicket(t, event));
@@ -100,10 +102,13 @@ export class NativeDataStore {
         return rows?.find(x => punishmentActive(x)) || null;
     }
     queueTickets() {
+        if (this._queueTicketsCache) return this._queueTicketsCache;
         const keys = new Set([...this.queues.values()].flatMap(q => q.keys));
-        return [...keys].map(k => this.tickets.get(k)).filter(Boolean);
+        this._queueTicketsCache = [...keys].map(k => this.tickets.get(k)).filter(Boolean);
+        return this._queueTicketsCache;
     }
     clear() {
+        this._queueTicketsCache = null;
         for (const map of [this.resources, this.tickets, this.players, this.queues, this.histories, this.bypasses, this.servers]) map.clear();
         this.account = null; this.accountStamp = null; this.serverStamp = null; this.revision++;
         this.sizes = new WeakMap();

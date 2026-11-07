@@ -151,20 +151,37 @@ export class App {
         return fn(service);
     }
 
+    handleNativeDataEvent(event) {
+        this.ticketService.consumeNativeEvent(event);
+        // Tracker polling changes one profile/presence, never chat or permissions.
+        // Do not rescan every hidden chat and every queue row for each response.
+        if (event.source === 'tracker' && event.kind === 'player') {
+            const textarea = this.ticketService.findVisibleTicketResolutionTextarea();
+            const scope = textarea && this.ticketService.getTicketScopeRoot(textarea);
+            const ticket = scope && this.ticketService.getNativeTicket(scope);
+            if (ticket?.suspectId === event.payload.steamId) {
+                this.maybeAutoConnectOnTicketMount();
+                this.ticketService.refreshComplaintPunishmentButtons();
+                if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
+                if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({force: true});
+                if (this.features.processTicketRules) this.ensureTicketChatHistoryObserver(textarea);
+            }
+            return;
+        }
+        this.maybeAutoConnectOnTicketMount();
+        this.ticketService.refreshComplaintPunishmentButtons();
+        if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
+        if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({force: true});
+        this._reapplyTicketRowHighlights();
+        this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]').forEach(textarea => {
+            if (this.features.processTicketRules && this.ticketService.isVisibleTicketTextarea(textarea)) this.ensureTicketChatHistoryObserver(textarea);
+        });
+        if (this.features.translateText) this.messageService.processChatMessages();
+    }
+
     async start() {
         let pageClosed = false;
-        this._nativeUnsubscribe = this.nativeData.subscribe(event => {
-            this.ticketService.consumeNativeEvent(event);
-            this.maybeAutoConnectOnTicketMount();
-            this.ticketService.refreshComplaintPunishmentButtons();
-            if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
-            if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({force: true});
-            this._reapplyTicketRowHighlights();
-            this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]').forEach(textarea => {
-                if (this.features.processTicketRules && this.ticketService.isVisibleTicketTextarea(textarea)) this.ensureTicketChatHistoryObserver(textarea);
-            });
-            if (this.features.translateText) this.messageService.processChatMessages();
-        });
+        this._nativeUnsubscribe = this.nativeData.subscribe(event => this.handleNativeDataEvent(event));
         this.window.addEventListener('pagehide', event => {
             // A BFCache page is frozen, retaining these listeners for its return.
             if (event.persisted) return;
@@ -310,7 +327,7 @@ export class App {
     }
 
     restartOffenderTracking({immediate = true} = {}) {
-        this.ticketService.stopQueueChatTracking();
+        this.ticketService.stopQueueChatTracking({preserveCache: Boolean(this.features.trackOffenderServer)});
         this._offenderTrackingGeneration++;
         this._offenderTrackingFullPassRequested = false;
         if (this.ipTrackTimeoutId != null) {

@@ -5585,6 +5585,14 @@ ${nextMessage}` : nextMessage;
 
   // modules/ticket/QueueChatTracking.js
   var QueueChatTrackingMethods = {
+    pruneQueueChatCache() {
+      if (!this._queueChatCache?.size) return;
+      const now = Date.now();
+      const queued = new Set((this.nativeData?.queueTickets?.() || []).map((ticket) => ticket.suspectId));
+      for (const [id, cached] of this._queueChatCache) {
+        if (!queued.has(id) && now - (cached.lastUsedAt ?? cached.fetchedAt) >= 10 * 60 * 1e3) this._queueChatCache.delete(id);
+      }
+    },
     async fetchQueueChat(steamId3) {
       this._queueChatInflight ||= /* @__PURE__ */ new Map();
       if (this._queueChatInflight.has(steamId3)) return this._queueChatInflight.get(steamId3).promise;
@@ -5594,7 +5602,8 @@ ${nextMessage}` : nextMessage;
         if (controller.signal.aborted) return null;
         this._queueChatCache ||= /* @__PURE__ */ new Map();
         this._queueChatCache.delete(steamId3);
-        this._queueChatCache.set(steamId3, { messages, fetchedAt: Date.now() });
+        this._queueChatCache.set(steamId3, { messages, fetchedAt: Date.now(), lastUsedAt: Date.now() });
+        this.pruneQueueChatCache();
         if (this._queueChatCache.size > 256) this._queueChatCache.delete(this._queueChatCache.keys().next().value);
         return messages;
       }).catch((error) => {
@@ -5613,7 +5622,11 @@ ${nextMessage}` : nextMessage;
       const cached = this._queueChatCache?.get(id);
       if (!cached) return null;
       const now = Date.now();
+      cached.lastUsedAt = now;
+      this._queueChatCache.delete(id);
+      this._queueChatCache.set(id, cached);
       if (!cached.verdict || cached.rules !== this.rules || cached.exceptions !== this.muteExceptions || cached.spamRules !== this.spamRules || now >= cached.expiresAt) {
+        cached.messages = cached.messages.filter((message) => message.timeMs >= now - 864e5 && message.timeMs <= now);
         cached.verdict = analyzeQueueChatMessages(this, cached.messages, { now });
         cached.rules = this.rules;
         cached.exceptions = this.muteExceptions;
@@ -5623,9 +5636,10 @@ ${nextMessage}` : nextMessage;
       }
       return cached.verdict;
     },
-    stopQueueChatTracking() {
+    stopQueueChatTracking({ preserveCache = false } = {}) {
       for (const entry of this._queueChatInflight?.values() || []) entry.controller.abort();
       this._queueChatInflight?.clear();
+      if (preserveCache) return;
       this._queueChatCache?.clear();
       this._offenderRowSnapshots = /* @__PURE__ */ new WeakMap();
       for (const row of this.document.querySelectorAll("tr.ioh-highlighted-chat-mute")) {
@@ -6863,6 +6877,7 @@ ${nextMessage}` : nextMessage;
       const offenderSelector = 'td:nth-child(4) a[href*="cybershoke.net/"], td:nth-child(4) a[href*="cybershoke.ru/"]';
       const serverSelector = 'td:nth-child(2) a[href^="steam://connect/"]';
       try {
+        this.pruneQueueChatCache?.();
         const seen = /* @__PURE__ */ new Map();
         this._offenderRowTrackingIdentity ||= /* @__PURE__ */ new WeakMap();
         this._offenderTicketChecks ||= /* @__PURE__ */ new Map();
@@ -7046,7 +7061,7 @@ ${nextMessage}` : nextMessage;
               targetRow
             );
             this.applyOffenderMuteBanIcons(offenderLink, targetRow, userData);
-            this.renderNativeQueue?.();
+            this.renderNativeQueue?.({ steamIds: /* @__PURE__ */ new Set([targetSteamId]) });
           });
           markCheck("lastIpCheck");
           if (singleRowPerPass) {
@@ -7842,12 +7857,13 @@ ${nextMessage}` : nextMessage;
       this.applyOffenderModeratorHighlight(null, link, moderator);
       return moderator;
     },
-    renderNativeQueue() {
+    renderNativeQueue({ steamIds = null } = {}) {
       if (!this.nativeData) return;
       for (const table of this.findComplaintQueueTables()) for (const row of table.querySelectorAll("tbody tr")) {
+        const links = [...row.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)];
+        if (steamIds && !links.some((link) => steamIds.has(steamIdFromPlayerProfileUrl(link.href)))) continue;
         const t = this.getNativeRowTicket(row);
         if (!t) continue;
-        const links = [...row.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)];
         const sender = links.find((l) => steamIdFromPlayerProfileUrl(l.href) === t.senderId);
         const suspect = links.find((l) => steamIdFromPlayerProfileUrl(l.href) === t.suspectId && l !== sender) || links[1];
         const p = this.nativePlayer(t.suspectId) || {};
@@ -7867,11 +7883,12 @@ ${nextMessage}` : nextMessage;
         row.classList.toggle("ioh-highlighted-moderator", senderMod || suspectMod || Boolean(this.settings.features?.trackOffenderServer && p.profileVerified));
       }
     },
-    syncNativeTicketViews() {
+    syncNativeTicketViews({ steamIds = null, syncTracking = true } = {}) {
       if (!this.nativeData) return;
       for (const textarea of this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]')) {
         const scope = this.getTicketScopeRoot(textarea), t = this.getNativeTicket(scope);
         if (!t) continue;
+        if (steamIds && !steamIds.has(t.suspectId) && !steamIds.has(t.senderId)) continue;
         for (const [label, id] of [["\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u0435\u043B\u044C", t.senderId], ["\u041D\u0430\u0440\u0443\u0448\u0438\u0442\u0435\u043B\u044C", t.suspectId]]) {
           const field = this.findInfoFieldScoped(label, scope);
           const link = [...field?.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR) || []].find((l) => steamIdFromPlayerProfileUrl(l.href) === id);
@@ -7879,8 +7896,8 @@ ${nextMessage}` : nextMessage;
         }
         this.renderNativeContext(scope, t);
       }
-      this.renderNativeQueue();
-      this.syncOpenTicketOffenderTracking();
+      this.renderNativeQueue({ steamIds });
+      if (syncTracking) this.syncOpenTicketOffenderTracking();
     },
     renderNativeContext(scope, ticket) {
       scope.querySelector("#ioh-native-context")?.remove();
@@ -7971,7 +7988,8 @@ ${nextMessage}` : nextMessage;
           session.waitingForReturn = false;
         }
       }
-      this.syncNativeTicketViews();
+      const steamIds = event.source === "tracker" && event.kind === "player" ? /* @__PURE__ */ new Set([event.payload.steamId]) : null;
+      this.syncNativeTicketViews({ steamIds, syncTracking: false });
       this.syncCloseReasonSelection();
       this.syncTicketPunishmentFeedback();
       this.syncOffenderTrackerStatus?.();
@@ -9399,6 +9417,7 @@ ${nextMessage}` : nextMessage;
       this.retain(this.players, id, p, 1500);
     }
     mergeTicket(p, event) {
+      this._queueTicketsCache = null;
       const previous = this.tickets.get(p.key);
       const t = previous || { key: p.key, stamps: {}, orders: {} };
       for (const [key, value] of Object.entries(p)) {
@@ -9426,6 +9445,7 @@ ${nextMessage}` : nextMessage;
       if (JSON.stringify(event).length > 1024 * 1024) return false;
       this.retain(this.resources, event.key, event, 160);
       if (event.kind === "queue") {
+        this._queueTicketsCache = null;
         this.queues.set(event.key, { entity: p.entity, keys: p.items.map((x) => x.key), startedAt: event.startedAt, sequence: event.sequence });
         while (this.queues.size > 32) this.queues.delete(this.queues.keys().next().value);
         p.items.forEach((t) => this.mergeTicket(t, event));
@@ -9480,10 +9500,13 @@ ${nextMessage}` : nextMessage;
       return rows?.find((x) => punishmentActive(x)) || null;
     }
     queueTickets() {
+      if (this._queueTicketsCache) return this._queueTicketsCache;
       const keys = new Set([...this.queues.values()].flatMap((q) => q.keys));
-      return [...keys].map((k) => this.tickets.get(k)).filter(Boolean);
+      this._queueTicketsCache = [...keys].map((k) => this.tickets.get(k)).filter(Boolean);
+      return this._queueTicketsCache;
     }
     clear() {
+      this._queueTicketsCache = null;
       for (const map of [this.resources, this.tickets, this.players, this.queues, this.histories, this.bypasses, this.servers]) map.clear();
       this.account = null;
       this.accountStamp = null;
@@ -9626,20 +9649,34 @@ ${nextMessage}` : nextMessage;
       const service = await this.loadModeratorService();
       return fn(service);
     }
+    handleNativeDataEvent(event) {
+      this.ticketService.consumeNativeEvent(event);
+      if (event.source === "tracker" && event.kind === "player") {
+        const textarea = this.ticketService.findVisibleTicketResolutionTextarea();
+        const scope = textarea && this.ticketService.getTicketScopeRoot(textarea);
+        const ticket = scope && this.ticketService.getNativeTicket(scope);
+        if (ticket?.suspectId === event.payload.steamId) {
+          this.maybeAutoConnectOnTicketMount();
+          this.ticketService.refreshComplaintPunishmentButtons();
+          if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
+          if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({ force: true });
+          if (this.features.processTicketRules) this.ensureTicketChatHistoryObserver(textarea);
+        }
+        return;
+      }
+      this.maybeAutoConnectOnTicketMount();
+      this.ticketService.refreshComplaintPunishmentButtons();
+      if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
+      if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({ force: true });
+      this._reapplyTicketRowHighlights();
+      this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]').forEach((textarea) => {
+        if (this.features.processTicketRules && this.ticketService.isVisibleTicketTextarea(textarea)) this.ensureTicketChatHistoryObserver(textarea);
+      });
+      if (this.features.translateText) this.messageService.processChatMessages();
+    }
     async start() {
       let pageClosed = false;
-      this._nativeUnsubscribe = this.nativeData.subscribe((event) => {
-        this.ticketService.consumeNativeEvent(event);
-        this.maybeAutoConnectOnTicketMount();
-        this.ticketService.refreshComplaintPunishmentButtons();
-        if (this.features.showFaceitElo) void this.ticketService.renderFaceitElo();
-        if (this.features.showCybershokePlaytime || this.features.showOffenderCountry) void this.ticketService.renderOffenderProjectInfo({ force: true });
-        this._reapplyTicketRowHighlights();
-        this.document.querySelectorAll('textarea[placeholder*="\u041E\u043F\u0438\u0448\u0438\u0442\u0435 \u0434\u0435\u0442\u0430\u043B\u0438 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F"]').forEach((textarea) => {
-          if (this.features.processTicketRules && this.ticketService.isVisibleTicketTextarea(textarea)) this.ensureTicketChatHistoryObserver(textarea);
-        });
-        if (this.features.translateText) this.messageService.processChatMessages();
-      });
+      this._nativeUnsubscribe = this.nativeData.subscribe((event) => this.handleNativeDataEvent(event));
       this.window.addEventListener("pagehide", (event) => {
         if (event.persisted) return;
         pageClosed = true;
@@ -9771,7 +9808,7 @@ ${nextMessage}` : nextMessage;
       }
     }
     restartOffenderTracking({ immediate = true } = {}) {
-      this.ticketService.stopQueueChatTracking();
+      this.ticketService.stopQueueChatTracking({ preserveCache: Boolean(this.features.trackOffenderServer) });
       this._offenderTrackingGeneration++;
       this._offenderTrackingFullPassRequested = false;
       if (this.ipTrackTimeoutId != null) {

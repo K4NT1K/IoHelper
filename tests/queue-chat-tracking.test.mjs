@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {TicketService} from '../modules/TicketService.js';
 import {Utils} from '../modules/Utils.js';
 import {QUEUE_CHAT_CHANNEL} from '../modules/native/QueueChatClient.js';
+import {App} from '../modules/App.js';
 import {clock, deferred} from './clock.mjs';
 
 const day = 86400000;
@@ -230,4 +231,46 @@ test('Queue integration: stop aborts inflight chat, clears cached decoration and
     assert.equal(f.service._queueChatInflight.size, 0);
     assert.equal(row.classList.contains('ioh-highlighted-chat-mute'), false);
     assert.equal(row.control.innerHTML, 'Принять тикет');
+});
+
+test('Queue integration: navigation and interval restarts retain completed verdict while cancelling pending reads', async t => {
+    const time = clock(t), f = fixture(t, undefined, {onRead: () => null}), row = f.rows[0];
+    f.service._queueChatCache = new Map([[player(0), {messages: [toxic()], fetchedAt: Date.now()}]]);
+    f.service.applyOffenderPunishmentHighlight(row, {}); f.service.applyOffenderPunishmentActionLabel(row, {});
+    const pending = f.service.fetchQueueChat(player(99)); await time.flush();
+    const app = {ticketService: f.service, features: {trackOffenderServer: true}, _offenderTrackingGeneration: 0,
+        _offenderTrackingPassPromise: Promise.resolve(), ipTrackTimeoutId: null};
+    App.prototype.restartOffenderTracking.call(app);
+    await time.finish(pending);
+    assert.equal(f.service._queueChatCache.has(player(0)), true);
+    assert.equal(f.service._queueChatInflight.size, 0);
+    assert.equal(row.classList.contains('ioh-highlighted-chat-mute'), true);
+    assert.equal(row.control.dataset.iohPunishmentAction, 'warning');
+    await time.advance(5000); await time.finish(f.run()); f.flushUi();
+    assert.equal(f.reads.length, 1, 'No new read for the preserved mute; only the cancelled other player was requested');
+    app.features.trackOffenderServer = false; App.prototype.restartOffenderTracking.call(app);
+    assert.equal(f.service._queueChatCache.size, 0);
+    assert.equal(row.control.innerHTML, 'Принять тикет');
+});
+
+test('Queue cache removes absent idle players after ten minutes but retains current complaints', t => {
+    const time = clock(t), f = fixture(t);
+    f.service.nativeData.queueTickets = () => f.rows.map(row => row.ticket);
+    f.service._queueChatCache = new Map([player(0), player(99)].map(id => [id, {messages: [toxic()], fetchedAt: Date.now()}]));
+    return time.advance(600000).then(() => {
+        f.service.pruneQueueChatCache();
+        assert.equal(f.service._queueChatCache.has(player(0)), true);
+        assert.equal(f.service._queueChatCache.has(player(99)), false);
+    });
+});
+
+test('Queue cache evicts least recently used history instead of an active mute after 256 players', async t => {
+    const time = clock(t), f = fixture(t);
+    f.service._queueChatCache = new Map(Array.from({length: 256}, (_, i) => [player(i), {messages: [toxic()], fetchedAt: Date.now()}]));
+    assert.equal(f.service.getQueueChatVerdict(f.rows[0]).kind, 'mute');
+    const pending = f.service.fetchQueueChat(player(999)); await time.flush();
+    f.emit(f.reads[0], {messages: [toxic()]}); await pending;
+    assert.equal(f.service._queueChatCache.size, 256);
+    assert.equal(f.service._queueChatCache.has(player(0)), true);
+    assert.equal(f.service._queueChatCache.has(player(1)), false);
 });

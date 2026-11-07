@@ -144,11 +144,12 @@ export const NativeTicketMethods = {
         return moderator;
     },
 
-    renderNativeQueue() {
+    renderNativeQueue({steamIds = null} = {}) {
         if (!this.nativeData) return;
         for (const table of this.findComplaintQueueTables()) for (const row of table.querySelectorAll('tbody tr')) {
-            const t = this.getNativeRowTicket(row); if (!t) continue;
             const links = [...row.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR)];
+            if (steamIds && !links.some(link => steamIds.has(steamIdFromPlayerProfileUrl(link.href)))) continue;
+            const t = this.getNativeRowTicket(row); if (!t) continue;
             const sender = links.find(l => steamIdFromPlayerProfileUrl(l.href) === t.senderId);
             const suspect = links.find(l => steamIdFromPlayerProfileUrl(l.href) === t.suspectId && l !== sender) || links[1];
             const p = this.nativePlayer(t.suspectId) || {};
@@ -170,10 +171,11 @@ export const NativeTicketMethods = {
         }
     },
 
-    syncNativeTicketViews() {
+    syncNativeTicketViews({steamIds = null, syncTracking = true} = {}) {
         if (!this.nativeData) return;
         for (const textarea of this.document.querySelectorAll('textarea[placeholder*="Опишите детали закрытия"]')) {
             const scope = this.getTicketScopeRoot(textarea), t = this.getNativeTicket(scope); if (!t) continue;
+            if (steamIds && !steamIds.has(t.suspectId) && !steamIds.has(t.senderId)) continue;
             for (const [label, id] of [['Отправитель', t.senderId], ['Нарушитель', t.suspectId]]) {
                 const field = this.findInfoFieldScoped(label, scope);
                 const link = [...(field?.querySelectorAll(PLAYER_PROFILE_LINK_SELECTOR) || [])].find(l => steamIdFromPlayerProfileUrl(l.href) === id);
@@ -181,8 +183,8 @@ export const NativeTicketMethods = {
             }
             this.renderNativeContext(scope, t);
         }
-        this.renderNativeQueue();
-        this.syncOpenTicketOffenderTracking();
+        this.renderNativeQueue({steamIds});
+        if (syncTracking) this.syncOpenTicketOffenderTracking();
     },
 
     renderNativeContext(scope, ticket) {
@@ -266,7 +268,8 @@ export const NativeTicketMethods = {
                 session.waitingForReturn = false;
             }
         }
-        this.syncNativeTicketViews();
+        const steamIds = event.source === 'tracker' && event.kind === 'player' ? new Set([event.payload.steamId]) : null;
+        this.syncNativeTicketViews({steamIds, syncTracking: false});
         this.syncCloseReasonSelection(); this.syncTicketPunishmentFeedback();
         this.syncOffenderTrackerStatus?.();
     },
