@@ -320,14 +320,42 @@ export class MessageService {
         });
     }
 
+    _applyNativeRowHoursHighlight(row) {
+        const cell = row.querySelector('td:nth-child(5)') || row;
+        // Native React keeps the numeric hours in its own Text node. Move that
+        // same node into our wrapper instead of replacing the site's innerHTML.
+        for (const line of cell.querySelectorAll('div')) {
+            if (!line.textContent.includes('CYBERSHOKE:')
+                || [...line.children].some(child => child.textContent.includes('CYBERSHOKE:'))) continue;
+            const existing = line.querySelector('.cs-hours-span');
+            if (existing) {this._markHoursHighlight(existing); continue;}
+            const nodes = [...line.childNodes];
+            const label = nodes.findIndex(node => node.nodeType === 3 && /CYBERSHOKE:\s*$/.test(node.nodeValue));
+            const amount = nodes[label + 1];
+            const span = this.document.createElement('span'); span.className = 'cs-hours-span'; markIoh(span);
+            if (label >= 0 && amount?.nodeType === 3 && /^\d+$/.test(amount.nodeValue)) {
+                line.insertBefore(span, amount); span.appendChild(amount); this._markHoursHighlight(span);
+                continue;
+            }
+            // Static/snapshot markup can contain the complete line in one node.
+            const source = nodes.find(node => node.nodeType === 3 && MessageService.CYBERSHOKE_HOURS_RE.test(node.nodeValue));
+            const match = source?.nodeValue.match(MessageService.CYBERSHOKE_HOURS_RE);
+            if (!match) continue;
+            const start = match.index + match[0].indexOf(match[1]);
+            const text = source.splitText(start); text.splitText(match[1].length + 1);
+            line.insertBefore(span, text); span.appendChild(text); this._markHoursHighlight(span);
+        }
+    }
+
     highlightNewAccounts(row) {
         if (this.ticketService?.nativeData) {
             const t = this.ticketService.getNativeRowTicket(row);
-            if (!t || t.playtime == null) return;
+            const playtime = t && this.ticketService.nativePlaytime(t.suspectId, t);
+            if (playtime == null) {this._clearRowHoursHighlight(row); return;}
             this.releaseHoursWatch(row);
-            const hours = Math.round(t.playtime / 3600);
+            const hours = Math.floor(playtime / 3600);
             if (hours > this.settings.newAccountHours) this._clearRowHoursHighlight(row);
-            else { this._setRowHoursState(row, hours); this._applyRowHoursHighlight(row); }
+            else { this._setRowHoursState(row, hours); this._applyNativeRowHoursHighlight(row); }
             return;
         }
         if (!row?.querySelector) {

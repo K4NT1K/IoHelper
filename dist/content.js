@@ -1094,16 +1094,52 @@ ${nextMessage}` : nextMessage;
         }
       });
     }
+    _applyNativeRowHoursHighlight(row) {
+      const cell = row.querySelector("td:nth-child(5)") || row;
+      for (const line of cell.querySelectorAll("div")) {
+        if (!line.textContent.includes("CYBERSHOKE:") || [...line.children].some((child) => child.textContent.includes("CYBERSHOKE:"))) continue;
+        const existing = line.querySelector(".cs-hours-span");
+        if (existing) {
+          this._markHoursHighlight(existing);
+          continue;
+        }
+        const nodes = [...line.childNodes];
+        const label = nodes.findIndex((node) => node.nodeType === 3 && /CYBERSHOKE:\s*$/.test(node.nodeValue));
+        const amount = nodes[label + 1];
+        const span = this.document.createElement("span");
+        span.className = "cs-hours-span";
+        markIoh(span);
+        if (label >= 0 && amount?.nodeType === 3 && /^\d+$/.test(amount.nodeValue)) {
+          line.insertBefore(span, amount);
+          span.appendChild(amount);
+          this._markHoursHighlight(span);
+          continue;
+        }
+        const source = nodes.find((node) => node.nodeType === 3 && _MessageService.CYBERSHOKE_HOURS_RE.test(node.nodeValue));
+        const match = source?.nodeValue.match(_MessageService.CYBERSHOKE_HOURS_RE);
+        if (!match) continue;
+        const start = match.index + match[0].indexOf(match[1]);
+        const text = source.splitText(start);
+        text.splitText(match[1].length + 1);
+        line.insertBefore(span, text);
+        span.appendChild(text);
+        this._markHoursHighlight(span);
+      }
+    }
     highlightNewAccounts(row) {
       if (this.ticketService?.nativeData) {
         const t = this.ticketService.getNativeRowTicket(row);
-        if (!t || t.playtime == null) return;
+        const playtime = t && this.ticketService.nativePlaytime(t.suspectId, t);
+        if (playtime == null) {
+          this._clearRowHoursHighlight(row);
+          return;
+        }
         this.releaseHoursWatch(row);
-        const hours2 = Math.round(t.playtime / 3600);
+        const hours2 = Math.floor(playtime / 3600);
         if (hours2 > this.settings.newAccountHours) this._clearRowHoursHighlight(row);
         else {
           this._setRowHoursState(row, hours2);
-          this._applyRowHoursHighlight(row);
+          this._applyNativeRowHoursHighlight(row);
         }
         return;
       }
@@ -4971,7 +5007,7 @@ ${nextMessage}` : nextMessage;
       if (!offenderField || !offenderSteamId) {
         return null;
       }
-      return { offenderField, offenderSteamId };
+      return { offenderField, offenderSteamId, scope };
     },
     formatSteamCreationDate(timecreated) {
       const timestamp = Number(timecreated);
@@ -5170,11 +5206,15 @@ ${nextMessage}` : nextMessage;
       const { offenderField, offenderSteamId } = context;
       if (this.nativeData) {
         const data = this.nativePlayer(offenderSteamId);
+        const playtime = this.nativePlaytime(offenderSteamId, this.getNativeTicket(context.scope));
         this._nativeProfileLoads ||= /* @__PURE__ */ new Map();
-        if (data?.playtime == null && !this._nativeProfileLoads.has(offenderSteamId)) {
+        if (playtime == null && !this._nativeProfileLoads.has(offenderSteamId)) {
           this._nativeProfileLoads.set(offenderSteamId, "pending");
           void this.fetchParsedUserData(offenderSteamId).then(
-            () => this._nativeProfileLoads.set(offenderSteamId, "ready"),
+            () => this._nativeProfileLoads.set(
+              offenderSteamId,
+              this.nativePlaytime(offenderSteamId, this.getNativeTicket(context.scope)) == null ? "error" : "ready"
+            ),
             () => this._nativeProfileLoads.set(offenderSteamId, "error")
           ).finally(() => {
             if (!this._pageClosed && this.getOffenderFieldContext()?.offenderSteamId === offenderSteamId) void this.renderOffenderProjectInfo();
@@ -5183,8 +5223,8 @@ ${nextMessage}` : nextMessage;
         if (showPlaytime) {
           const value = this.ensureCybershokePlaytimeNode(offenderField);
           value.classList.remove("ioh-account-value--error");
-          value.textContent = typeof data?.playtime === "number" && data.playtime >= 0 ? this.formatCybershokePlaytime(data.playtime) : this._nativeProfileLoads.get(offenderSteamId) === "pending" ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430..." : "\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445";
-          if (data?.playtime == null && this._nativeProfileLoads.get(offenderSteamId) === "error") this.renderProfileFieldError(
+          value.textContent = playtime != null ? this.formatCybershokePlaytime(playtime) : this._nativeProfileLoads.get(offenderSteamId) === "pending" ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430..." : "\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445";
+          if (playtime == null && this._nativeProfileLoads.get(offenderSteamId) === "error") this.renderProfileFieldError(
             value,
             value.closest(".ioh-cybershoke-playtime"),
             offenderSteamId,
@@ -5443,6 +5483,7 @@ ${nextMessage}` : nextMessage;
       const v = raw.json ?? raw;
       payload = complaint(v, d.entity);
       if (!payload || payload.id !== d.id) return null;
+      if (d.entity === "report" && !own(v, "suspect_notice")) payload.warnings = [];
       if (!own(v, "start_timestamp")) payload.startedAt = null;
       if (!own(v, "end_timestamp") && !own(v, "end_unixtime")) payload.endedAt = null;
     } else if (d.kind === "player") payload = player(raw, d.steamId);
@@ -5584,6 +5625,25 @@ ${nextMessage}` : nextMessage;
   }
 
   // modules/ticket/QueueChatTracking.js
+  var retryable = /* @__PURE__ */ new Set(["RATE_LIMIT", "TIMEOUT", "UNAVAILABLE", "INVALID_RESPONSE", "BUSY"]);
+  function retryDelay(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(queueChatError("ABORTED"));
+        return;
+      }
+      const cancel = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", cancel);
+        reject(queueChatError("ABORTED"));
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      }, ms);
+      signal.addEventListener("abort", cancel, { once: true });
+    });
+  }
   var QueueChatTrackingMethods = {
     pruneQueueChatCache() {
       if (!this._queueChatCache?.size) return;
@@ -5598,7 +5658,18 @@ ${nextMessage}` : nextMessage;
       if (this._queueChatInflight.has(steamId3)) return this._queueChatInflight.get(steamId3).promise;
       const controller = new AbortController();
       const entry = { controller };
-      entry.promise = requestQueueChat({ window, steamId: steamId3, signal: controller.signal }).then((messages) => {
+      const read = async () => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await requestQueueChat({ window, steamId: steamId3, signal: controller.signal });
+          } catch (error) {
+            if (controller.signal.aborted || attempt >= 1 || !retryable.has(error.code)) throw error;
+            if (error.code === "RATE_LIMIT") this.globalServerCooldown = Date.now() + 660;
+            await retryDelay(Math.max(700, (this.globalServerCooldown || 0) - Date.now()), controller.signal);
+          }
+        }
+      };
+      entry.promise = read().then((messages) => {
         if (controller.signal.aborted) return null;
         this._queueChatCache ||= /* @__PURE__ */ new Map();
         this._queueChatCache.delete(steamId3);
@@ -7228,7 +7299,8 @@ ${nextMessage}` : nextMessage;
     ["\u0431\u0430\u0433\u043E\u044E\u0437", "ban"],
     ["\u043C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433", "mute"],
     ["\u0441\u043F\u0430\u043C", "mute"],
-    ["\u043F\u043E\u043F\u0440\u043E\u0448\u0430\u0439\u043D\u0438\u0447\u0435\u0441\u0442\u0432\u043E", "mute"]
+    ["\u043F\u043E\u043F\u0440\u043E\u0448\u0430\u0439\u043D\u0438\u0447\u0435\u0441\u0442\u0432\u043E", "mute"],
+    ["\u043D\u0430\u0440\u0443\u0448\u0435\u043D\u0438\u0435 \u043F\u0440\u0430\u0432\u0438\u043B", "confirmed-any"]
   ]);
   var normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   function closeReasonEvidenceMinutes(value) {
@@ -7244,6 +7316,7 @@ ${nextMessage}` : nextMessage;
     const normalized = normalize(category);
     const type = CATEGORIES.get(normalized);
     if (!type) return null;
+    if (type === "confirmed-any") return data.isBanned === true || data.isMuted === true ? LABELS.punished : null;
     if (type === "ban" && data.isBanned || type === "mute" && data.isMuted) return LABELS.punished;
     if (Object.hasOwn(data, "serverIp") && data.serverIp === null) return LABELS.left;
     if (normalized !== "\u0447\u0438\u0442\u0435\u0440\u0441\u0442\u0432\u043E") return LABELS.noViolations;
@@ -7460,7 +7533,7 @@ ${nextMessage}` : nextMessage;
       }
       const data = state.punishmentData || {};
       const matchingType = CATEGORIES.get(normalize(session.category));
-      const desired = Array.from(state.intents.values()).includes(matchingType) ? LABELS.punished : chooseCloseReason(session.category, elapsed, this.settings.closeReasonEvidenceMinutes, data);
+      const desired = matchingType !== "confirmed-any" && Array.from(state.intents.values()).includes(matchingType) ? LABELS.punished : chooseCloseReason(session.category, elapsed, this.settings.closeReasonEvidenceMinutes, data);
       if (!desired) return;
       const button = context.buttons.find((candidate) => candidate.textContent.trim() === desired && !candidate.disabled);
       if (!button) return;
@@ -7495,7 +7568,9 @@ ${nextMessage}` : nextMessage;
       if (!this.settings?.features?.autoSelectCloseReason || !attemptToken || typeof attemptToken !== "object" || !scope || !steamId3 || !ticketId) return false;
       this.syncCloseReasonSelection();
       const session = this._closeReasonSessions?.get(scope);
-      if (!session || session.steamId !== steamId3 || session.ticketId !== String(ticketId) || CATEGORIES.get(normalize(session.category)) !== type) return false;
+      if (!session || session.steamId !== steamId3 || session.ticketId !== String(ticketId) || !["ban", "mute"].includes(type)) return false;
+      const matchingType = CATEGORIES.get(normalize(session.category));
+      if (matchingType !== type && matchingType !== "confirmed-any") return false;
       const context = this.getCloseReasonContext(session.textarea);
       if (!context || context.scope !== scope || context.steamId !== steamId3 || context.ticketId !== String(ticketId) || !this.isCloseReasonContextEditable(context)) return false;
       session.complaintState.intents.set(attemptToken, type);
@@ -7772,6 +7847,11 @@ ${nextMessage}` : nextMessage;
       const allowed = analysisFallback || reasonAllowed || this.complaintTextMatchesAutoconnectTrigger(t.message);
       return { allowed, reason: allowed ? "\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0441\u0430\u0439\u0442\u0430" : "\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F \u043D\u0435 \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0435\u0442 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435" };
     },
+    nativePlaytime(id, ticket = null) {
+      const current = this.nativeData?.player(id)?.playtime;
+      if (Number.isFinite(current) && current >= 0) return current;
+      return ticket?.suspectId === id && Number.isFinite(ticket.playtime) && ticket.playtime >= 0 ? ticket.playtime : null;
+    },
     nativeHistory(scope, resource) {
       const ticket = this.getNativeTicket(scope);
       const history = ticket && this.nativeData.history(ticket.suspectId, resource);
@@ -7881,6 +7961,7 @@ ${nextMessage}` : nextMessage;
           this.applyOffenderProfileVerification(suspect, p.profileVerified, null);
         }
         row.classList.toggle("ioh-highlighted-moderator", senderMod || suspectMod || Boolean(this.settings.features?.trackOffenderServer && p.profileVerified));
+        this.onNativeQueueRowRendered?.(row);
       }
     },
     syncNativeTicketViews({ steamIds = null, syncTracking = true } = {}) {
@@ -9407,6 +9488,7 @@ ${nextMessage}` : nextMessage;
       const p = this.players.get(id) || { steamId: id, stamps: {}, orders: {} };
       for (const [key, value] of Object.entries(patch)) {
         if (key === "steamId" || value === void 0) continue;
+        if (key === "playtime" && value == null && Number.isFinite(p.playtime)) continue;
         if ((p.stamps[key] ?? -1) > event.startedAt || p.stamps[key] === event.startedAt && p.orders[key] > event.sequence) continue;
         p[key] = value;
         p.stamps[key] = event.startedAt;
@@ -9421,6 +9503,7 @@ ${nextMessage}` : nextMessage;
       const previous = this.tickets.get(p.key);
       const t = previous || { key: p.key, stamps: {}, orders: {} };
       for (const [key, value] of Object.entries(p)) {
+        if (key === "playtime" && value == null && Number.isFinite(t.playtime)) continue;
         if (value === void 0 || (t.stamps[key] ?? -1) > event.startedAt || t.stamps[key] === event.startedAt && t.orders[key] > event.sequence) continue;
         t[key] = value;
         t.stamps[key] = event.startedAt;
@@ -9590,6 +9673,9 @@ ${nextMessage}` : nextMessage;
       });
       this.domCoordinator = new DOMCoordinator(this);
       this.messageService.ticketService = this.ticketService;
+      this.ticketService.onNativeQueueRowRendered = (row) => {
+        if (this.features.highlightNewAccounts) this.messageService.highlightNewAccounts(row);
+      };
       this.bindCoordinatorEvents();
     }
     bindCoordinatorEvents() {

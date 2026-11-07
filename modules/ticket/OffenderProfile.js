@@ -222,7 +222,7 @@ export const OffenderProfileMethods = {
             return null;
         }
 
-        return {offenderField, offenderSteamId};
+        return {offenderField, offenderSteamId, scope};
     },
 
     formatSteamCreationDate(timecreated) {
@@ -448,10 +448,12 @@ export const OffenderProfileMethods = {
         const {offenderField, offenderSteamId} = context;
         if (this.nativeData) {
             const data = this.nativePlayer(offenderSteamId);
+            const playtime = this.nativePlaytime(offenderSteamId, this.getNativeTicket(context.scope));
             this._nativeProfileLoads ||= new Map();
-            if (data?.playtime == null && !this._nativeProfileLoads.has(offenderSteamId)) {
+            if (playtime == null && !this._nativeProfileLoads.has(offenderSteamId)) {
                 this._nativeProfileLoads.set(offenderSteamId, 'pending');
-                void this.fetchParsedUserData(offenderSteamId).then(() => this._nativeProfileLoads.set(offenderSteamId, 'ready'),
+                void this.fetchParsedUserData(offenderSteamId).then(() => this._nativeProfileLoads.set(offenderSteamId,
+                    this.nativePlaytime(offenderSteamId, this.getNativeTicket(context.scope)) == null ? 'error' : 'ready'),
                     () => this._nativeProfileLoads.set(offenderSteamId, 'error')).finally(() => {
                     if (!this._pageClosed && this.getOffenderFieldContext()?.offenderSteamId === offenderSteamId) void this.renderOffenderProjectInfo();
                 });
@@ -459,9 +461,9 @@ export const OffenderProfileMethods = {
             if (showPlaytime) {
                 const value = this.ensureCybershokePlaytimeNode(offenderField);
                 value.classList.remove('ioh-account-value--error');
-                value.textContent = typeof data?.playtime === 'number' && data.playtime >= 0 ? this.formatCybershokePlaytime(data.playtime)
+                value.textContent = playtime != null ? this.formatCybershokePlaytime(playtime)
                     : this._nativeProfileLoads.get(offenderSteamId) === 'pending' ? 'Загрузка...' : 'Нет данных';
-                if (data?.playtime == null && this._nativeProfileLoads.get(offenderSteamId) === 'error') this.renderProfileFieldError(value,
+                if (playtime == null && this._nativeProfileLoads.get(offenderSteamId) === 'error') this.renderProfileFieldError(value,
                     value.closest('.ioh-cybershoke-playtime'), offenderSteamId, () => this.renderOffenderProjectInfo(), this._nativeProfileLoads);
             }
             if (showCountry) this.renderOffenderCountryValue(this.ensureOffenderCountryNode(offenderField), data);

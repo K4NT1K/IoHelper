@@ -87,6 +87,9 @@ export class App {
         });
         this.domCoordinator = new DOMCoordinator(this);
         this.messageService.ticketService = this.ticketService;
+        this.ticketService.onNativeQueueRowRendered = row => {
+            if (this.features.highlightNewAccounts) this.messageService.highlightNewAccounts(row);
+        };
         this.bindCoordinatorEvents();
     }
 

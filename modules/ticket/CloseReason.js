@@ -9,7 +9,7 @@ const LABELS = {
 };
 const CATEGORIES = new Map([
     ['читерство', 'ban'], ['багоюз', 'ban'],
-    ['мониторинг', 'mute'], ['спам', 'mute'], ['попрошайничество', 'mute']
+    ['мониторинг', 'mute'], ['спам', 'mute'], ['попрошайничество', 'mute'], ['нарушение правил', 'confirmed-any']
 ]);
 const normalize = value => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -28,6 +28,7 @@ export function chooseCloseReason(category, elapsedSeconds, minutes = 3, data = 
     const normalized = normalize(category);
     const type = CATEGORIES.get(normalized);
     if (!type) return null;
+    if (type === 'confirmed-any') return data.isBanned === true || data.isMuted === true ? LABELS.punished : null;
     if ((type === 'ban' && data.isBanned) || (type === 'mute' && data.isMuted)) return LABELS.punished;
     if (Object.hasOwn(data, 'serverIp') && data.serverIp === null) return LABELS.left;
     if (normalized !== 'читерство') return LABELS.noViolations;
@@ -280,7 +281,7 @@ export const CloseReasonMethods = {
         }
         const data = state.punishmentData || {};
         const matchingType = CATEGORIES.get(normalize(session.category));
-        const desired = Array.from(state.intents.values()).includes(matchingType) ? LABELS.punished
+        const desired = matchingType !== 'confirmed-any' && Array.from(state.intents.values()).includes(matchingType) ? LABELS.punished
             : chooseCloseReason(session.category, elapsed, this.settings.closeReasonEvidenceMinutes, data);
         if (!desired) return;
         const button = context.buttons.find(candidate => candidate.textContent.trim() === desired && !candidate.disabled);
@@ -321,7 +322,9 @@ export const CloseReasonMethods = {
         this.syncCloseReasonSelection();
         const session = this._closeReasonSessions?.get(scope);
         if (!session || session.steamId !== steamId || session.ticketId !== String(ticketId)
-            || CATEGORIES.get(normalize(session.category)) !== type) return false;
+            || !['ban', 'mute'].includes(type)) return false;
+        const matchingType = CATEGORIES.get(normalize(session.category));
+        if (matchingType !== type && matchingType !== 'confirmed-any') return false;
         const context = this.getCloseReasonContext(session.textarea);
         if (!context || context.scope !== scope || context.steamId !== steamId || context.ticketId !== String(ticketId)
             || !this.isCloseReasonContextEditable(context)) return false;

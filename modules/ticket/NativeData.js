@@ -68,6 +68,12 @@ export const NativeTicketMethods = {
         return {allowed, reason: allowed ? 'Подтверждённые данные сайта' : 'Категория не разрешает подключение'};
     },
 
+    nativePlaytime(id, ticket = null) {
+        const current = this.nativeData?.player(id)?.playtime;
+        if (Number.isFinite(current) && current >= 0) return current;
+        return ticket?.suspectId === id && Number.isFinite(ticket.playtime) && ticket.playtime >= 0 ? ticket.playtime : null;
+    },
+
     nativeHistory(scope, resource) {
         const ticket = this.getNativeTicket(scope);
         const history = ticket && this.nativeData.history(ticket.suspectId, resource);
@@ -168,6 +174,7 @@ export const NativeTicketMethods = {
             }
             row.classList.toggle('ioh-highlighted-moderator', senderMod || suspectMod
                 || Boolean(this.settings.features?.trackOffenderServer && p.profileVerified));
+            this.onNativeQueueRowRendered?.(row);
         }
     },
 

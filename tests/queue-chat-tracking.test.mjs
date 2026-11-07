@@ -274,3 +274,27 @@ test('Queue cache evicts least recently used history instead of an active mute a
     assert.equal(f.service._queueChatCache.has(player(0)), true);
     assert.equal(f.service._queueChatCache.has(player(1)), false);
 });
+
+for (const code of ['UNAVAILABLE', 'TIMEOUT', 'INVALID_RESPONSE', 'RATE_LIMIT', 'BUSY']) {
+    test(`Queue chat retries transient ${code} once and then shows a successful mute verdict`, async t => {
+        const time = clock(t); let calls = 0;
+        const f = fixture(t, undefined, {onRead: () => ++calls === 1 ? {code} : {messages: [toxic()]}});
+        await time.finish(f.run()); f.flushUi();
+        assert.equal(f.reads.length, 2);
+        assert.equal(f.rows[0].control.dataset.iohPunishmentAction, 'warning');
+        assert.equal(f.service._queueChatInflight.size, 0);
+    });
+}
+
+test('Queue chat retry is bounded and aborted backoff cannot dispatch a late read', async t => {
+    const time = clock(t), f = fixture(t, undefined, {onRead: () => ({code: 'UNAVAILABLE'})});
+    await time.finish(f.run()); f.flushUi();
+    assert.equal(f.reads.length, 2);
+    await time.advance(5000);
+    const pending = f.run(); await time.advance(680);
+    const count = f.reads.length;
+    assert.equal(count, 3);
+    f.service.stopQueueChatTracking({preserveCache: true});
+    await time.finish(pending); await time.advance(1000);
+    assert.equal(f.reads.length, count);
+});

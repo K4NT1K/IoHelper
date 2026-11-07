@@ -448,6 +448,7 @@
       const v = raw.json ?? raw;
       payload = complaint(v, d.entity);
       if (!payload || payload.id !== d.id) return null;
+      if (d.entity === "report" && !own(v, "suspect_notice")) payload.warnings = [];
       if (!own(v, "start_timestamp")) payload.startedAt = null;
       if (!own(v, "end_timestamp") && !own(v, "end_unixtime")) payload.endedAt = null;
     } else if (d.kind === "player") payload = player(raw, d.steamId);

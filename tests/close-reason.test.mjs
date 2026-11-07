@@ -43,7 +43,7 @@ for (const category of ['Читерство', 'Багоюз', 'Монитори�
 }
 
 test('Unspecified complaint categories never select a reason', () => {
-    for (const category of ['Нарушение правил', '', 'Читерство и спам', 'Другое']) {
+    for (const category of ['', 'Читерство и спам', 'Другое']) {
         assert.equal(chooseCloseReason(category, 200, 3, {isBanned:true, isMuted:true}), null);
     }
 });
@@ -190,7 +190,7 @@ for (const condition of ['readOnly','disabled','inactive','disabledButtons','uns
         if(condition==='readOnly' || condition==='disabled') textarea[condition]=true;
         if(condition==='inactive') state.active=false;
         if(condition==='disabledButtons') buttons.forEach(button => {button.disabled=true;});
-        if(condition==='unsupported') state.category='Нарушение правил';
+        if(condition==='unsupported') state.category='Другое';
         ctx.syncCloseReasonSelection();
         assert.deepEqual(state.clicks,[]);
         assert.equal(observers.length,['readOnly','disabled','disabledButtons'].includes(condition) ? 1 : 0);
@@ -216,6 +216,29 @@ test('Disabled feature creates no observers; later disable and removal release l
     assert.equal(observers[1].connected,false);
     assert.equal(ctx._closeReasonSessions.size,0);
 });
+
+test('Rules category changes no baseline/offline choice and selects punished after a confirmed ban or mute', () => {
+    for (const data of [{}, {serverIp: null}, {isBanned: false, isMuted: false}, {isMuted: 'true'}]) {
+        assert.equal(chooseCloseReason('Нарушение правил', 10000, 3, data), null);
+    }
+    assert.equal(chooseCloseReason('Нарушение правил', 0, 3, {isMuted: true}), punished);
+    assert.equal(chooseCloseReason('Нарушение правил', 0, 3, {isBanned: true}), punished);
+});
+
+for (const type of ['ban', 'mute']) {
+    test(`Rules category waits for confirmed ${type}; pending/cancelled attempt does not change the selected reason`, t => {
+        const {ctx, state, scope} = fixture(t);
+        state.category = 'Нарушение правил'; ctx.syncCloseReasonSelection();
+        assert.deepEqual(state.clicks, []);
+        const attemptToken = {};
+        assert.equal(ctx.onCloseReasonPunishmentIntent({type, scope, steamId: state.steamId, ticketId: state.ticketId, attemptToken}), true);
+        assert.deepEqual(state.clicks, []);
+        ctx.cancelCloseReasonPunishmentIntent(attemptToken);
+        assert.deepEqual(state.clicks, []);
+        ctx.onCloseReasonPunishmentData(state.steamId, {[type === 'ban' ? 'isBanned' : 'isMuted']: true});
+        assert.deepEqual(state.clicks, [punished]);
+    });
+}
 
 test('Acceptance attribute changes activate a formerly readonly form without another mount', t => {
     const {ctx,state,textarea,observers,card} = fixture(t);

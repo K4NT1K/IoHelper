@@ -49,6 +49,7 @@
       const p = this.players.get(id) || { steamId: id, stamps: {}, orders: {} };
       for (const [key, value] of Object.entries(patch)) {
         if (key === "steamId" || value === void 0) continue;
+        if (key === "playtime" && value == null && Number.isFinite(p.playtime)) continue;
         if ((p.stamps[key] ?? -1) > event.startedAt || p.stamps[key] === event.startedAt && p.orders[key] > event.sequence) continue;
         p[key] = value;
         p.stamps[key] = event.startedAt;
@@ -63,6 +64,7 @@
       const previous = this.tickets.get(p.key);
       const t = previous || { key: p.key, stamps: {}, orders: {} };
       for (const [key, value] of Object.entries(p)) {
+        if (key === "playtime" && value == null && Number.isFinite(t.playtime)) continue;
         if (value === void 0 || (t.stamps[key] ?? -1) > event.startedAt || t.stamps[key] === event.startedAt && t.orders[key] > event.sequence) continue;
         t[key] = value;
         t.stamps[key] = event.startedAt;

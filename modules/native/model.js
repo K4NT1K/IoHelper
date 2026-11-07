@@ -170,6 +170,9 @@ export function normalizeResponse(descriptor, raw, {startedAt = Date.now(), rece
     } else if (d.kind === 'ticket') {
         const v = raw.json ?? raw; payload = complaint(v, d.entity);
         if (!payload || payload.id !== d.id) return null;
+        // Report detail omits suspect_notice; the site's report view treats it as
+        // an empty warning history. Queue patches alone still cannot define it.
+        if (d.entity === 'report' && !own(v, 'suspect_notice')) payload.warnings = [];
         // Unlike list patches, a complete detail defines whether a timer exists.
         if (!own(v, 'start_timestamp')) payload.startedAt = null;
         if (!own(v, 'end_timestamp') && !own(v, 'end_unixtime')) payload.endedAt = null;

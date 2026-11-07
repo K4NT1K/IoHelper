@@ -1,6 +1,16 @@
-import {requestQueueChat} from '../native/QueueChatClient.js';
+import {requestQueueChat, queueChatError} from '../native/QueueChatClient.js';
 import {analyzeQueueChatMessages} from './QueueChatAnalysis.js';
 import {steamIdFromPlayerProfileUrl} from '../shared/playerProfile.js';
+
+const retryable = new Set(['RATE_LIMIT', 'TIMEOUT', 'UNAVAILABLE', 'INVALID_RESPONSE', 'BUSY']);
+function retryDelay(ms, signal) {
+    return new Promise((resolve, reject) => {
+        if (signal.aborted) {reject(queueChatError('ABORTED')); return;}
+        const cancel = () => {clearTimeout(timer); signal.removeEventListener('abort', cancel); reject(queueChatError('ABORTED'));};
+        const timer = setTimeout(() => {signal.removeEventListener('abort', cancel); resolve();}, ms);
+        signal.addEventListener('abort', cancel, {once: true});
+    });
+}
 
 export const QueueChatTrackingMethods = {
     pruneQueueChatCache() {
@@ -17,7 +27,17 @@ export const QueueChatTrackingMethods = {
         if (this._queueChatInflight.has(steamId)) return this._queueChatInflight.get(steamId).promise;
         const controller = new AbortController();
         const entry = {controller};
-        entry.promise = requestQueueChat({window, steamId, signal: controller.signal}).then(messages => {
+        const read = async () => {
+            for (let attempt = 0; ; attempt++) {
+                try {return await requestQueueChat({window, steamId, signal: controller.signal});}
+                catch (error) {
+                    if (controller.signal.aborted || attempt >= 1 || !retryable.has(error.code)) throw error;
+                    if (error.code === 'RATE_LIMIT') this.globalServerCooldown = Date.now() + 660;
+                    await retryDelay(Math.max(700, (this.globalServerCooldown || 0) - Date.now()), controller.signal);
+                }
+            }
+        };
+        entry.promise = read().then(messages => {
             if (controller.signal.aborted) return null;
             this._queueChatCache ||= new Map();
             this._queueChatCache.delete(steamId);
