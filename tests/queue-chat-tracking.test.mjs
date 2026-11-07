@@ -136,7 +136,7 @@ test('Queue integration: inclusive day boundary expires cached verdict and resto
     assert.equal(f.reads.length, 0, 'Expiration recomputes cached messages without a network request');
 });
 
-test('Queue integration: duplicate eligible complaints share one chat request per pass and respect TTL', async t => {
+test('Queue integration: duplicate eligible complaints share chat; known mute skips reads after TTL while user/data continues', async t => {
     const time = clock(t), f = fixture(t, ['Нарушение правил', 'Мониторинг', 'Попрошайничество'], {samePlayer: true});
     await time.finish(f.run()); f.flushUi();
     assert.equal(f.reads.length, 1); assert.equal(f.requests.length, 1);
@@ -144,8 +144,33 @@ test('Queue integration: duplicate eligible complaints share one chat request pe
     await time.finish(f.run()); f.flushUi();
     assert.equal(f.reads.length, 1); assert.equal(f.requests.length, 1);
     await time.advance(5000); await time.finish(f.run()); f.flushUi();
-    assert.equal(f.reads.length, 2); assert.equal(f.requests.length, 2);
+    assert.equal(f.reads.length, 1); assert.equal(f.requests.length, 2);
+    assert.equal(f.rows.filter(row => row.classList.contains('ioh-highlighted-chat-mute')).length, 3);
 });
+
+for (const text of ['safe', 'insult']) {
+    test(`Queue integration: ${text} result still refreshes chat after TTL`, async t => {
+        const time = clock(t), f = fixture(t, undefined, {onRead: () => ({messages: [{...toxic(), text}]})});
+        await time.finish(f.run()); f.flushUi();
+        await time.advance(5000); await time.finish(f.run()); f.flushUi();
+        assert.equal(f.reads.length, 2);
+        assert.equal(f.rows[0].classList.contains('ioh-highlighted-chat-mute'), false);
+    });
+}
+
+for (const invalidation of ['expiry', 'rules']) {
+    test(`Queue integration: cached mute resumes chat reads after ${invalidation}`, async t => {
+        const time = clock(t); await time.advance(day * 2);
+        const firstTime = Date.now() - (invalidation === 'expiry' ? day - 1000 : 1000);
+        const f = fixture(t, undefined, {onRead: () => ({messages: [toxic(firstTime)]})});
+        await time.finish(f.run()); f.flushUi();
+        assert.equal(f.rows[0].classList.contains('ioh-highlighted-chat-mute'), true);
+        if (invalidation === 'rules') f.service.setRuleInputs([], {});
+        await time.advance(5000); await time.finish(f.run()); f.flushUi();
+        assert.equal(f.reads.length, 2);
+        assert.equal(f.rows[0].classList.contains('ioh-highlighted-chat-mute'), false);
+    });
+}
 
 test('Queue integration: non-eligible duplicate does not suppress a later eligible chat request', async t => {
     const time = clock(t), f = fixture(t, ['Спам', 'Читерство'], {samePlayer: true});
@@ -181,7 +206,7 @@ for (const change of ['navigation', 'disable', 'hidden', 'player', 'ticket', 're
 for (const code of ['UNAVAILABLE', 'INVALID_RESPONSE', 'RATE_LIMIT']) {
     test(`Queue integration: chat ${code} clears stale chat verdict but preserves server update`, async t => {
         const time = clock(t), f = fixture(t, undefined, {onRead: () => ({code})});
-        f.service._queueChatCache = new Map([[player(0), {messages: [toxic()], fetchedAt: Date.now() - 6000}]]);
+        f.service._queueChatCache = new Map([[player(0), {messages: [{...toxic(), text: 'insult'}], fetchedAt: Date.now() - 6000}]]);
         await time.finish(f.run()); f.flushUi();
         assert.equal(f.updates.length, 1);
         assert.equal(f.service._queueChatCache.has(player(0)), false);

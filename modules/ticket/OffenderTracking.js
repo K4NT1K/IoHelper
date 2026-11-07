@@ -1645,7 +1645,10 @@ export const OffenderTrackingMethods = {
                 const complaintReason = this.getComplaintReasonFromRow(targetRow);
                 if (this.isMuteHighlightComplaintReason(complaintReason) && !chatBySteamId.has(targetSteamId)) {
                     const cached = this._queueChatCache?.get(targetSteamId);
-                    if (!cached || Date.now() - cached.fetchedAt >= CACHE_INTERVAL) {
+                    // A known mute verdict needs no more history reads. Revalidate
+                    // cached messages locally for expiry and changed rules first.
+                    const needsMute = this.getQueueChatVerdict(targetRow)?.kind === 'mute';
+                    if (!needsMute && (!cached || Date.now() - cached.fetchedAt >= CACHE_INTERVAL)) {
                         await new Promise(resolve => setTimeout(resolve, Math.max(340,
                             (this.globalServerCooldown || 0) - Date.now())));
                         while (passIsCurrent() && rowIsCurrent() && Date.now() < (this.globalServerCooldown || 0)) {

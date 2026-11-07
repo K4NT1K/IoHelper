@@ -6990,7 +6990,8 @@ ${nextMessage}` : nextMessage;
           const complaintReason = this.getComplaintReasonFromRow(targetRow);
           if (this.isMuteHighlightComplaintReason(complaintReason) && !chatBySteamId.has(targetSteamId)) {
             const cached = this._queueChatCache?.get(targetSteamId);
-            if (!cached || Date.now() - cached.fetchedAt >= CACHE_INTERVAL) {
+            const needsMute = this.getQueueChatVerdict(targetRow)?.kind === "mute";
+            if (!needsMute && (!cached || Date.now() - cached.fetchedAt >= CACHE_INTERVAL)) {
               await new Promise((resolve) => setTimeout(resolve, Math.max(
                 340,
                 (this.globalServerCooldown || 0) - Date.now()
