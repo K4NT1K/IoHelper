@@ -76,6 +76,7 @@ export const AnalysisBadgeMethods = {
     },
 
     cancelTriggerNavigation() {
+        this.badgeService?.hideTriggerTooltip?.();
         this._triggerNavigationCancel?.(); this._triggerNavigationCancel = null;
         clearTimeout(this._triggerHighlightTimer);
         this._triggerHighlightedRows?.forEach(row => row.classList.remove('ioh-chat-highlight'));

@@ -20,17 +20,16 @@
     transform: scale(1.05);
 }
 
-/* Всплывающий тултип при наведении на слово-триггер */
-.ioh-trigger-tooltip::after {
-    content: attr(data-full-msg);
-    position: absolute;
-    bottom: 140%;
-    left: 50%;
-    transform: translateX(-50%);
+/* Trigger text is portalled to body to escape clipped ticket/SPA cards. */
+.ioh-trigger-tooltip__panel {
+    position: fixed;
+    box-sizing: border-box;
     width: max-content;
-    max-width: 280px;
+    max-width: min(280px, calc(100vw - 16px));
+    max-height: calc(100vh - 16px);
+    overflow: auto;
     white-space: normal;
-    word-wrap: break-word;
+    overflow-wrap: anywhere;
     background: var(--color-bg-card, #1e293b);
     backdrop-filter: blur(20px) saturate(1.35);
     -webkit-backdrop-filter: blur(20px) saturate(1.35);
@@ -42,49 +41,12 @@
     font-weight: 400;
     line-height: 1.4;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-    z-index: 10000;
+    z-index: 2147483646;
     pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.15s ease, visibility 0.15s ease;
-}
-
-/* Отображение тултипа при наведении */
-.ioh-trigger-tooltip:hover::after {
-    opacity: 1;
-    visibility: visible;
-}
-
-/* Стрелочка (треугольник) под тултипом */
-.ioh-trigger-tooltip::before {
-    content: '';
-    position: absolute;
-    bottom: 120%;
-    left: 50%;
-    transform: translateX(-50%);
-    border-width: 6px;
-    border-style: solid;
-    border-color: var(--color-bg-card, rgba(15, 23, 42, 0.95)) transparent transparent transparent;
-    z-index: 10000;
-    pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.15s ease, visibility 0.15s ease;
-}
-
-.ioh-trigger-tooltip:hover::before {
-    opacity: 1;
-    visibility: visible;
 }
 
 .ioh-trigger-tooltip.ioh-more-triggers {
     cursor: pointer;
-}
-
-.ioh-trigger-tooltip.ioh-more-triggers::after,
-.ioh-trigger-tooltip.ioh-more-triggers::before {
-    content: none;
-    display: none;
 }
 
 .ioh-warning-text-tooltip {

@@ -29,6 +29,8 @@ export class BadgeService {
             return;
         }
 
+        this.hideTriggerTooltip();
+
         this.document.querySelectorAll('body > .ioh-punishment-preview-tooltip__panel').forEach(panel => {
             panel.remove();
         });
@@ -42,6 +44,8 @@ export class BadgeService {
         if (!root) {
             return;
         }
+
+        this.wireTriggerTooltips(root);
 
         root.querySelectorAll('.ioh-punishment-preview-tooltip').forEach(host => {
             const panel = host.querySelector(':scope > .ioh-punishment-preview-tooltip__panel');
@@ -99,6 +103,56 @@ export class BadgeService {
             host.addEventListener('mouseleave', hidePanel);
             host.addEventListener('blur', hidePanel);
         });
+    }
+
+    hideTriggerTooltip() {
+        this._triggerTooltipCleanup?.();
+        this._triggerTooltipCleanup = null;
+    }
+
+    wireTriggerTooltips(root) {
+        if (!root.addEventListener) return;
+        this._triggerTooltipRoots ||= new WeakSet();
+        if (this._triggerTooltipRoots.has(root)) return;
+        this._triggerTooltipRoots.add(root);
+        const selector = '.ioh-trigger-tooltip[data-full-msg]:not(.ioh-more-triggers)';
+        const show = event => {
+            const host = event.target.closest?.(selector);
+            if (!host || !root.contains(host) || host.contains(event.relatedTarget)) return;
+            this.hideTriggerTooltip();
+            const panel = this.document.createElement('div');
+            markIoh(panel);
+            panel.className = 'ioh-trigger-tooltip__panel';
+            panel.setAttribute('role', 'tooltip');
+            panel.textContent = host.dataset.fullMsg;
+            const view = this.document.defaultView;
+            const margin = 8, gap = 10;
+            panel.style.maxWidth = `${Math.max(1, Math.min(280, view.innerWidth - margin * 2))}px`;
+            panel.style.maxHeight = `${Math.max(1, view.innerHeight - margin * 2)}px`;
+            this.document.body.appendChild(panel);
+            const rect = host.getBoundingClientRect(), size = panel.getBoundingClientRect();
+            panel.style.left = `${Math.max(margin, Math.min(rect.left + rect.width / 2 - size.width / 2,
+                view.innerWidth - size.width - margin))}px`;
+            const above = rect.top - size.height - gap;
+            panel.style.top = `${Math.max(margin, above >= margin ? above
+                : Math.min(rect.bottom + gap, view.innerHeight - size.height - margin))}px`;
+            const hide = () => this.hideTriggerTooltip();
+            view.addEventListener('scroll', hide, true);
+            view.addEventListener('resize', hide);
+            this._triggerTooltipCleanup = () => {
+                panel.remove();
+                view.removeEventListener('scroll', hide, true);
+                view.removeEventListener('resize', hide);
+            };
+        };
+        const hide = event => {
+            const host = event.target.closest?.(selector);
+            if (host && !host.contains(event.relatedTarget)) this.hideTriggerTooltip();
+        };
+        root.addEventListener('mouseover', show);
+        root.addEventListener('focusin', show);
+        root.addEventListener('mouseout', hide);
+        root.addEventListener('focusout', hide);
     }
 
     async detectSourceLanguage(text) {
