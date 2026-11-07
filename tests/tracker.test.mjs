@@ -56,6 +56,9 @@ function tracker(t, count, fetchData = async () => ({}), playerCount = count) {
         _offenderRowSnapshots: new WeakMap(),
         ensureServerLinkOriginalIp: () => '127.0.0.1:27015',
         getCachedUserData: () => null,
+        getComplaintReasonFromRow: () => '',
+        isMuteHighlightComplaintReason: () => false,
+        getQueueChatVerdict: () => null,
         async fetchParsedUserData(id) { calls.push(id); return fetchData(id, ctx); },
         rowActionIsInReview: () => false,
         scheduleOffenderUi: job => jobs.push(job),
@@ -397,7 +400,7 @@ function scheduler(t, pathname = '/support/tickets') {
         _offenderTrackingGeneration: 0, _offenderTrackingRestartRequested: false,
         _wasOnComplaintDetail: pathname.includes('/ticket/'),
         _offenderTrackingHref: view.location.href, _offenderTrackingTextarea: null,
-        ticketService: {findVisibleTicketResolutionTextarea: () => null, syncOpenTicketOffenderTracking() {},
+        ticketService: {findVisibleTicketResolutionTextarea: () => null, syncOpenTicketOffenderTracking() {}, stopQueueChatTracking() {},
             async checkOffendersServers() {}, async trackOpenTicketOffenderServer() {}}
     });
     return ctx;

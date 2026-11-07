@@ -1661,6 +1661,75 @@ ${nextMessage}` : nextMessage;
     return violations;
   }
 
+  // modules/ticket/QueueChatAnalysis.js
+  function scanChatMessages(service, messages, { triggerRows = null } = {}) {
+    const allViolations = [];
+    const ruleCounters = {};
+    for (const rule of service.rules || []) ruleCounters[rule.name] = 0;
+    const playerChatLog = /* @__PURE__ */ Object.create(null);
+    const getSeverity = (rule) => service.getRuleSeverity(rule);
+    const bindTrigger = (row) => {
+      if (!triggerRows) return null;
+      const id = crypto.randomUUID();
+      triggerRows.set(id, row);
+      return id;
+    };
+    for (const { messageText, authorText, timeMs, row } of messages) {
+      if (!messageText) continue;
+      const textLower = messageText.toLowerCase().trim();
+      if (timeMs && textLower.length > 0) {
+        (playerChatLog[authorText] ||= []).push({ time: timeMs, text: textLower, raw: messageText, row });
+      }
+      const strongest = service._ruleMatcher.matchStrongest(textLower, messageText, getSeverity);
+      if (!strongest) continue;
+      ruleCounters[strongest.rule.name] += 1;
+      allViolations.push({
+        id: bindTrigger(row),
+        ruleName: strongest.rule.name,
+        keyword: strongest.displayKeyword,
+        fullMessage: messageText,
+        severity: getSeverity(strongest.rule),
+        duration: strongest.rule.duration,
+        timeMs: timeMs || null
+      });
+    }
+    const spamRule = (service.rules || []).find((rule) => rule.name === "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442");
+    for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity, service.spamRules)) {
+      allViolations.push({
+        id: bindTrigger(spam.rows),
+        ruleName: "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442",
+        keyword: `${spam.raw} (x${spam.dupes})`,
+        fullMessage: spam.raw,
+        severity: spam.severity,
+        duration: spam.duration,
+        timeMs: spam.timeMs || null
+      });
+      ruleCounters["\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442"] = (ruleCounters["\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442"] || 0) + spam.dupes;
+    }
+    return { allViolations, ruleCounters };
+  }
+  function analyzeQueueChatMessages(service, messages, { now = Date.now() } = {}) {
+    const recent = (Array.isArray(messages) ? messages : []).filter(
+      (message) => typeof message?.text === "string" && Number.isFinite(message.timeMs) && message.timeMs >= now - 864e5 && message.timeMs <= now
+    ).map((message) => ({
+      messageText: message.text,
+      timeMs: message.timeMs,
+      authorText: message.channel === "team" ? "\u041A\u043E\u043C\u0430\u043D\u0434\u0430" : "\u0412\u0441\u0435"
+    }));
+    const analysis = scanChatMessages(service, recent);
+    const { allViolations, ruleCounters } = service.dropSoloTrollingViolation(analysis.allViolations, analysis.ruleCounters);
+    if (!allViolations.length) return { kind: "none", reason: null, allViolations, ruleCounters };
+    const mostSevere = service.findMostSeverePunishment(ruleCounters);
+    if (!mostSevere) return { kind: "skip", reason: null, allViolations, ruleCounters };
+    const { finalName, finalDurationStr } = service.calculateFinalPunishment(mostSevere.rule, mostSevere.count, ruleCounters);
+    return {
+      kind: finalDurationStr === "\u041F\u0440\u0435\u0434\u0443\u043F\u0440\u0435\u0436\u0434\u0435\u043D\u0438\u0435" ? "warning" : "mute",
+      reason: finalName,
+      allViolations,
+      ruleCounters
+    };
+  }
+
   // modules/ticket/TicketScope.js
   var TicketScopeMethods = {
     getChatCacheKey(textarea) {
@@ -5445,8 +5514,130 @@ ${nextMessage}` : nextMessage;
     }
   }
 
+  // modules/native/QueueChatClient.js
+  var QUEUE_CHAT_CHANNEL = "ioh-queue-chat-v1";
+  var QUEUE_CHAT_TIMEOUT = 15e3;
+  var QUEUE_CHAT_MAX_INFLIGHT = 8;
+  var clients = /* @__PURE__ */ new WeakMap();
+  var validSteamId = (id) => typeof id === "string" && /^\d{17}$/.test(id);
+  var allowedOrigin = (origin) => /^https:\/\/io\.cybershoke\.(net|ru)$/.test(origin);
+  var codes = /* @__PURE__ */ new Set(["ABORTED", "TIMEOUT", "RATE_LIMIT", "UNAVAILABLE", "INVALID_RESPONSE", "BUSY"]);
+  var queueChatError = (code) => Object.assign(new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044E \u0447\u0430\u0442\u0430: " + (codes.has(code) ? code : "UNAVAILABLE")), { code: codes.has(code) ? code : "UNAVAILABLE" });
+  function validMessages(messages) {
+    return Array.isArray(messages) && messages.length <= 1e4 && messages.every((m) => m && Number.isFinite(m.timeMs) && m.timeMs > 0 && typeof m.text === "string" && m.text.length <= 2e4 && ["all", "team"].includes(m.channel));
+  }
+  function getClient(window2) {
+    if (clients.has(window2)) return clients.get(window2);
+    const pending = /* @__PURE__ */ new Map();
+    const origin = window2.location.origin;
+    const post = (data) => window2.postMessage({ channel: QUEUE_CHAT_CHANNEL, ...data }, origin);
+    const finish = (nonce, error, messages) => {
+      const request = pending.get(nonce);
+      if (!request) return;
+      pending.delete(nonce);
+      clearTimeout(request.timer);
+      request.signal?.removeEventListener("abort", request.cancel);
+      if (error) request.reject(error);
+      else request.resolve(messages);
+    };
+    const listener = (event) => {
+      if (event.source !== window2 || event.origin !== origin || event.data?.channel !== QUEUE_CHAT_CHANNEL) return;
+      const data = event.data, request = pending.get(data.nonce);
+      if (!request || data.steamId !== request.steamId) return;
+      if (data.type === "error") finish(data.nonce, queueChatError(data.code));
+      else if (data.type === "result") finish(data.nonce, validMessages(data.messages) ? null : queueChatError("INVALID_RESPONSE"), data.messages);
+    };
+    const hide = () => {
+      for (const nonce of [...pending.keys()]) {
+        post({ type: "cancel", nonce });
+        finish(nonce, queueChatError("ABORTED"));
+      }
+      window2.removeEventListener("message", listener);
+      window2.removeEventListener("pagehide", hide);
+      clients.delete(window2);
+    };
+    window2.addEventListener("message", listener);
+    window2.addEventListener("pagehide", hide);
+    const client = { pending, post, finish };
+    clients.set(window2, client);
+    return client;
+  }
+  function requestQueueChat({ window: window2, steamId: steamId3, signal }) {
+    if (!allowedOrigin(window2?.location?.origin || "") || !validSteamId(steamId3)) return Promise.reject(queueChatError("UNAVAILABLE"));
+    if (signal?.aborted) return Promise.reject(queueChatError("ABORTED"));
+    const client = getClient(window2);
+    if (client.pending.size >= QUEUE_CHAT_MAX_INFLIGHT) return Promise.reject(queueChatError("BUSY"));
+    const nonce = window2.crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const cancel = () => {
+        client.post({ type: "cancel", nonce });
+        client.finish(nonce, queueChatError("ABORTED"));
+      };
+      const timer = setTimeout(() => {
+        client.post({ type: "cancel", nonce });
+        client.finish(nonce, queueChatError("TIMEOUT"));
+      }, QUEUE_CHAT_TIMEOUT + 1e3);
+      client.pending.set(nonce, { steamId: steamId3, signal, resolve, reject, cancel, timer });
+      signal?.addEventListener("abort", cancel, { once: true });
+      client.post({ type: "read", nonce, steamId: steamId3 });
+    });
+  }
+
+  // modules/ticket/QueueChatTracking.js
+  var QueueChatTrackingMethods = {
+    async fetchQueueChat(steamId3) {
+      this._queueChatInflight ||= /* @__PURE__ */ new Map();
+      if (this._queueChatInflight.has(steamId3)) return this._queueChatInflight.get(steamId3).promise;
+      const controller = new AbortController();
+      const entry = { controller };
+      entry.promise = requestQueueChat({ window, steamId: steamId3, signal: controller.signal }).then((messages) => {
+        if (controller.signal.aborted) return null;
+        this._queueChatCache ||= /* @__PURE__ */ new Map();
+        this._queueChatCache.delete(steamId3);
+        this._queueChatCache.set(steamId3, { messages, fetchedAt: Date.now() });
+        if (this._queueChatCache.size > 256) this._queueChatCache.delete(this._queueChatCache.keys().next().value);
+        return messages;
+      }).catch((error) => {
+        if (!controller.signal.aborted) this._queueChatCache?.delete(steamId3);
+        if (error.code === "RATE_LIMIT") this.globalServerCooldown = Date.now() + 660;
+        return null;
+      }).finally(() => {
+        if (this._queueChatInflight.get(steamId3) === entry) this._queueChatInflight.delete(steamId3);
+      });
+      this._queueChatInflight.set(steamId3, entry);
+      return entry.promise;
+    },
+    getQueueChatVerdict(row) {
+      if (!this.settings.features?.trackOffenderServer || !this.isMuteHighlightComplaintReason(this.getComplaintReasonFromRow(row))) return null;
+      const id = this.nativeData ? this.getNativeRowTicket(row)?.suspectId : steamIdFromPlayerProfileUrl(row.querySelector('td:nth-child(4) a[href*="cybershoke."]')?.href);
+      const cached = this._queueChatCache?.get(id);
+      if (!cached) return null;
+      const now = Date.now();
+      if (!cached.verdict || cached.rules !== this.rules || cached.exceptions !== this.muteExceptions || cached.spamRules !== this.spamRules || now >= cached.expiresAt) {
+        cached.verdict = analyzeQueueChatMessages(this, cached.messages, { now });
+        cached.rules = this.rules;
+        cached.exceptions = this.muteExceptions;
+        cached.spamRules = this.spamRules;
+        const expirations = cached.messages.map((m) => m.timeMs + 86400001).filter((time) => time > now);
+        cached.expiresAt = expirations.length ? Math.min(...expirations) : Infinity;
+      }
+      return cached.verdict;
+    },
+    stopQueueChatTracking() {
+      for (const entry of this._queueChatInflight?.values() || []) entry.controller.abort();
+      this._queueChatInflight?.clear();
+      this._queueChatCache?.clear();
+      this._offenderRowSnapshots = /* @__PURE__ */ new WeakMap();
+      for (const row of this.document.querySelectorAll("tr.ioh-highlighted-chat-mute")) {
+        row.classList.remove("ioh-highlighted-chat-mute");
+        this.restoreAllOffenderPunishmentActionLabels(row);
+      }
+    }
+  };
+
   // modules/ticket/OffenderTracking.js
   var OffenderTrackingMethods = {
+    ...QueueChatTrackingMethods,
     normalizeVipName(raw) {
       if (raw == null) {
         return null;
@@ -5664,6 +5855,7 @@ ${nextMessage}` : nextMessage;
       }
       row.classList.toggle("ioh-highlighted-banned", highlightBan);
       row.classList.toggle("ioh-highlighted-muted", highlightMute);
+      row.classList.toggle("ioh-highlighted-chat-mute", !highlightBan && !userData?.isMuted && this.getQueueChatVerdict(row)?.kind === "mute");
     },
     applyOffenderBanHighlight(row, isBanned) {
       this.applyOffenderPunishmentHighlight(row, { isBanned: Boolean(isBanned) });
@@ -5675,6 +5867,7 @@ ${nextMessage}` : nextMessage;
       if (userData?.isMuted && this.isMuteHighlightComplaintReason(this.getComplaintReasonFromRow(row))) {
         return "mute";
       }
+      if (this.getQueueChatVerdict(row)?.kind === "mute") return "warning";
       return null;
     },
     removeOffenderPunishmentIcons(offenderLink) {
@@ -5739,7 +5932,8 @@ ${nextMessage}` : nextMessage;
       control.classList.remove(
         "ioh-punishment-action",
         "ioh-punishment-action--ban",
-        "ioh-punishment-action--mute"
+        "ioh-punishment-action--mute",
+        "ioh-punishment-action--warning"
       );
       delete control.dataset.iohPunishmentAction;
     },
@@ -5769,8 +5963,8 @@ ${nextMessage}` : nextMessage;
         control.dataset.iohOriginalActionHtml = control.innerHTML;
       }
       const iconSvg = window.Icons?.[type] || "";
-      const label = type === "ban" ? "\u0417\u0410\u0411\u0410\u041D\u0415\u041D" : "\u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422";
-      control.classList.remove("ioh-punishment-action--ban", "ioh-punishment-action--mute");
+      const label = type === "ban" ? "\u0417\u0410\u0411\u0410\u041D\u0415\u041D" : type === "mute" ? "\u0410\u041A\u0422\u0418\u0412\u041D\u042B\u0419 \u041C\u0423\u0422" : "\u041D\u0423\u0416\u0415\u041D \u041C\u0423\u0422";
+      control.classList.remove("ioh-punishment-action--ban", "ioh-punishment-action--mute", "ioh-punishment-action--warning");
       control.classList.add("ioh-punishment-action", `ioh-punishment-action--${type}`);
       control.dataset.iohPunishmentAction = type;
       control.innerHTML = `<span class="ioh-punishment-action__inner" data-ioh="1"><span class="ioh-icon-box">${iconSvg}</span><span class="ioh-punishment-action__text">${label}</span></span>`;
@@ -6714,6 +6908,7 @@ ${nextMessage}` : nextMessage;
         const regular = (arrivalsOnly ? [] : Array.from(this.document.querySelectorAll("table tbody tr")).reverse()).map(toCandidate).filter(Boolean).concat(initial.filter((candidate) => candidate.lastCheck)).sort((a, b) => a.lastCheck - b.lastCheck);
         const candidates = initial.filter((candidate) => !candidate.lastCheck).concat(regular);
         const dataBySteamId = /* @__PURE__ */ new Map();
+        const chatBySteamId = /* @__PURE__ */ new Map();
         while (true) {
           if (arrivalsOnly && !acceptArrivals()) {
             this._offenderTrackingArrivals ||= /* @__PURE__ */ new Set();
@@ -6792,8 +6987,31 @@ ${nextMessage}` : nextMessage;
           if (!userData || !passIsCurrent() || !rowIsCurrent()) {
             continue;
           }
+          const complaintReason = this.getComplaintReasonFromRow(targetRow);
+          if (this.isMuteHighlightComplaintReason(complaintReason) && !chatBySteamId.has(targetSteamId)) {
+            const cached = this._queueChatCache?.get(targetSteamId);
+            if (!cached || Date.now() - cached.fetchedAt >= CACHE_INTERVAL) {
+              await new Promise((resolve) => setTimeout(resolve, Math.max(
+                340,
+                (this.globalServerCooldown || 0) - Date.now()
+              )));
+              while (passIsCurrent() && rowIsCurrent() && Date.now() < (this.globalServerCooldown || 0)) {
+                await new Promise((resolve) => setTimeout(resolve, this.globalServerCooldown - Date.now()));
+              }
+              if (!passIsCurrent() || !rowIsCurrent()) continue;
+              if (arrivalsOnly && !acceptArrivals() || acceptArrivals() && [...this._offenderTrackingArrivals || []].some((row) => row.isConnected && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ""}|`)))) {
+                candidates.unshift(candidate);
+                continue;
+              }
+              markCheck("lastIpAttempt");
+              await this.fetchQueueChat(targetSteamId);
+              if (!passIsCurrent() || !rowIsCurrent()) continue;
+            }
+            chatBySteamId.set(targetSteamId, true);
+          }
           const actionState = this.rowActionIsInReview(targetRow) ? "review" : targetRow.querySelector(".ioh-punishment-action") ? "custom" : "accept";
-          const snapshotKey = `${targetSteamId}|${userData.serverIp || ""}|${userData.vipName || ""}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
+          const chatVerdict = this.getQueueChatVerdict(targetRow);
+          const snapshotKey = `${targetSteamId}|${userData.serverIp || ""}|${userData.vipName || ""}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}|${complaintReason}|${chatVerdict?.kind || ""}|${chatVerdict?.reason || ""}`;
           if (!this._offenderRowSnapshots) {
             this._offenderRowSnapshots = /* @__PURE__ */ new WeakMap();
           }
@@ -8083,14 +8301,7 @@ ${nextMessage}` : nextMessage;
     }
     analyzeChatRows(rows, lastMuteDate) {
       this.triggerRows.clear();
-      const allViolations = [];
-      const ruleCounters = {};
-      (this.rules || []).forEach((rule) => {
-        ruleCounters[rule.name] = 0;
-      });
-      const playerChatLog = {};
-      const matcher = this._ruleMatcher;
-      const getSeverity = (rule) => this.getRuleSeverity(rule);
+      const messages = [];
       for (const row of rows) {
         const chatRow = this.nativeData ? { messageText: row.text, authorText: row.channel === "team" ? "\u041A\u043E\u043C\u0430\u043D\u0434\u0430" : "\u0412\u0441\u0435", timeText: "", timeMs: row.timeMs } : this.getChatRowData(row);
         if (!chatRow || !chatRow.messageText) {
@@ -8103,47 +8314,9 @@ ${nextMessage}` : nextMessage;
         if (lastMuteDate && msgTimeMs && msgTimeMs <= lastMuteDate.getTime()) {
           continue;
         }
-        const { authorText, messageText } = chatRow;
-        const textLower = messageText.toLowerCase().trim();
-        if (msgTimeMs && textLower.length > 0) {
-          if (!playerChatLog[authorText]) {
-            playerChatLog[authorText] = [];
-          }
-          playerChatLog[authorText].push({ time: msgTimeMs, text: textLower, raw: messageText, row });
-        }
-        const strongest = matcher.matchStrongest(textLower, messageText, getSeverity);
-        if (!strongest) {
-          continue;
-        }
-        ruleCounters[strongest.rule.name] += 1;
-        const triggerId = crypto.randomUUID();
-        this.triggerRows.set(triggerId, row);
-        allViolations.push({
-          id: triggerId,
-          ruleName: strongest.rule.name,
-          keyword: strongest.displayKeyword,
-          fullMessage: messageText,
-          severity: getSeverity(strongest.rule),
-          duration: strongest.rule.duration,
-          timeMs: msgTimeMs || null
-        });
+        messages.push({ messageText: chatRow.messageText, authorText: chatRow.authorText, timeMs: msgTimeMs, row });
       }
-      const spamRule = (this.rules || []).find((r) => r.name === "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442");
-      for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity, this.spamRules)) {
-        const triggerId = crypto.randomUUID();
-        this.triggerRows.set(triggerId, spam.rows);
-        allViolations.push({
-          id: triggerId,
-          ruleName: "\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442",
-          keyword: `${spam.raw} (x${spam.dupes})`,
-          fullMessage: spam.raw,
-          severity: spam.severity,
-          duration: spam.duration,
-          timeMs: spam.timeMs || null
-        });
-        ruleCounters["\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442"] = (ruleCounters["\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442"] || 0) + spam.dupes;
-      }
-      return { allViolations, ruleCounters };
+      return scanChatMessages(this, messages, { triggerRows: this.triggerRows });
     }
     dropSoloTrollingViolation(allViolations, ruleCounters) {
       if (ruleCounters["\u0422\u0440\u043E\u043B\u043B\u0438\u043D\u0433/\u043F\u0440\u043E\u0432\u043E\u043A\u0430\u0446\u0438\u044F"] !== 1 || (ruleCounters["\u0421\u043F\u0430\u043C \u0432 \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D/\u0447\u0430\u0442"] || 0) !== 0 || (ruleCounters["\u041E\u0441\u043A\u043E\u0440\u0431\u043B\u0435\u043D\u0438\u0435"] || 0) !== 0 || (ruleCounters["\u0422\u043E\u043A\u0441\u0438\u0447\u043D\u043E\u0441\u0442\u044C"] || 0) !== 0 || (ruleCounters["\u0420\u0430\u0441\u0438\u0437\u043C / \u0434\u0438\u0441\u043A\u0440\u0438\u043C\u0438\u043D\u0430\u0446\u0438\u044F"] || 0) !== 0) {
@@ -9471,6 +9644,7 @@ ${nextMessage}` : nextMessage;
         pageClosed = true;
         this._trackingStopped = true;
         this.ticketService._pageClosed = true;
+        this.ticketService.stopQueueChatTracking();
         this.ticketService._offenderTrackingArrivals?.clear();
         this.ticketService._offenderTicketChecks?.clear();
         this._nativeUnsubscribe?.();
@@ -9596,6 +9770,7 @@ ${nextMessage}` : nextMessage;
       }
     }
     restartOffenderTracking({ immediate = true } = {}) {
+      this.ticketService.stopQueueChatTracking();
       this._offenderTrackingGeneration++;
       this._offenderTrackingFullPassRequested = false;
       if (this.ipTrackTimeoutId != null) {

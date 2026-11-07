@@ -1,5 +1,6 @@
 import { SitePunishmentBridge } from './SitePunishmentBridge.js';
-import { compileRuleMatcher, detectSpamLinear } from './shared/RuleMatcher.js';
+import { compileRuleMatcher } from './shared/RuleMatcher.js';
+import {scanChatMessages} from './ticket/QueueChatAnalysis.js';
 import { TicketScopeMethods } from './ticket/TicketScope.js';
 import { ChatAnalyzerMethods } from './ticket/ChatAnalyzer.js';
 import { VerdictMethods } from './ticket/Verdict.js';
@@ -385,15 +386,7 @@ export class TicketService {
 
     analyzeChatRows(rows, lastMuteDate) {
         this.triggerRows.clear();
-        const allViolations = [];
-        const ruleCounters = {};
-        (this.rules || []).forEach(rule => {
-            ruleCounters[rule.name] = 0;
-        });
-        const playerChatLog = {};
-        const matcher = this._ruleMatcher;
-        const getSeverity = rule => this.getRuleSeverity(rule);
-
+        const messages = [];
         for (const row of rows) {
             const chatRow = this.nativeData ? {messageText: row.text, authorText: row.channel === 'team' ? 'Команда' : 'Все', timeText: '', timeMs: row.timeMs} : this.getChatRowData(row);
             if (!chatRow || !chatRow.messageText) {
@@ -408,51 +401,10 @@ export class TicketService {
                 continue;
             }
 
-            const {authorText, messageText} = chatRow;
-            const textLower = messageText.toLowerCase().trim();
-            if (msgTimeMs && textLower.length > 0) {
-                if (!playerChatLog[authorText]) {
-                    playerChatLog[authorText] = [];
-                }
-                playerChatLog[authorText].push({time: msgTimeMs, text: textLower, raw: messageText, row});
-            }
-
-            const strongest = matcher.matchStrongest(textLower, messageText, getSeverity);
-            if (!strongest) {
-                continue;
-            }
-
-            ruleCounters[strongest.rule.name] += 1;
-            const triggerId = crypto.randomUUID();
-            this.triggerRows.set(triggerId, row);
-            allViolations.push({
-                id: triggerId,
-                ruleName: strongest.rule.name,
-                keyword: strongest.displayKeyword,
-                fullMessage: messageText,
-                severity: getSeverity(strongest.rule),
-                duration: strongest.rule.duration,
-                timeMs: msgTimeMs || null
-            });
+            messages.push({messageText: chatRow.messageText, authorText: chatRow.authorText, timeMs: msgTimeMs, row});
         }
 
-        const spamRule = (this.rules || []).find(r => r.name === 'Спам в микрофон/чат');
-        for (const spam of detectSpamLinear(playerChatLog, spamRule, getSeverity, this.spamRules)) {
-            const triggerId = crypto.randomUUID();
-            this.triggerRows.set(triggerId, spam.rows);
-            allViolations.push({
-                id: triggerId,
-                ruleName: 'Спам в микрофон/чат',
-                keyword: `${spam.raw} (x${spam.dupes})`,
-                fullMessage: spam.raw,
-                severity: spam.severity,
-                duration: spam.duration,
-                timeMs: spam.timeMs || null
-            });
-            ruleCounters['Спам в микрофон/чат'] = (ruleCounters['Спам в микрофон/чат'] || 0) + spam.dupes;
-        }
-
-        return {allViolations, ruleCounters};
+        return scanChatMessages(this, messages, {triggerRows: this.triggerRows});
     }
 
     dropSoloTrollingViolation(allViolations, ruleCounters) {

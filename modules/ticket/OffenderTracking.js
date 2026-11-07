@@ -1,8 +1,10 @@
 import { isIohNode, markIoh } from '../shared/dom.js';
 import {normalizeResponse, requestTime} from '../native/model.js';
 import {steamIdFromPlayerProfileUrl} from '../shared/playerProfile.js';
+import {QueueChatTrackingMethods} from './QueueChatTracking.js';
 
 export const OffenderTrackingMethods = {
+    ...QueueChatTrackingMethods,
     normalizeVipName(raw) {
         if (raw == null) {
             return null;
@@ -248,6 +250,8 @@ export const OffenderTrackingMethods = {
 
         row.classList.toggle('ioh-highlighted-banned', highlightBan);
         row.classList.toggle('ioh-highlighted-muted', highlightMute);
+        row.classList.toggle('ioh-highlighted-chat-mute', !highlightBan && !userData?.isMuted
+            && this.getQueueChatVerdict(row)?.kind === 'mute');
     },
 
     applyOffenderBanHighlight(row, isBanned) {
@@ -262,6 +266,8 @@ export const OffenderTrackingMethods = {
         if (userData?.isMuted && this.isMuteHighlightComplaintReason(this.getComplaintReasonFromRow(row))) {
             return 'mute';
         }
+
+        if (this.getQueueChatVerdict(row)?.kind === 'mute') return 'warning';
 
         return null;
     },
@@ -342,7 +348,8 @@ export const OffenderTrackingMethods = {
         control.classList.remove(
             'ioh-punishment-action',
             'ioh-punishment-action--ban',
-            'ioh-punishment-action--mute'
+            'ioh-punishment-action--mute',
+            'ioh-punishment-action--warning'
         );
         delete control.dataset.iohPunishmentAction;
     },
@@ -382,8 +389,8 @@ export const OffenderTrackingMethods = {
         }
 
         const iconSvg = window.Icons?.[type] || '';
-        const label = type === 'ban' ? 'ЗАБАНЕН' : 'АКТИВНЫЙ МУТ';
-        control.classList.remove('ioh-punishment-action--ban', 'ioh-punishment-action--mute');
+        const label = type === 'ban' ? 'ЗАБАНЕН' : type === 'mute' ? 'АКТИВНЫЙ МУТ' : 'НУЖЕН МУТ';
+        control.classList.remove('ioh-punishment-action--ban', 'ioh-punishment-action--mute', 'ioh-punishment-action--warning');
         control.classList.add('ioh-punishment-action', `ioh-punishment-action--${type}`);
         control.dataset.iohPunishmentAction = type;
         control.innerHTML = `<span class="ioh-punishment-action__inner" data-ioh="1"><span class="ioh-icon-box">${iconSvg}</span><span class="ioh-punishment-action__text">${label}</span></span>`;
@@ -1539,6 +1546,7 @@ export const OffenderTrackingMethods = {
                 .sort((a, b) => a.lastCheck - b.lastCheck);
             const candidates = initial.filter(candidate => !candidate.lastCheck).concat(regular);
             const dataBySteamId = new Map();
+            const chatBySteamId = new Map();
 
             while (true) {
                 if (arrivalsOnly && !acceptArrivals()) {
@@ -1634,10 +1642,34 @@ export const OffenderTrackingMethods = {
                     continue;
                 }
 
+                const complaintReason = this.getComplaintReasonFromRow(targetRow);
+                if (this.isMuteHighlightComplaintReason(complaintReason) && !chatBySteamId.has(targetSteamId)) {
+                    const cached = this._queueChatCache?.get(targetSteamId);
+                    if (!cached || Date.now() - cached.fetchedAt >= CACHE_INTERVAL) {
+                        await new Promise(resolve => setTimeout(resolve, Math.max(340,
+                            (this.globalServerCooldown || 0) - Date.now())));
+                        while (passIsCurrent() && rowIsCurrent() && Date.now() < (this.globalServerCooldown || 0)) {
+                            await new Promise(resolve => setTimeout(resolve, this.globalServerCooldown - Date.now()));
+                        }
+                        if (!passIsCurrent() || !rowIsCurrent()) continue;
+                        if ((arrivalsOnly && !acceptArrivals()) || (acceptArrivals() && [...(this._offenderTrackingArrivals || [])].some(row => row.isConnected
+                            && (!seen.has(row) || !seen.get(row).startsWith(`${row.dataset.iohNativeTicket || ''}|`))))) {
+                            candidates.unshift(candidate);
+                            continue;
+                        }
+                        // A separate resource: never replace the detail's complete chat history.
+                        markCheck('lastIpAttempt');
+                        await this.fetchQueueChat(targetSteamId);
+                        if (!passIsCurrent() || !rowIsCurrent()) continue;
+                    }
+                    chatBySteamId.set(targetSteamId, true);
+                }
+
                 const actionState = this.rowActionIsInReview(targetRow)
                     ? 'review'
                     : (targetRow.querySelector('.ioh-punishment-action') ? 'custom' : 'accept');
-                const snapshotKey = `${targetSteamId}|${userData.serverIp || ''}|${userData.vipName || ''}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}`;
+                const chatVerdict = this.getQueueChatVerdict(targetRow);
+                const snapshotKey = `${targetSteamId}|${userData.serverIp || ''}|${userData.vipName || ''}|${userData.profileVerified ? 1 : 0}|${userData.isModerator ? 1 : 0}|${userData.isBanned ? 1 : 0}|${userData.isMuted ? 1 : 0}|${actionState}|${complaintReason}|${chatVerdict?.kind || ''}|${chatVerdict?.reason || ''}`;
                 if (!this._offenderRowSnapshots) {
                     this._offenderRowSnapshots = new WeakMap();
                 }

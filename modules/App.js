@@ -171,6 +171,7 @@ export class App {
             pageClosed = true;
             this._trackingStopped = true;
             this.ticketService._pageClosed = true;
+            this.ticketService.stopQueueChatTracking();
             this.ticketService._offenderTrackingArrivals?.clear();
             this.ticketService._offenderTicketChecks?.clear();
             this._nativeUnsubscribe?.();
@@ -309,6 +310,7 @@ export class App {
     }
 
     restartOffenderTracking({immediate = true} = {}) {
+        this.ticketService.stopQueueChatTracking();
         this._offenderTrackingGeneration++;
         this._offenderTrackingFullPassRequested = false;
         if (this.ipTrackTimeoutId != null) {

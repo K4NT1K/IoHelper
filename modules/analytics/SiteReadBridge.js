@@ -1,6 +1,7 @@
 import {collectNativeProfile,collectNativeRoster,findNativeClient} from './NativeApi.js';
 import {parseSteamId,validateRange} from './model.js';
 import {installNativeObserver} from '../native/Observer.js';
+import {installQueueChatBridge} from '../native/QueueChatBridge.js';
 
 export function installNativeReadBridge({window,document,fetchText,importModule}) {
     if(window.__iohNativeReadBridgeV2)return;
@@ -68,4 +69,5 @@ if(typeof window!=='undefined'&&['io.cybershoke.net','io.cybershoke.ru'].include
         },importModule:url=>import(/* @vite-ignore */ url)};
     installNativeObserver(dependencies);
     installNativeReadBridge(dependencies);
+    installQueueChatBridge(dependencies);
 }

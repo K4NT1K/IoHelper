@@ -73,14 +73,14 @@ tr.ioh-highlighted-moderator {
 }
 
 tr.ioh-highlighted-banned,
-tr.ioh-highlighted-muted {
+tr.ioh-highlighted-chat-mute {
     position: relative;
     transition: background-color 0.55s ease, box-shadow 0.35s ease;
     animation: ioh-punishment-row-enter 0.55s ease both;
 }
 
 tr.ioh-highlighted-banned > td,
-tr.ioh-highlighted-muted > td {
+tr.ioh-highlighted-chat-mute > td {
     position: relative;
     transition: background-color 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
 }
@@ -106,22 +106,22 @@ tr.ioh-highlighted-banned > td:last-child {
     border-radius: 0 6px 6px 0;
 }
 
-tr.ioh-highlighted-muted > td {
+tr.ioh-highlighted-chat-mute > td {
     background-color: color-mix(in srgb, var(--color-warning, #f59e0b) 22%, transparent) !important;
 }
 
-tr.ioh-highlighted-muted {
+tr.ioh-highlighted-chat-mute {
     box-shadow:
             0 0 14px 3px color-mix(in srgb, var(--color-warning, #f59e0b) 22%, transparent),
             0 4px 16px 2px color-mix(in srgb, var(--color-warning, #f59e0b) 14%, transparent) !important;
 }
 
-tr.ioh-highlighted-muted > td:first-child {
+tr.ioh-highlighted-chat-mute > td:first-child {
     border-left: 2px solid var(--color-warning, #f59e0b) !important;
     border-radius: 6px 0 0 6px;
 }
 
-tr.ioh-highlighted-muted > td:last-child {
+tr.ioh-highlighted-chat-mute > td:last-child {
     border-right: 2px solid var(--color-warning, #f59e0b) !important;
     border-radius: 0 6px 6px 0;
 }
@@ -150,7 +150,8 @@ tr.ioh-highlighted-muted > td:last-child {
     background: color-mix(in srgb, var(--color-danger, #ef4444) 70%, transparent) !important;
 }
 
-.ioh-punishment-action--mute {
+.ioh-punishment-action--mute,
+.ioh-punishment-action--warning {
     --ioh-tone: var(--color-warning, #f59e0b);
     background: color-mix(in srgb, var(--color-warning, #f59e0b) 70%, transparent) !important;
     color: #fff !important;

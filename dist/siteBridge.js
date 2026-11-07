@@ -706,6 +706,102 @@
     return stop;
   }
 
+  // modules/native/QueueChatClient.js
+  var QUEUE_CHAT_CHANNEL = "ioh-queue-chat-v1";
+  var QUEUE_CHAT_LIMIT = 1e3;
+  var QUEUE_CHAT_TIMEOUT = 15e3;
+  var QUEUE_CHAT_MAX_INFLIGHT = 8;
+  var validSteamId = (id) => typeof id === "string" && /^\d{17}$/.test(id);
+  var codes = /* @__PURE__ */ new Set(["ABORTED", "TIMEOUT", "RATE_LIMIT", "UNAVAILABLE", "INVALID_RESPONSE", "BUSY"]);
+  var queueChatError = (code) => Object.assign(new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044E \u0447\u0430\u0442\u0430: " + (codes.has(code) ? code : "UNAVAILABLE")), { code: codes.has(code) ? code : "UNAVAILABLE" });
+  function normalizeQueueChatResponse(raw, steamId2, { now = Date.now() } = {}) {
+    const source = Array.isArray(raw) ? raw : raw?.messages;
+    if (!validSteamId(steamId2) || !Array.isArray(source) || source.length > 1e4) throw queueChatError("INVALID_RESPONSE");
+    const messages = [];
+    for (const row of source) {
+      if (row?.steamid64 !== steamId2 || typeof row.msg !== "string" || !row.msg.trim()) continue;
+      if (typeof row.unixtime !== "number" && typeof row.unixtime !== "string" || String(row.unixtime).trim() === "") continue;
+      const timeMs = Number(row.unixtime) * 1e3;
+      if (!Number.isFinite(timeMs) || timeMs <= 0 || timeMs < now - 864e5 || timeMs > now) continue;
+      messages.push({ timeMs, text: row.msg.slice(0, 2e4), channel: row.type === 1 || row.type === "1" ? "team" : "all" });
+    }
+    return messages;
+  }
+
+  // modules/native/QueueChatBridge.js
+  function installQueueChatBridge({ window: window2, document: document2, fetchText, importModule }) {
+    if (!/^https:\/\/io\.cybershoke\.(net|ru)$/.test(window2.location.origin) || window2.__iohQueueChatBridgeV1) return;
+    window2.__iohQueueChatBridgeV1 = true;
+    const pending = /* @__PURE__ */ new Map();
+    const origin = window2.location.origin;
+    let client = null, stopped = false;
+    const emit = (request, type, extra = {}) => window2.postMessage({ channel: QUEUE_CHAT_CHANNEL, type, nonce: request.nonce, steamId: request.steamId, ...extra }, origin);
+    const finish = (request, type, extra) => {
+      if (pending.get(request.nonce) !== request) return;
+      pending.delete(request.nonce);
+      clearTimeout(request.timer);
+      if (type && !stopped) emit(request, type, extra);
+    };
+    const listener = (event) => {
+      if (stopped || event.source !== window2 || event.origin !== origin || event.data?.channel !== QUEUE_CHAT_CHANNEL) return;
+      const { type, nonce, steamId: steamId2 } = event.data;
+      if (typeof nonce !== "string" || !/^[a-f0-9-]{16,64}$/i.test(nonce)) return;
+      if (type === "cancel") {
+        const request2 = pending.get(nonce);
+        if (request2) {
+          finish(request2);
+          request2.controller.abort();
+        }
+        return;
+      }
+      if (type !== "read" || typeof steamId2 !== "string" || !/^\d{17}$/.test(steamId2) || pending.has(nonce)) return;
+      const request = { nonce, steamId: steamId2, controller: new AbortController(), timer: null };
+      if (pending.size >= QUEUE_CHAT_MAX_INFLIGHT) {
+        emit(request, "error", { code: "BUSY" });
+        return;
+      }
+      pending.set(nonce, request);
+      request.timer = setTimeout(() => {
+        finish(request, "error", { code: "TIMEOUT" });
+        request.controller.abort();
+      }, QUEUE_CHAT_TIMEOUT);
+      const run = async () => {
+        if (!client) client = await findNativeClient({ document: document2, origin, fetchText, importModule, signal: request.controller.signal });
+        if (request.controller.signal.aborted || stopped) return;
+        const response = await client.post("/chat/list", {
+          // The live API's numeric created filter hides even recent messages.
+          // Read the player's bounded history and enforce the 24h window locally.
+          data: { steamid64_user: steamId2 },
+          other: { limit: QUEUE_CHAT_LIMIT, name_type: true }
+        }, { signal: request.controller.signal, timeout: QUEUE_CHAT_TIMEOUT });
+        if (request.controller.signal.aborted || stopped) return;
+        if (!(response.status >= 200 && response.status < 300)) {
+          finish(request, "error", { code: response.status === 429 ? "RATE_LIMIT" : "UNAVAILABLE" });
+          return;
+        }
+        const messages = normalizeQueueChatResponse(response.data, steamId2);
+        finish(request, "result", { messages });
+      };
+      void run().catch((error) => {
+        const status = error?.response?.status ?? error?._orig?.response?.status;
+        finish(request, "error", { code: status === 429 ? "RATE_LIMIT" : error?.code === "INVALID_RESPONSE" ? "INVALID_RESPONSE" : "UNAVAILABLE" });
+      });
+    };
+    const stop = () => {
+      stopped = true;
+      for (const request of [...pending.values()]) {
+        finish(request);
+        request.controller.abort();
+      }
+      window2.removeEventListener("message", listener);
+      window2.removeEventListener("pagehide", stop);
+      delete window2.__iohQueueChatBridgeV1;
+    };
+    window2.addEventListener("message", listener);
+    window2.addEventListener("pagehide", stop);
+    return stop;
+  }
+
   // modules/analytics/SiteReadBridge.js
   function installNativeReadBridge({ window: window2, document: document2, fetchText, importModule }) {
     if (window2.__iohNativeReadBridgeV2) return;
@@ -802,6 +898,7 @@
     };
     installNativeObserver(dependencies);
     installNativeReadBridge(dependencies);
+    installQueueChatBridge(dependencies);
   }
 })();
 //# sourceMappingURL=siteBridge.js.map
